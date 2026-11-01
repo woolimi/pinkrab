@@ -1,0 +1,646 @@
+<?xml version="1.0"?>
+<!--
+  Pinkrab - two SO-ARM 101 arms on a wall.
+
+  This file holds the arm and the two of them on their jig. Where yours is bolted
+  is not here - it comes from config/mount.yaml, which is a measurement of one
+  installation and the only thing that changes between rigs.
+
+  Arm source:  https://github.com/TheRobotStudio/SO-ARM100.git
+               Simulation/SO101/so101_new_calib.urdf
+  Commit:      7629d2ad9853d10fb903093a33ef6114099d97e5
+  License:     Apache-2.0 (TheRobotStudio) - same as this project.
+
+  The wrist yaw between wrist_flex and the wrist is ahb's printed clevis,
+  makerworld model 2845098, CC BY-SA. The rest of the chain is upstream's.
+
+      xacro urdf/pinkrab.urdf.xacro > /tmp/pinkrab.urdf
+      xacro urdf/pinkrab.urdf.xacro mount:=/path/to/other_rig.yaml
+      xacro urdf/pinkrab.urdf.xacro arm:=left     one bare arm, rooted at `mount`
+-->
+<robot name="pinkrab" xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <xacro:arg name="mount" default="$(find pinkrab_description)/config/mount.yaml"/>
+  <!-- Set this and you get a single arm on its own instead of the whole robot,
+       which is what the kinematics wants when it is asking about one arm's shape
+       rather than about a rig. -->
+  <xacro:arg name="arm" default=""/>
+
+  <!-- Printed parts and servo bodies. Named once, at robot scope, because that is
+       where URDF looks a material up from - and stated here rather than in whatever
+       is drawing, so RViz and the studio show the same robot.
+
+       The split is a real one: the shell is what gets printed, the black is what
+       gets bought. A servo is not part of the animal, and it has a link of its own
+       so that no link wears two materials - RViz takes one material for a whole
+       link, from the first visual it finds, and drew whole printed arms in the
+       colour of the servo they carry. -->
+  <material name="3d_printed">
+    <color rgba="0.8784 0.2941 0.5569 1.0" />
+  </material>
+  <material name="sts3215">
+    <color rgba="0.1 0.1 0.1 1.0" />
+  </material>
+
+  <!--
+    One SO-ARM 101 arm, with six articulated joints plus the gripper.
+
+    The two arms are a mirrored pair about the wall's y axis, so the arm is written
+    once, the right arm in the model's own frame, and `mirror` flips it for the
+    left: -1 negates every y offset and every roll and yaw,
+    which is what reflecting a frame in the xz plane does. The wrist and gripper
+    are chiral, so `hand` also picks the printed part - each arm gets its own STL.
+
+    Two origins are not the reflection of their opposite number and are given per
+    hand below: the wrist_flex and shoulder_pan origins differ by a degree or two.
+    They are the model, not a slip - do not fold them into `mirror`. The
+    shoulder_lift and elbow_flex origins are given per hand as well, and are
+    reflections: their zeros are chosen poses, the same on both arms.
+
+    Every joint axis points the way its servo counts up, so a joint angle is the
+    servo's own reading with an offset and nothing else. A servo cannot be mirrored,
+    only turned round to fit the mirrored part, so no axis is the reflection of its
+    partner: every joint on the left counts the other way round from the right, and a
+    mirrored pose reads the opposite sign on all of them. The limits are given per
+    hand below. wrist_flex has one band on both, -114..114: the part of the two
+    arms' sweeps (-117..114 right, -116..116 left) that both reach.
+
+    The inertial blocks mirror with the rest: a centre of mass's y and the products
+    of inertia that carry y change sign on the left. The two yaw brackets'
+    (lower_arm_link and wrist_yaw_link) are the exception, one block for both hands.
+  -->
+  <xacro:macro name="pinkrab_arm" params="prefix parent hand:=right *origin">
+    <xacro:property name="mirror" value="${1 if hand == 'right' else -1}"/>
+    <xacro:if value="${hand == 'right'}">
+      <xacro:property name="wrist_flex_rpy"    value="1.57079633 -0.0157016428 -3.25550667e-09"/>
+      <xacro:property name="wrist_flex_lower"  value="-1.98967535"/>
+      <xacro:property name="wrist_flex_upper"  value="1.98967535"/>
+      <xacro:property name="elbow_flex_rpy"    value="3.12892564e-15 1.78677717e-15 2.988003683"/>
+      <xacro:property name="shoulder_lift_rpy" value="1.57079633 0.26529372 3.14158898"/>
+      <xacro:property name="shoulder_pan_rpy"  value="3.14159 -4.17e-08 3.12588734"/>
+      <xacro:property name="shoulder_pan_lower"  value="-2.00712864"/>
+      <xacro:property name="shoulder_pan_upper"  value="2.07694181"/>
+      <xacro:property name="shoulder_lift_lower" value="0"/>
+      <xacro:property name="shoulder_lift_upper" value="3.66519143"/>
+      <xacro:property name="elbow_flex_lower"    value="-3.42084533"/>
+      <xacro:property name="elbow_flex_upper"    value="0"/>
+      <xacro:property name="wrist_yaw_lower"     value="0"/>
+      <xacro:property name="wrist_yaw_upper"     value="3.29867229"/>
+      <xacro:property name="gripper_lower"       value="-0.174532925"/>
+      <xacro:property name="gripper_upper"       value="1.3962634"/>
+    </xacro:if>
+    <xacro:if value="${hand == 'left'}">
+      <xacro:property name="wrist_flex_rpy"    value="-1.57079633 0.0122236195 3.16713967e-09"/>
+      <xacro:property name="wrist_flex_lower"  value="-1.98967535"/>
+      <xacro:property name="wrist_flex_upper"  value="1.98967535"/>
+      <xacro:property name="elbow_flex_rpy"    value="-3.12892564e-15 1.78677717e-15 -2.988003683"/>
+      <xacro:property name="shoulder_lift_rpy" value="-1.57079633 0.26529372 -3.14158898"/>
+      <xacro:property name="shoulder_pan_rpy"  value="-3.14159 3.24e-08 3.1293727"/>
+      <xacro:property name="shoulder_pan_lower"  value="-2.07694181"/>
+      <xacro:property name="shoulder_pan_upper"  value="2.00712864"/>
+      <xacro:property name="shoulder_lift_lower" value="-3.66519143"/>
+      <xacro:property name="shoulder_lift_upper" value="0"/>
+      <xacro:property name="elbow_flex_lower"    value="0"/>
+      <xacro:property name="elbow_flex_upper"    value="3.42084533"/>
+      <xacro:property name="wrist_yaw_lower"     value="-3.29867229"/>
+      <xacro:property name="wrist_yaw_upper"     value="0"/>
+      <xacro:property name="gripper_lower"       value="-1.3962634"/>
+      <xacro:property name="gripper_upper"       value="0.174532925"/>
+    </xacro:if>
+
+    <!-- Where the arm is mounted arrives as the *origin block. -->
+    <joint name="${prefix}base_joint" type="fixed">
+      <parent link="${parent}" />
+      <child link="${prefix}base_link" />
+      <xacro:insert_block name="origin" />
+    </joint>
+
+    <link name="${prefix}base_link">
+      <inertial>
+        <origin xyz="0.0803826 ${-5.19711e-05*mirror} -0.0361157" rpy="0 0 0" />
+        <mass value="0.147" />
+        <inertia ixx="0.000114686" ixy="${-4.59787e-07*mirror}" ixz="4.97151e-06" iyy="0.000136117" iyz="${9.75275e-08*mirror}" izz="0.000130364" />
+      </inertial>
+      <visual>
+        <origin xyz="0.0603 ${-9.94414e-05*mirror} -0.072" rpy="${pi/2*mirror} 0 ${pi/2*mirror}" />
+        <geometry>
+          <mesh filename="package://pinkrab_description/meshes/base_servo_mount_${hand}.stl" />
+        </geometry>
+        <material name="3d_printed" />
+      </visual>
+      <collision>
+        <origin xyz="0.0603 ${-9.94414e-05*mirror} -0.072" rpy="${pi/2*mirror} 0 ${pi/2*mirror}" />
+        <geometry>
+          <mesh filename="package://pinkrab_description/meshes/base_servo_mount_${hand}.stl" />
+        </geometry>
+      </collision>
+      <visual>
+        <origin xyz="0.0603 0 -0.072" rpy="${pi/2*mirror} 0 ${pi/2*mirror}" />
+        <geometry>
+          <mesh filename="package://pinkrab_description/meshes/base_${hand}.stl" />
+        </geometry>
+        <material name="3d_printed" />
+      </visual>
+      <collision>
+        <origin xyz="0.0603 0 -0.072" rpy="${pi/2*mirror} 0 ${pi/2*mirror}" />
+        <geometry>
+          <mesh filename="package://pinkrab_description/meshes/base_${hand}.stl" />
+        </geometry>
+      </collision>
+      <visual>
+        <origin xyz="0.0603 ${-9.94414e-05*mirror} -0.072" rpy="${pi/2*mirror} 0 ${pi/2*mirror}" />
+        <geometry>
+          <mesh filename="package://pinkrab_description/meshes/driver_mount_${hand}.stl" />
+        </geometry>
+        <material name="3d_printed" />
+      </visual>
+      <collision>
+        <origin xyz="0.0603 ${-9.94414e-05*mirror} -0.072" rpy="${pi/2*mirror} 0 ${pi/2*mirror}" />
+        <geometry>
+          <mesh filename="package://pinkrab_description/meshes/driver_mount_${hand}.stl" />
+        </geometry>
+      </collision>
+    </link>
+
+    <!-- The servo base carries. Its own link because it is its
+         own part - bought rather than printed - and because a viewer that colours
+         a link at a time can then tell the two apart. The mass stays with the
+         parent: the inertial there describes both, and splitting it wants the
+         servo on a scale rather than a number invented here. -->
+    <link name="${prefix}base_servo_link">
+      <visual>
+        <origin xyz="0.0437 0 0.0125" rpy="0 ${pi/2} 0" />
+        <geometry>
+          <mesh filename="package://pinkrab_description/meshes/servo.stl" />
+        </geometry>
+        <material name="sts3215" />
+      </visual>
+      <collision>
+        <origin xyz="0.0437 0 0.0125" rpy="0 ${pi/2} 0" />
+        <geometry>
+          <mesh filename="package://pinkrab_description/meshes/servo.stl" />
+        </geometry>
+      </collision>
+    </link>
+    <joint name="${prefix}base_servo_joint" type="fixed">
+      <parent link="${prefix}base_link" />
+      <child link="${prefix}base_servo_link" />
+      <origin xyz="0.1055 0 -0.0696" rpy="0 ${-pi/2} 0" />
+    </joint>
+    <link name="${prefix}shoulder_link">
+      <inertial>
+        <origin xyz="-0.0307604 ${-1.66727e-05*mirror} -0.0252713" rpy="0 0 0" />
+        <mass value="0.100006" />
+        <inertia ixx="8.3759e-05" ixy="${7.55525e-08*mirror}" ixz="-1.16342e-06" iyy="8.10403e-05" iyz="${1.54663e-07*mirror}" izz="2.39783e-05" />
+      </inertial>
+      <visual>
+        <origin xyz="-0.0675992 ${-0.000177759*mirror} 0.0158499" rpy="${1.5708*mirror} -1.5708 0" />
+        <geometry>
+          <mesh filename="package://pinkrab_description/meshes/shoulder_servo_mount_${hand}.stl" />
+        </geometry>
+        <material name="3d_printed" />
+      </visual>
+      <visual>
+        <origin xyz="0.0122008 ${2.22413e-05*mirror} 0.0464" rpy="${-1.5708*mirror} 2.35221e-33 0" />
+        <geometry>
+          <mesh filename="package://pinkrab_description/meshes/shoulder_${hand}.stl" />
+        </geometry>
+        <material name="3d_printed" />
+      </visual>
+      <collision>
+        <origin xyz="-0.0675992 ${-0.000177759*mirror} 0.0158499" rpy="${1.5708*mirror} -1.5708 0" />
+        <geometry>
+          <mesh filename="package://pinkrab_description/meshes/shoulder_servo_mount_${hand}.stl" />
+        </geometry>
+      </collision>
+      <collision>
+        <origin xyz="0.0122008 ${2.22413e-05*mirror} 0.0464" rpy="${-1.5708*mirror} 2.35221e-33 0" />
+        <geometry>
+          <mesh filename="package://pinkrab_description/meshes/shoulder_${hand}.stl" />
+        </geometry>
+      </collision>
+    </link>
+
+    <!-- The servo shoulder carries. Its own link because it is its
+         own part - bought rather than printed - and because a viewer that colours
+         a link at a time can then tell the two apart. The mass stays with the
+         parent: the inertial there describes both, and splitting it wants the
+         servo on a scale rather than a number invented here. -->
+    <link name="${prefix}shoulder_servo_link">
+      <collision>
+        <origin xyz="-0.0303992 ${0.000422241*mirror} -0.0417" rpy="${1.5708*mirror} 1.5708 0" />
+        <geometry>
+          <mesh filename="package://pinkrab_description/meshes/servo.stl" />
+        </geometry>
+      </collision>
+      <visual>
+        <origin xyz="-0.0303992 ${0.000422241*mirror} -0.0417" rpy="${1.5708*mirror} 1.5708 0" />
+        <geometry>
+          <mesh filename="package://pinkrab_description/meshes/servo.stl" />
+        </geometry>
+        <material name="sts3215" />
+      </visual>
+    </link>
+    <joint name="${prefix}shoulder_servo_joint" type="fixed">
+      <parent link="${prefix}shoulder_link" />
+      <child link="${prefix}shoulder_servo_link" />
+      <origin xyz="0 0 0" rpy="0 0 0" />
+    </joint>
+    <link name="${prefix}upper_arm_link">
+      <inertial>
+        <origin xyz="-0.0898471 ${-0.00838224*mirror} 0.0184089" rpy="0 0 0" />
+        <mass value="0.103" />
+        <inertia ixx="4.08002e-05" ixy="${-1.97819e-05*mirror}" ixz="-4.03016e-08" iyy="0.000147318" iyz="${8.97326e-09*mirror}" izz="0.000142487" />
+      </inertial>
+      <visual>
+        <origin xyz="-0.065085 ${0.012*mirror} 0.0182" rpy="${3.14159*mirror} -0 ${-1.30911e-30*mirror}" />
+        <geometry>
+          <mesh filename="package://pinkrab_description/meshes/upper_arm_${hand}.stl" />
+        </geometry>
+        <material name="3d_printed" />
+      </visual>
+      <collision>
+        <origin xyz="-0.065085 ${0.012*mirror} 0.0182" rpy="${3.14159*mirror} -0 ${-1.30911e-30*mirror}" />
+        <geometry>
+          <mesh filename="package://pinkrab_description/meshes/upper_arm_${hand}.stl" />
+        </geometry>
+      </collision>
+    </link>
+
+    <!-- The servo upper arm carries. Its own link because it is its
+         own part - bought rather than printed - and because a viewer that colours
+         a link at a time can then tell the two apart. The mass stays with the
+         parent: the inertial there describes both, and splitting it wants the
+         servo on a scale rather than a number invented here. -->
+    <link name="${prefix}upper_arm_servo_link">
+      <collision>
+        <origin xyz="-0.11257 ${-0.0155*mirror} 0.0187" rpy="${-3.14159*mirror} -5.27356e-16 ${-1.5708*mirror}" />
+        <geometry>
+          <mesh filename="package://pinkrab_description/meshes/servo.stl" />
+        </geometry>
+      </collision>
+      <visual>
+        <origin xyz="-0.11257 ${-0.0155*mirror} 0.0187" rpy="${-3.14159*mirror} -5.27356e-16 ${-1.5708*mirror}" />
+        <geometry>
+          <mesh filename="package://pinkrab_description/meshes/servo.stl" />
+        </geometry>
+        <material name="sts3215" />
+      </visual>
+    </link>
+    <joint name="${prefix}upper_arm_servo_joint" type="fixed">
+      <parent link="${prefix}upper_arm_link" />
+      <child link="${prefix}upper_arm_servo_link" />
+      <origin xyz="0 0 0" rpy="0 0 0" />
+    </joint>
+    <link name="${prefix}lower_arm_link">
+      <visual>
+        <origin xyz="-0.014555 ${-0.000707*mirror} 0.0167" rpy="0 -1.57079633 ${-3.14159265*mirror}" />
+        <geometry>
+          <mesh filename="package://pinkrab_description/meshes/wrist_yaw_bracket_${hand}.stl" />
+        </geometry>
+        <material name="3d_printed" />
+      </visual>
+      <collision>
+        <origin xyz="-0.014555 ${-0.000707*mirror} 0.0167" rpy="0 -1.57079633 ${-3.14159265*mirror}" />
+        <geometry>
+          <mesh filename="package://pinkrab_description/meshes/wrist_yaw_bracket_${hand}.stl" />
+        </geometry>
+      </collision>
+      <inertial>
+        <origin xyz="-0.012 0.035 0.0167" rpy="0 0 0" />
+        <mass value="0.079" />
+        <inertia ixx="4e-05" ixy="0" ixz="0" iyy="2e-05" iyz="0" izz="4e-05" />
+      </inertial>
+    </link>
+
+    <!-- The servo lower arm carries. Its own link because it is its
+         own part - bought rather than printed - and because a viewer that colours
+         a link at a time can then tell the two apart. The mass stays with the
+         parent: the inertial there describes both, and splitting it wants the
+         servo on a scale rather than a number invented here. -->
+    <link name="${prefix}lower_arm_servo_link">
+      <visual>
+        <origin xyz="-0.064455 ${-0.000497*mirror} 0.01739" rpy="${1.57079633*mirror} -0 ${3.14159265*mirror}" />
+        <geometry>
+          <mesh filename="package://pinkrab_description/meshes/servo.stl" />
+        </geometry>
+        <material name="sts3215" />
+      </visual>
+      <collision>
+        <origin xyz="-0.064455 ${-0.000497*mirror} 0.01739" rpy="${1.57079633*mirror} -0 ${3.14159265*mirror}" />
+        <geometry>
+          <mesh filename="package://pinkrab_description/meshes/servo.stl" />
+        </geometry>
+      </collision>
+    </link>
+    <joint name="${prefix}lower_arm_servo_joint" type="fixed">
+      <parent link="${prefix}lower_arm_link" />
+      <child link="${prefix}lower_arm_servo_link" />
+      <origin xyz="0 0 0" rpy="0 0 0" />
+    </joint>
+    <link name="${prefix}wrist_link">
+      <inertial>
+        <origin xyz="-0.000103312 ${-0.0386143*mirror} 0.0281156" rpy="0 0 0" />
+        <mass value="0.079" />
+        <inertia ixx="3.68263e-05" ixy="${1.7893e-08*mirror}" ixz="-5.28128e-08" iyy="2.5391e-05" iyz="${3.6412e-06*mirror}" izz="2.1e-05" />
+      </inertial>
+      <visual>
+        <origin xyz="0 ${-0.028*mirror} 0.0181" rpy="${-1.5708*mirror} -1.5708 0" />
+        <geometry>
+          <mesh filename="package://pinkrab_description/meshes/wrist_${hand}.stl" />
+        </geometry>
+        <material name="3d_printed" />
+      </visual>
+      <collision>
+        <origin xyz="0 ${-0.028*mirror} 0.0181" rpy="${-1.5708*mirror} -1.5708 0" />
+        <geometry>
+          <mesh filename="package://pinkrab_description/meshes/wrist_${hand}.stl" />
+        </geometry>
+      </collision>
+    </link>
+
+    <!-- The servo wrist carries. Its own link because it is its
+         own part - bought rather than printed - and because a viewer that colours
+         a link at a time can then tell the two apart. The mass stays with the
+         parent: the inertial there describes both, and splitting it wants the
+         servo on a scale rather than a number invented here. -->
+    <link name="${prefix}wrist_servo_link">
+      <collision>
+        <origin xyz="8.32667e-17 ${-0.0424*mirror} 0.0306" rpy="${1.5708*mirror} 1.5708 0" />
+        <geometry>
+          <mesh filename="package://pinkrab_description/meshes/servo_no_horn.stl" />
+        </geometry>
+      </collision>
+      <visual>
+        <origin xyz="8.32667e-17 ${-0.0424*mirror} 0.0306" rpy="${1.5708*mirror} 1.5708 0" />
+        <geometry>
+          <mesh filename="package://pinkrab_description/meshes/servo_no_horn.stl" />
+        </geometry>
+        <material name="sts3215" />
+      </visual>
+    </link>
+    <joint name="${prefix}wrist_servo_joint" type="fixed">
+      <parent link="${prefix}wrist_link" />
+      <child link="${prefix}wrist_servo_link" />
+      <origin xyz="0 0 0" rpy="0 0 0" />
+    </joint>
+    <link name="${prefix}gripper_link">
+      <inertial>
+        <origin xyz="0.000213627 ${0.000245138*mirror} -0.025187" rpy="0 0 0" />
+        <mass value="0.087" />
+        <inertia ixx="2.75087e-05" ixy="${-3.35241e-07*mirror}" ixz="-5.7352e-06" iyy="4.33657e-05" iyz="${-5.17847e-08*mirror}" izz="3.45059e-05" />
+      </inertial>
+      <visual>
+        <origin xyz="8.32667e-17 ${-0.000218214*mirror} 0.000949706" rpy="${-3.14159*mirror} -5.55112e-17 0" />
+        <geometry>
+          <mesh filename="package://pinkrab_description/meshes/claw_${hand}.stl" />
+        </geometry>
+        <material name="3d_printed" />
+      </visual>
+      <collision>
+        <origin xyz="8.32667e-17 ${-0.000218214*mirror} 0.000949706" rpy="${-3.14159*mirror} -5.55112e-17 0" />
+        <geometry>
+          <mesh filename="package://pinkrab_description/meshes/claw_${hand}.stl" />
+        </geometry>
+      </collision>
+    </link>
+
+    <!-- The servo gripper carries. Its own link because it is its
+         own part - bought rather than printed - and because a viewer that colours
+         a link at a time can then tell the two apart. The mass stays with the
+         parent: the inertial there describes both, and splitting it wants the
+         servo on a scale rather than a number invented here. -->
+    <link name="${prefix}gripper_servo_link">
+      <collision>
+        <origin xyz="0.0077 ${0.0001*mirror} -0.0234" rpy="${-1.5708*mirror} -5.19179e-17 ${-1.66533e-16*mirror}" />
+        <geometry>
+          <mesh filename="package://pinkrab_description/meshes/servo.stl" />
+        </geometry>
+      </collision>
+      <visual>
+        <origin xyz="0.0077 ${0.0001*mirror} -0.0234" rpy="${-1.5708*mirror} -5.19179e-17 ${-1.66533e-16*mirror}" />
+        <geometry>
+          <mesh filename="package://pinkrab_description/meshes/servo.stl" />
+        </geometry>
+        <material name="sts3215" />
+      </visual>
+    </link>
+    <joint name="${prefix}gripper_servo_joint" type="fixed">
+      <parent link="${prefix}gripper_link" />
+      <child link="${prefix}gripper_servo_link" />
+      <origin xyz="0 0 0" rpy="0 0 0" />
+    </joint>
+
+    <!-- The UMI camera's bracket and the case the camera clicks into, bolted to
+         the claw's camera-side wall.
+         pinkrab_umi builds this part and the handheld carries the same one: what
+         the hand sees while a demonstration is collected and what the arm sees
+         while the policy runs are one viewpoint, which is the whole reason the
+         mount is shared rather than designed twice. config/camera.yaml is where
+         that pose is stated, and build_camera_bracket.py is what carries the
+         board to it.
+
+         The mesh is cut in the claw's own frame, so it is placed by the SAME
+         origin the claw is - measured back: it lands against the wall at y 24 mm
+         with the claw ending there. It is drawn and collided: the arm can meet
+         the desk with it, and a camera that is invisible to the scene is one the
+         gate would let an operator drive into the board. -->
+    <link name="${prefix}camera_bracket_link">
+      <visual>
+        <origin xyz="8.32667e-17 ${-0.000218214*mirror} 0.000949706" rpy="${-3.14159*mirror} -5.55112e-17 0" />
+        <geometry>
+          <mesh filename="package://pinkrab_description/meshes/camera_bracket_${hand}.stl" />
+        </geometry>
+        <material name="3d_printed" />
+      </visual>
+      <collision>
+        <origin xyz="8.32667e-17 ${-0.000218214*mirror} 0.000949706" rpy="${-3.14159*mirror} -5.55112e-17 0" />
+        <geometry>
+          <mesh filename="package://pinkrab_description/meshes/camera_bracket_${hand}.stl" />
+        </geometry>
+      </collision>
+    </link>
+    <joint name="${prefix}camera_bracket_joint" type="fixed">
+      <parent link="${prefix}gripper_link" />
+      <child link="${prefix}camera_bracket_link" />
+      <origin xyz="0 0 0" rpy="0 0 0" />
+    </joint>
+    <link name="${prefix}gripper_frame_link">
+      <origin xyz="0 0 0" rpy="0 -0 0" />
+      <inertial>
+        <origin xyz="0 0 0" rpy="0 0 0" />
+        <mass value="1e-9" />
+        <inertia ixx="0" ixy="0" ixz="0" iyy="0" iyz="0" izz="0" />
+      </inertial>
+    </link>
+    <link name="${prefix}jaw_link">
+      <inertial>
+        <origin xyz="-0.00157495 ${-0.0300244*mirror} 0.0192755" rpy="0 0 0" />
+        <mass value="0.012" />
+        <inertia ixx="6.61427e-06" ixy="${-3.19807e-07*mirror}" ixz="-5.90717e-09" iyy="1.89032e-06" iyz="${-1.09945e-07*mirror}" izz="5.28738e-06" />
+      </inertial>
+      <visual>
+        <origin xyz="-5.55112e-17 ${-5.55112e-17*mirror} 0.0189" rpy="${9.53145e-17*mirror} 6.93889e-18 ${1.24077e-24*mirror}" />
+        <geometry>
+          <mesh filename="package://pinkrab_description/meshes/jaw_${hand}.stl" />
+        </geometry>
+        <material name="3d_printed" />
+      </visual>
+      <collision>
+        <origin xyz="-5.55112e-17 ${-5.55112e-17*mirror} 0.0189" rpy="${9.53145e-17*mirror} 6.93889e-18 ${1.24077e-24*mirror}" />
+        <geometry>
+          <mesh filename="package://pinkrab_description/meshes/jaw_${hand}.stl" />
+        </geometry>
+      </collision>
+    </link>
+    <link name="${prefix}wrist_yaw_link">
+      <inertial>
+        <origin xyz="-0.012 0.035 0.0167" rpy="0 0 0" />
+        <mass value="0.079" />
+        <inertia ixx="4e-05" ixy="0" ixz="0" iyy="2e-05" iyz="0" izz="4e-05" />
+      </inertial>
+      <visual>
+        <origin xyz="-0.014555 ${-0.000707*mirror} 0.0167" rpy="0 -1.57079633 ${-3.14159265*mirror}" />
+        <geometry>
+          <mesh filename="package://pinkrab_description/meshes/wrist_yaw_bracket_${hand}.stl" />
+        </geometry>
+        <material name="3d_printed" />
+      </visual>
+      <collision>
+        <origin xyz="-0.014555 ${-0.000707*mirror} 0.0167" rpy="0 -1.57079633 ${-3.14159265*mirror}" />
+        <geometry>
+          <mesh filename="package://pinkrab_description/meshes/wrist_yaw_bracket_${hand}.stl" />
+        </geometry>
+      </collision>
+    </link>
+
+    <!-- The servo wrist yaw carries. Its own link because it is its
+         own part - bought rather than printed - and because a viewer that colours
+         a link at a time can then tell the two apart. The mass stays with the
+         parent: the inertial there describes both, and splitting it wants the
+         servo on a scale rather than a number invented here. -->
+    <link name="${prefix}wrist_yaw_servo_link">
+      <visual>
+        <origin xyz="-0.064455 ${-0.000497*mirror} 0.01739" rpy="${1.57079633*mirror} -0 ${3.14159265*mirror}" />
+        <geometry>
+          <mesh filename="package://pinkrab_description/meshes/servo.stl" />
+        </geometry>
+        <material name="sts3215" />
+      </visual>
+      <collision>
+        <origin xyz="-0.064455 ${-0.000497*mirror} 0.01739" rpy="${1.57079633*mirror} -0 ${3.14159265*mirror}" />
+        <geometry>
+          <mesh filename="package://pinkrab_description/meshes/servo.stl" />
+        </geometry>
+      </collision>
+    </link>
+    <joint name="${prefix}wrist_yaw_servo_joint" type="fixed">
+      <parent link="${prefix}wrist_yaw_link" />
+      <child link="${prefix}wrist_yaw_servo_link" />
+      <origin xyz="0 0 0" rpy="0 0 0" />
+    </joint>
+    <joint name="${prefix}gripper_frame_joint" type="fixed">
+      <origin xyz="-0.0079 ${-0.000218121*mirror} -0.1081274" rpy="0 3.14159 0" />
+      <parent link="${prefix}gripper_link" />
+      <child link="${prefix}gripper_frame_link" />
+      <axis xyz="0 0 0" />
+    </joint>
+    <joint name="${prefix}gripper" type="revolute">
+      <origin xyz="0.0202 ${0.0188*mirror} -0.0234" rpy="${1.5708*mirror} -5.24284e-08 ${-1.41553e-15*mirror}" />
+      <parent link="${prefix}gripper_link" />
+      <child link="${prefix}jaw_link" />
+      <axis xyz="0 0 1" />
+      <limit effort="10" velocity="10" lower="${gripper_lower}" upper="${gripper_upper}" />
+    </joint>
+    <joint name="${prefix}wrist_roll" type="revolute">
+      <origin xyz="5.55112e-17 ${-0.0611*mirror} 0.0181" rpy="${1.570866671*mirror} -1.518626168 ${3.14151957*mirror}" />
+      <parent link="${prefix}wrist_link" />
+      <child link="${prefix}gripper_link" />
+      <axis xyz="0 0 1" />
+      <limit effort="10" velocity="10" lower="${radians(-175)}" upper="${radians(175)}" />
+    </joint>
+    <joint name="${prefix}wrist_flex" type="revolute">
+      <origin xyz="-0.076955 ${0.018203*mirror} 0.01739" rpy="${wrist_flex_rpy}" />
+      <parent link="${prefix}lower_arm_link" />
+      <child link="${prefix}wrist_yaw_link" />
+      <axis xyz="0 0 1" />
+      <limit effort="10" velocity="10" lower="${wrist_flex_lower}" upper="${wrist_flex_upper}" />
+    </joint>
+    <joint name="${prefix}elbow_flex" type="revolute">
+      <origin xyz="-0.112570079 ${-0.028*mirror} 3.84545401e-17" rpy="${elbow_flex_rpy}" />
+      <parent link="${prefix}upper_arm_link" />
+      <child link="${prefix}lower_arm_link" />
+      <axis xyz="0 0 1" />
+      <limit effort="10" velocity="10" lower="${elbow_flex_lower}" upper="${elbow_flex_upper}" />
+    </joint>
+    <joint name="${prefix}shoulder_lift" type="revolute">
+      <origin xyz="-0.0303992 ${-0.0182778*mirror} -0.0542" rpy="${shoulder_lift_rpy}" />
+      <parent link="${prefix}shoulder_link" />
+      <child link="${prefix}upper_arm_link" />
+      <axis xyz="0 0 1" />
+      <limit effort="10" velocity="10" lower="${shoulder_lift_lower}" upper="${shoulder_lift_upper}" />
+    </joint>
+    <joint name="${prefix}shoulder_pan" type="revolute">
+      <origin xyz="0.1055 0 -0.0072" rpy="${shoulder_pan_rpy}" />
+      <parent link="${prefix}base_link" />
+      <child link="${prefix}shoulder_link" />
+      <axis xyz="0 0 1" />
+      <limit effort="10" velocity="10" lower="${shoulder_pan_lower}" upper="${shoulder_pan_upper}" />
+    </joint>
+    <joint name="${prefix}wrist_yaw" type="revolute">
+      <origin xyz="-0.076955 ${0.018203*mirror} 0.01739" rpy="${-1.57079633*mirror} -0.0872664626 ${3.14159265*mirror}" />
+      <parent link="${prefix}wrist_yaw_link" />
+      <child link="${prefix}wrist_link" />
+      <axis xyz="0 0 1" />
+      <limit effort="10" velocity="10" lower="${wrist_yaw_lower}" upper="${wrist_yaw_upper}" />
+    </joint>
+  </xacro:macro>
+
+  <xacro:if value="${'$(arg arm)' == ''}">
+    <xacro:property name="mount" value="${xacro.load_yaml('$(arg mount)')}"/>
+    <xacro:property name="wall" value="${mount['wall']}"/>
+    <xacro:property name="arms" value="${mount['arms']}"/>
+
+    <!-- The wall surface. x points out of it, so a positive x is away from the wall
+         and into the space the arms work in. world sits at the back of the board;
+         wall_link is its face, one board thickness out. -->
+    <link name="world"/>
+    <link name="wall_link"/>
+    <joint name="wall_joint" type="fixed">
+      <parent link="world"/>
+      <child link="wall_link"/>
+      <origin xyz="${wall['thickness']} 0 0" rpy="0 0 0"/>
+    </joint>
+
+    <!-- The mounting jig both arms share. Everything measured about this rig is
+         measured to here. -->
+    <link name="pinkrab_base_link"/>
+    <joint name="pinkrab_base_joint" type="fixed">
+      <parent link="wall_link"/>
+      <child link="pinkrab_base_link"/>
+      <origin xyz="${wall['standoff']} 0 ${wall['height']}" rpy="0 0 0"/>
+    </joint>
+
+    <!-- The two claws. Same macro, mirrored hands: everything below the wrist is
+         shared hardware, and only the mounting transform differs. -->
+    <xacro:pinkrab_arm prefix="left_" parent="pinkrab_base_link" hand="left">
+      <origin xyz="${arms['left']['xyz'][0]} ${arms['left']['xyz'][1]} ${arms['left']['xyz'][2]}"
+              rpy="${arms['left']['rpy'][0]} ${arms['left']['rpy'][1]} ${arms['left']['rpy'][2]}"/>
+    </xacro:pinkrab_arm>
+
+    <xacro:pinkrab_arm prefix="right_" parent="pinkrab_base_link" hand="right">
+      <origin xyz="${arms['right']['xyz'][0]} ${arms['right']['xyz'][1]} ${arms['right']['xyz'][2]}"
+              rpy="${arms['right']['rpy'][0]} ${arms['right']['rpy'][1]} ${arms['right']['rpy'][2]}"/>
+    </xacro:pinkrab_arm>
+  </xacro:if>
+
+  <!-- One arm on its own, unprefixed and rooted at a bare `mount` link, for
+       kinematics that asks about the shape of an arm rather than about the rig. -->
+  <xacro:unless value="${'$(arg arm)' == ''}">
+    <link name="mount"/>
+    <xacro:pinkrab_arm prefix="" parent="mount" hand="$(arg arm)">
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+    </xacro:pinkrab_arm>
+  </xacro:unless>
+
+</robot>

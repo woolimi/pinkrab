@@ -1,0 +1,47 @@
+# mount.yaml - how THIS Pinkrab is bolted up.
+#
+# Everything here is a measurement of one installation, not a property of the robot.
+# Move the jig, or build a second rig, and these change while nothing else does.
+# The description says what a Pinkrab is; this says where yours is.
+#
+# Frames:
+#
+#   world
+#    +- wall_link              the mounting surface, x pointing out of it
+#        +- pinkrab_base_link  the jig, shared by both arms
+#            +- left_base_link   -> ... -> left_gripper_frame_link
+#            +- right_base_link  -> ... -> right_gripper_frame_link
+#
+# Units: metres and radians. rpy is roll, pitch, yaw applied in that order.
+#
+# The surface here is a perforated board standing vertically on a desk rather than a
+# wall running to the floor, so world z = 0 is the desk and `wall_link` is the
+# board's face.
+
+wall:
+  # The board's thickness. world x = 0 is the BACK of the board, so its face - the
+  # plane the base plates sit on - stands this far out.
+  thickness: 0.018
+  # pinkrab_base_link above the desk - which is the height of the bases' top faces,
+  # because each arm's base_link sits level with its own base's top: the plate's top
+  # edge, the beam and the cap over the shoulder_pan servo are one flat face.
+  # Measure from the desk to that face.
+  height: 0.1800
+  # The plates sit straight on the board, so there is nothing to stand off.
+  standoff: 0.0
+
+arms:
+  # Each arm's base, relative to pinkrab_base_link. 480 mm between the two arms.
+  #
+  # An arm's base_link lies on the board face, straight behind its shoulder_pan axis
+  # and level with its base's top face, with the same axes as the world: x out of the
+  # board, y toward the left arm, z up - the shoulder_pan axis stands vertical,
+  # 105.5 mm out from the board. So an arm bolted flat to the board needs no rotation
+  # here. Set rpy only for a base turned on the board, or a board that is not upright.
+  left:
+    xyz: [0.0, 0.2400, 0.0]
+    rpy: [0.0, 0.0, 0.0]
+  right:
+    xyz: [0.0, -0.2400, 0.0]
+    rpy: [0.0, 0.0, 0.0]
+

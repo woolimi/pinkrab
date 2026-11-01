@@ -1,0 +1,87 @@
+---
+// Which joint is which on the arm: its name and servo id, drawn out to the side.
+import Stage3D from './Stage3D.astro';
+---
+
+<figure class="pk-names not-content">
+	<div class="wrap">
+		<Stage3D label="페그보드에 건 왼팔. 관절마다 선을 그어 관절 이름과 서보 id 1–7 을 표시했습니다." />
+		<svg class="leaders" aria-hidden="true"></svg>
+		<div class="labels" aria-hidden="true"></div>
+	</div>
+</figure>
+
+<script>
+	import { SOURCES, whenNear } from '../scripts/arm-figure';
+
+	const figure = document.querySelector<HTMLElement>('.pk-names');
+	if (figure) whenNear(figure, () => import('../scripts/names.js').then(({ showNames }) => showNames(figure, SOURCES)));
+</script>
+
+<style>
+	.pk-names {
+		margin: 1.5rem 0;
+	}
+	.wrap {
+		position: relative;
+	}
+	.leaders,
+	.labels {
+		position: absolute;
+		inset: 0;
+		width: 100%;
+		height: 100%;
+		pointer-events: none;
+	}
+	/* Not the arm's pink: a dark line on a light halo, and a light dot ringed dark. */
+	.leaders {
+		fill: none;
+		stroke: #1d1b2e;
+		stroke-width: 1.5;
+		stroke-linejoin: round;
+	}
+	.leaders :global(.halo) {
+		stroke: #fff;
+		stroke-width: 4;
+		stroke-opacity: 0.9;
+	}
+	.leaders :global(circle) {
+		fill: #fff;
+		stroke: #1d1b2e;
+		stroke-width: 2;
+	}
+	.labels :global(.label) {
+		position: absolute;
+		display: inline-flex;
+		align-items: center;
+		gap: 0.4rem;
+		transform: translateY(-50%);
+		padding: 0.15rem 0.5rem 0.15rem 0.2rem;
+		border: 1px solid var(--pk-line);
+		border-radius: 999px;
+		background: var(--pk-panel);
+		font-size: 0.8rem;
+		white-space: nowrap;
+	}
+	.labels :global(.label b) {
+		display: inline-grid;
+		place-items: center;
+		width: 1.3rem;
+		height: 1.3rem;
+		border-radius: 50%;
+		background: #1d1b2e;
+		color: #fff;
+		font-size: 0.75rem;
+	}
+	.labels :global(.label code) {
+		font-family: var(--sl-font-mono);
+		color: var(--pk-text);
+	}
+	.pk-names:not(.ready) .leaders,
+	.pk-names:not(.ready) .labels {
+		visibility: hidden;
+	}
+	.pk-names.no-robot {
+		display: none;
+	}
+</style>

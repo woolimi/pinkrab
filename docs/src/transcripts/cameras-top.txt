@@ -1,0 +1,4 @@
+  Naming the top camera by its USB socket - the gripper cameras may stay plugged in.
+
+  UNPLUG the top camera - then press Enter
+  ...

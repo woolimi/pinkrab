@@ -1,0 +1,56 @@
+---
+// The header's name: one claw, plump and round-tipped - its palm, the two
+// fingers around its mouth, its wrist - and the name set in Outfit, "Pink"
+// in the shell's pink.
+const { siteTitle, siteTitleHref } = Astro.locals.starlightRoute;
+---
+
+<a href={siteTitleHref} class="site-title" translate="no" aria-label={siteTitle}>
+	<svg class="claw" viewBox="0 0 64 64" aria-hidden="true">
+		<g fill="currentColor"><g stroke="currentColor" stroke-width="5.5" stroke-linejoin="round"><path d="M55.5 25.5A18.5 18.5 0 1 1 47.2 10.6A12.5 12.5 0 1 0 55.5 25.5Z"></path><ellipse cx="26" cy="38" rx="14" ry="12" transform="rotate(-45 26 38)"></ellipse></g><path d="M19.6 44.4L13.3 50.7" fill="none" stroke="currentColor" stroke-width="12" stroke-linecap="round"></path></g>
+	</svg>
+	<span class="name" aria-hidden="true"><span class="pink">Pink</span>rab</span>
+</a>
+
+<style>
+	.site-title {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		min-width: 0;
+		color: var(--pk-text);
+		text-decoration: none;
+		white-space: nowrap;
+	}
+	.claw {
+		flex: none;
+		width: 1.85rem;
+		height: 1.85rem;
+		color: var(--pk-shell);
+		transition: transform 0.2s ease;
+	}
+	/* Under the pointer the claw turns a little. */
+	.site-title:hover .claw {
+		transform: rotate(-10deg);
+	}
+	.site-title:focus-visible {
+		outline: 2px solid var(--pk-shell);
+		outline-offset: 2px;
+		border-radius: 0.4rem;
+	}
+	@media (prefers-reduced-motion: reduce) {
+		.claw {
+			transition: none;
+		}
+	}
+	.name {
+		font-family: 'Outfit', var(--sl-font);
+		font-size: 1.5rem;
+		font-weight: 700;
+		letter-spacing: -0.015em;
+		line-height: 1;
+	}
+	.pink {
+		color: var(--pk-shell);
+	}
+</style>

@@ -1,0 +1,100 @@
+---
+title: 부품 목록
+description: Pinkrab 한 벌에 드는 부품. Pinkrab 팔 두 개, Hermit 두 개, 카메라, 시연 수집 장비, 출력 부품, 호스트.
+---
+
+import ScrewTotals from '../../../components/ScrewTotals.astro';
+
+Pinkrab 한 벌은 페그보드에 거는 팔 두 개, 손에 드는 Hermit 두 개, 카메라 다섯 대, 시연을 수집하는 장비로 이루어집니다. 아래 수량은 모두 한 벌 기준입니다.
+
+## Pinkrab
+
+| 품목 | 수량 | 규격 |
+|---|---:|---|
+| Feetech STS3215 서보 | 14 | **12 V 모델**, 기어비 1/345 (C018) |
+| [Seeed XIAO bus servo 보드](https://www.aliexpress.com/item/1005008761261144.html) | 2 | USB |
+| 12 V 전원 어댑터 | 1 | 12 V 6 A |
+| [IKEA SKÅDIS 페그보드](https://www.ikea.com/kr/ko/p/skadis-pegboard-black-30534379/) | 1 | 패널 두께 5 mm |
+
+- 서보는 팔마다 7개(관절 6개 + gripper)이고, 버스 id 는 베이스부터 1–7 입니다.
+- 서보 보드는 팔마다 하나씩 베이스의 driver mount 에 끼우고, 전원 어댑터 하나로 두 팔을 함께 구동합니다.
+- 베이스는 **M4×20 접시머리 볼트**(DIN 7991)와 M4 너트로 보드에 고정합니다. 베이스 판 8 mm 와 패널 5 mm 를 지나고 남는 7 mm 에 너트가 물리며, 수량은 아래 [나사](#나사)에 있습니다.
+- 기본 설치는 두 팔 간격 480 mm, 베이스 윗면 높이 책상 위 180 mm 입니다. 페그보드나 책상에 맞춰 간격과 높이를 다르게 달아도 되고, 단 뒤에 그 치수를 **[설치 치수](../../use/setup/#설치-치수)에서 입력**하면 됩니다.
+
+## Hermit
+
+| 품목 | 수량 | 규격 |
+|---|---:|---|
+| Feetech STS3215 서보 | 2 | **7.4 V 모델**, 기어비 1/147 (C046) |
+| [Waveshare Bus Servo Adapter (A)](https://www.aliexpress.com/item/1005008842742388.html) | 2 | USB |
+| USB → DC5521 케이블 | 2 | 5 V |
+
+- 서보는 손마다 하나이고, 토크를 끈 채 jaw 가 열린 각도만 읽습니다. 손가락으로 jaw 를 여닫을 때 서보도 같이 돌아가므로 **기어비가 가장 낮아** 손으로 돌리기 쉬운 모델을 씁니다. SO-ARM 101 리더 암의 gripper 에 쓰는 서보와 같은 모델이고, 전원은 **5 V 로 충분**합니다.
+- 보드의 jumper 는 **`USB-Servo` 쪽에 끼웁니다**. `UART-Servo` 쪽이면 서보가 응답하지 않습니다.
+- 보드의 **USB-C 로는 서보에 전원이 가지 않아서**, 서보 전원은 USB → DC5521 케이블로 따로 넣습니다.
+
+## 카메라
+
+| 품목 | 수량 | 제원 |
+|---|---:|---|
+| 그리퍼 카메라 [ELP AR0234 어안](https://www.aliexpress.com/item/1005012124258479.html) | 4 | global shutter, 200° 어안 렌즈, USB 3, 1920×1200 |
+| 탑 카메라 [ELP AR0234 H120](https://www.aliexpress.com/item/1005012118711826.html) | 1 | global shutter, 가로 120° 무왜곡 렌즈, USB 3, 1920×1200 |
+| [카메라 헤드 스트랩](https://www.coupang.com/vp/products/8065902312?itemId=22683855266&vendorItemId=89719759206) | 1 | 탑 카메라를 머리에 다는 스트랩 |
+
+- 표의 모델은 Pinkrab 을 만들며 쓴 카메라이고, **그리퍼 카메라와 탑 카메라 모두 다른 카메라를 써도 됩니다**. OpenCV 로 열리는 UVC 카메라면 되고, 렌즈는 사양값 대신 개체마다 측정하므로 코드를 고칠 일이 없습니다. 지켜야 할 조건과 바꾼 뒤의 설정은 [카메라 교체](../cameras/)에 있습니다.
+- 그리퍼 카메라는 팔 손목에 2대, Hermit 에 2대를 답니다. policy 가 Hermit 카메라 영상으로 배우고 팔 카메라 영상을 보며 움직이므로 **네 대가 같은 모델**이어야 합니다.
+- 그리퍼 카메라를 링크한 상품으로 살 때는 옵션 「센서 크기」에서 **반드시 200° 를 고릅니다**. 모듈의 모서리 나사를 빼고, camera bracket 앞벽을 지날 만큼 **긴 M2 나사 4개**로 고정합니다.
+- 탑 카메라는 그리퍼 카메라와 같은 모듈에 무왜곡 렌즈를 단 것으로, 상품 페이지의 렌즈 옵션에서 **H120** 을 고릅니다. 헤드 스트랩으로 시연자 머리에 달아 작업 자리를 내려다보게 합니다.
+- global shutter 라 손이 움직여도 마커 모양이 비틀리지 않습니다. 탑 카메라의 노출은 UVC 로 10 ms 에 고정합니다.
+
+## 나사
+
+[Pinkrab 조립](../assemble-arm/)과 [Hermit 조립](../assemble-hermit/)의 단계마다 쓰는 나사를 모두 더한 수입니다.
+
+<ScrewTotals kind="arm" />
+
+<ScrewTotals kind="hermit" />
+
+## 수집 장비
+
+| 품목 | 수량 | 규격 |
+|---|---:|---|
+| [PCsensor USB 풋 스위치](https://www.coupang.com/vp/products/7603579915?itemId=20120214399&vendorItemId=96012264724) | 1 | 페달 3개, 키보드 HID |
+| ChArUco 보드 | 1 | A4 출력 |
+
+- 풋 스위치의 페달 키는 F16·F17·F19 입니다.
+- ChArUco 보드(9×6, 칸 30 mm, `DICT_5X5_100`)는 카메라 렌즈 보정에 씁니다. 출력 파일은 [lens_charuco_a4.pdf](../../print/lens_charuco_a4.pdf) 입니다.
+
+## 출력 부품
+
+출력 파일은 Bambu Lab P2S 와 PLA 기준으로 설정한 Bambu Studio 프로젝트(3MF)입니다.
+
+| 묶음 | 파일 (`src/` 아래) |
+|---|---|
+| Pinkrab | `pinkrab_description/print/pinkrab_arm_left.3mf`<br />`pinkrab_description/print/pinkrab_arm_right.3mf` |
+| Hermit | `pinkrab_umi/print/umi_handheld_parts_left.3mf`<br />`pinkrab_umi/print/umi_handheld_parts_right.3mf` |
+| 마커 | `pinkrab_umi/print/umi_handheld_solids.3mf`<br />`pinkrab_umi/print/umi_handheld_tiles.3mf`<br />`pinkrab_umi/print/umi_desk.3mf`<br />`pinkrab_umi/print/umi_desk_tiles.3mf` |
+
+- Pinkrab 프로젝트에는 팔 하나의 base, base servo mount, shoulder, shoulder servo mount, upper arm, wrist yaw bracket 2개, wrist, claw, jaw, camera bracket, driver mount 가 들어 있습니다.
+- Hermit 프로젝트에는 손 하나의 handheld body, jaw, peg, camera bracket, board mount, driver plate 가 들어 있습니다.
+- 마커는 Hermit 손잡이에 다는 UMI 마커 2개와 책상에 두는 테이블 마커 1개, 그 면에 끼우는 마커 타일입니다. 두 마커는 흰색 PLA 로, 타일은 흰색과 검은색 PLA 로 출력합니다.
+
+필라멘트 사용량과 출력 시간은 위 3MF 를 Bambu Studio 로 slice 한 값입니다. plate 마다의 값과 내려받을 파일은 [부품 출력](../print/)에 있습니다.
+
+| 묶음 | PLA | 출력 시간 |
+|---|---:|---:|
+| Pinkrab | 793 g | 27시간 8분 |
+| Hermit | 257 g | 9시간 33분 |
+| 마커 | 236 g | 7시간 7분 |
+
+## 호스트
+
+| 품목 | 규격 |
+|---|---|
+| PC | Ubuntu 24.04 (ROS 2 Jazzy) 또는 macOS |
+| 학습 GPU | NVIDIA 8 GB 이상 |
+| USB 허브 | USB 3, 포트 7개 이상 |
+
+- ACT 를 그리퍼 카메라 두 대의 영상으로 batch 8 학습하면 GPU 메모리를 6 GB 가까이 씁니다.
+- USB 허브에는 그리퍼 카메라 2대, 탑 카메라, 팔 보드 2개, Hermit 보드 2개를 연결합니다. 그리퍼 카메라는 시연을 수집할 때는 Hermit 카메라를, policy 를 실행할 때는 팔 카메라를 연결하므로 **한 번에 2대만** 꽂혀 있으면 됩니다. 탑 카메라는 늘 꽂아 둡니다.
+- 풋 스위치는 **PC 에 바로 연결**합니다.

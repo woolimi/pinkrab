@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pinkrab studio</title>
+  <link rel="icon" href="/static/claw.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/style.css">
+  <!-- OrbitControls and STLLoader import three by bare name. Mapping it here keeps
+       both vendor files byte-identical to what was downloaded, so their provenance
+       can still be checked. -->
+  <script type="importmap">
+    { "imports": { "three": "/static/three.module.min.js" } }
+  </script>
+</head>
+<body>
+  <!-- A dashboard: the robot, the top camera and the teleop controls, each in
+       a pane of its own, the panes split by draggable bars. dash.js lays them
+       out from a small tree - which pane sits where, split which way, how wide -
+       moves these three sections into it, and remembers what you dragged. The
+       sections are written out here rather than built, so each is readable as
+       the thing it is. -->
+  <div id="dash"></div>
+
+  <!-- The robot. Its head is like the other panes' heads: the name, which
+       robot this is, one line of what it last said, and the two poses always
+       wanted. The joints sit over the picture's top-right corner, always, on
+       no card: fourteen sliders in two columns, faint enough to see the desk
+       through and near enough to read. -->
+  <section class="pane" id="pane-robot">
+    <header class="pane-head">
+      <a class="back" href="/" title="back to the front page">&larr;</a>
+      <h2><svg class="claw" viewBox="0 0 64 64" aria-hidden="true"><use href="/static/claw.svg#claw"/></svg> Pinkrab</h2>
+      <!-- Which robot you are looking at. Chosen on the front page, and lit here
+           from what the server says, because a page that says REAL while driving
+           a simulation invites somebody to trust a picture, and one that says SIM
+           while two arms move on the desk invites the opposite. -->
+      <a id="which" href="/" title="choose sim or real on the front page" hidden></a>
+      <!-- With the real robot, what carries the page to it: the bridge, the
+           handheld loop and the foot switch, one dot each. -->
+      <div class="sidecars" id="sidecars" hidden></div>
+      <div class="tools">
+        <!-- The patch of the desk each arm can grasp on, in any arm shape,
+             laid on the desk. A switch rather than always on: laid down, it
+             covers the desk. -->
+        <label class="switch" title="show where each arm's tool can grasp on the desk">
+          <input id="workspace" type="checkbox">
+          <span class="knob"></span>
+          <span class="label">desk reach</span>
+        </label>
+        <!-- Two poses, kept apart. Ready is where the tool is picked up and
+             the page opens; home is the description's zero, where the arms park
+             and where the bringup takes them on the way down. With --real either
+             one takes the arms over from whatever was driving them and walks
+             them there, slowly. -->
+        <div class="segmented" role="group" aria-label="walk the arms to a pose">
+          <span class="label">pose</span>
+          <button id="ready">Ready</button>
+          <button id="home">Home</button>
+        </div>
+      </div>
+      <span class="pane-line" id="status">loading…</span>
+    </header>
+    <div class="pane-body">
+      <canvas id="view"></canvas>
+      <aside id="joints-overlay">
+        <span class="fold-note" id="joint-note"></span>
+        <div id="joints"></div>
+      </aside>
+    </div>
+  </section>
+
+  <!-- The hands: the operator, the two handhelds and the desk solid, drawn
+       in the robot's own frame and from the robot view's viewpoint. The
+       operator's chest stands on the board's face with the solid against it,
+       midway between the arms, its +Y the way the arms reach; each handheld
+       floats where the top camera sees it against the solid, carried
+       desk_reckoned_back_m further out as a take is placed - where the shelf
+       judges it and a policy run starts the arms. -->
+  <section class="pane" id="pane-hands">
+    <header class="pane-head">
+      <h2>Hands</h2>
+      <span class="pane-line" id="hands-line">loading…</span>
+    </header>
+    <div class="pane-body">
+      <canvas id="hands-view"></canvas>
+    </div>
+  </section>
+
+  <!-- The top camera: the picture pinkrab-umi's live server streams, with the
+       detection drawn on it, and the switch that starts and stops the process
+       above it. The picture alone - the solver's numbers and the take buttons
+       stay on pinkrab-umi's own page on its own port, and are not rebuilt here;
+       a second page reading the same camera would be a second answer to the
+       same question. -->
+  <section class="pane" id="pane-camera">
+    <header class="pane-head">
+      <span class="dot" id="live-dot"></span>
+      <h2>Top camera</h2>
+      <span class="pane-line" id="live-line"></span>
+      <button id="live-toggle">Start camera</button>
+    </header>
+    <div class="pane-body">
+      <img id="camera-frame" alt="what the top camera sees" hidden>
+      <!-- The camera's exposure and brightness, set while it runs (toplight.js). -->
+      <div id="camera-light" hidden></div>
+      <!-- The numbers, along the foot of the picture: how far the solid is, how
+           fast the pictures come, how many faces the solve stood on, and
+           whether the head is tracked and how far behind. -->
+      <div class="pane-status" id="camera-status" hidden></div>
+      <div class="empty" id="camera-off"><p>The camera is off. Start it to see what the top camera sees and how the marker solves.</p></div>
+    </div>
+  </section>
+
+  <!-- Driving the robot. Two ways to drive it and one way to stop it: the
+       torque and the mode are one act here, because an operator wants the arm
+       live or not live, and pairing them by hand was two buttons to get in the
+       wrong order. What it shows is what the gate published - the buttons ask,
+       they do not decide. The handheld needs no starting: its loop is a ROS
+       node that stays up, and which arm follows is decided by the solid in
+       frame, left ids 0-15 and right 16-31. -->
+  <section class="pane" id="pane-teleop">
+    <header class="pane-head">
+      <span class="dot" id="teleop-dot"></span>
+      <h2>Teleop</h2>
+      <span class="pane-line" id="teleop-line"></span>
+    </header>
+    <div class="pane-body">
+      <section id="gate" hidden>
+        <div class="row gate-row">
+          <span id="gate-state" class="chip">waiting</span>
+          <span id="gate-reason" class="gate-reason"></span>
+          <!-- Torque, as the driver reports it. Off lets the arms go limp and
+               stops whatever was driving them; on holds them where they are. -->
+          <label class="switch" id="torque-switch" title="torque off lets the arms fall - hold them first">
+            <input id="torque" type="checkbox">
+            <span class="knob"></span>
+            <span class="label">torque</span>
+          </label>
+        </div>
+        <!-- The three drivers are laid out as the foot switch on the floor is:
+             left, middle, right, on one plate, and the page's pedal and the
+             floor's ask the robot for the same thing. -->
+        <div class="row gate-row pedalboard">
+          <button id="drive-jog" class="pedal"><span class="num">1</span>jog the arms</button>
+          <span class="plate-mark">L</span>
+          <button id="drive-handheld" class="pedal"><span class="num">2</span>follow the handheld</button>
+          <span class="plate-mark">R</span>
+          <button id="gate-stop" class="pedal stop"><span class="num">3</span>stop</button>
+        </div>
+      </section>
+      <div class="empty" id="teleop-off"><p>Jog: drag the handles on the robot
+      and the arms follow. Handheld: pick one up and hold it where the top
+      camera can see the solid; the arm on that side follows it and the jaw
+      follows your fingers. Nothing moves until a mode is chosen here.</p></div>
+    </div>
+  </section>
+
+  <!-- What the two drag spheres do, said where the pointer already is. -->
+  <div id="tip" hidden></div>
+
+  <script type="module" src="/static/app.js"></script>
+</body>
+</html>

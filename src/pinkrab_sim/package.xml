@@ -1,0 +1,30 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>pinkrab_sim</name>
+  <version>0.1.0</version>
+  <description>
+    Pinkrab in simulation: the UMI loop run end to end in MuJoCo. A Hermit with
+    no arm behind it makes the takes, written in the recorder's own raw format;
+    the same convert turns them into a dataset, and the arm in the same scene
+    runs what was trained on it through the same rollout code. Everything the
+    pipeline does to a take is exercised against poses that are known exactly,
+    and a policy is judged before any arm is handed to it.
+
+    Built on pinkrab_mujoco's scene. The safety gate and the driver must not
+    depend on this package: it takes in a policy's training stack (torch,
+    lerobot), and they run on the robot's host.
+  </description>
+  <maintainer email="woolimi91@naver.com">Woolim Park</maintainer>
+  <license>Apache-2.0</license>
+
+  <exec_depend>pinkrab_core</exec_depend>
+  <exec_depend>pinkrab_description</exec_depend>
+  <exec_depend>pinkrab_mujoco</exec_depend>
+  <exec_depend>pinkrab_umi</exec_depend>
+  <exec_depend>pinkrab_policy</exec_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

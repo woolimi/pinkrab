@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" style="color:#e2488e">
+  <!-- One claw, plump and round-tipped: its palm, the two fingers around its
+       mouth, its wrist - the docs site's icon. Drawn in currentColor so the
+       page's accent paints it; the colour on the root is only for when this
+       file is shown on its own, as the tab icon. -->
+  <g id="claw" fill="currentColor"><g stroke="currentColor" stroke-width="5.5" stroke-linejoin="round"><path d="M55.5 25.5A18.5 18.5 0 1 1 47.2 10.6A12.5 12.5 0 1 0 55.5 25.5Z"/><ellipse cx="26" cy="38" rx="14" ry="12" transform="rotate(-45 26 38)"/></g><path d="M19.6 44.4L13.3 50.7" fill="none" stroke="currentColor" stroke-width="12" stroke-linecap="round"/></g>
+</svg>

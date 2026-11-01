@@ -1,0 +1,143 @@
+# camera.yaml - the rig's two camera models, and where the gripper camera sits
+# on the hand that carries it.
+#
+# The two profiles below are what the software opens each camera as and how it
+# reads its pictures: change cameras here, and nowhere else. A camera is any
+# UVC camera OpenCV can open; one of a profile is told from the others by its
+# USB ids when `usb` names them, and by the socket it is plugged into always
+# (`pinkrab-umi cameras`). Every unit's lens is measured, never taken from a
+# profile (`pinkrab-umi lens fit`), so a new camera is fitted before it is used.
+#
+# The gripper camera's pose is the other half of this file. One spec, two
+# mounts: the robot wrist and the handheld gripper both place their camera from
+# it, so footage collected in the hand and footage seen at deployment share one
+# viewpoint. Design a mount from anything else and the two drift apart - which
+# is the one failure this file exists to prevent. The handhelds and the arms
+# carry the same model for the same reason.
+#
+# Frame: the TCP (gripper_frame_link), the same frame teleop and kinematics use.
+#
+#   +z  the approach axis, out between the fingertips
+#    x  the jaw opening axis
+#    y  out of the opening plane
+#
+# The pose is written for a camera on the +y side of the right hand. The left hand
+# mirrors it: y and yaw flip sign together. Whether +y is the dorsal or palmar side
+# of the handheld is the grip's choice to make; the framing is symmetric, so the
+# mount side may flip as long as BOTH offset_out and yaw flip with it.
+#
+# Units: metres and radians. Angles carry a degree comment.
+
+gripper:
+  # ELP AR0234: 1/2.6" global shutter, fisheye M12, UVC over USB3. MJPEG, or
+  # the bus will not carry two at 30; 1920x1200 is the sensor's whole frame,
+  # every other mode a crop of it, some scaled.
+  model: ELP-AR0234-GS-fisheye
+  # Both report one serial number (the batch, not the unit), so the socket is
+  # what tells them apart; these ids only keep other cameras out of the list.
+  # null takes any USB camera.
+  usb: [0x32e4, 0x5234]
+  # Opened at 1280x960: the middle 1600x1200 of the sensor (`region`, x y w h
+  # in the sensor's pixels), scaled by 0.8 - measured against the whole frame
+  # 10-31. The window below lies inside it for every unit's lens axis, and
+  # the pictures weigh half what the whole frame's do. A lens is fitted on the
+  # whole frame (`sensor`) and its axis is said as a fraction of it.
+  sensor: [1920, 1200]
+  resolution: [1280, 960]
+  region: [160, 0, 1600, 1200]
+  fps: 30            # the same mode runs to 120
+  fourcc: MJPG
+  # How long after exposure a frame reaches this host, for laying the
+  # handheld's streams on the top camera's exposures: the module stamps
+  # nothing of its own.
+  latency_s: 0.012
+  # The window of the frame a dataset keeps, as fractions of its width and
+  # height, centred on where each unit's lens axis lands. A fisheye's image
+  # circle is wider than its sensor is tall and narrower than it is wide - this
+  # one's is some 1555 px across 1920 x 1200 - so the window drops the black
+  # corners; it stays 30 px short of the frame's height each way so an axis off
+  # the middle has room. [1.0, 1.0] keeps the whole frame, as for a lens whose
+  # picture fills it.
+  crop: [0.8125, 0.95]
+  # The listing says 200 degrees. Measured (`pinkrab-umi lens`), the image
+  # circle is about 1555 px across, wider than the 1200-row sensor, so the frame
+  # cuts it off above and below: straight down the picture ends 68 degrees off
+  # the axis, while sideways it reaches the circle, past the 85 degrees the
+  # board was seen to. What the camera must see - the fingertips, the jaw over
+  # its travel, whose tip runs 71.3 degrees off the axis fully open - lies
+  # inside that: a camera that sees less sideways loses the jaw. The bracket
+  # and the case the camera is screwed into take no part of the frame at all:
+  # below the fingers, the frame's bottom edge comes first.
+  fov_claim: 3.49    # ~200 degrees
+  vfov: 2.15         # ~123 degrees, nominal - what the design view previews
+
+top:
+  # ELP AR0234 again, with a 120-degree rectilinear M12 lens, worn on the
+  # operator's head looking down at the desk. It moves with the head, so
+  # every frame places itself on the desk solid it sees.
+  # Every marker pose is solved in its picture, so it wants its exposure held
+  # short (a marker smeared by a moving hand is a marker lost), a fixed focus,
+  # and global shutter where it can be had.
+  model: ELP-AR0234-GS-H120
+  usb: [0x32e4, 0x5234]
+  resolution: [1920, 1200]
+  # Asked for 60: asked for 30 at 1920x1200 the module sends about 21 a
+  # second, at any exposure, and asked for 60 about 50 (measured 10-31).
+  fps: 60
+  fourcc: MJPG
+  latency_s: 0.012
+  # What one count of the camera's exposure control is, in microseconds. UVC
+  # says 100; this module counts 1/60 ms - its brightness stops rising where
+  # the exposure fills the frame, near 500 counts at 120 fps and near 1000 at
+  # 60 (measured). A new camera's count is found the same way.
+  exposure_unit_us: 16.667
+  # The lens's horizontal field of view as its maker states it: only where a
+  # fit starts from, never a pose.
+  hfov_deg: 120.0
+
+pose:
+  # Out of the finger-opening plane. Past the claw body (y half-width 28 mm) with
+  # room for the camera's case; the wrist ring is what stops it growing smaller -
+  # the case's lower back edge passes the wrist's sweep - and the lever arm on
+  # the wrist servo what stops it growing bigger.
+  offset_out: 0.062
+  # Behind the TCP along -z, toward the wrist. The key's path to the bracket's
+  # M3 heads is what stops this shrinking: any further forward and the case's
+  # top edge stands in it. The wrist is what stops it growing.
+  offset_back: 0.078
+  # Pitch and yaw are not chosen, they are solved: the place the two fingertips
+  # meet when the jaw is closed, (-0.4, 0, 111.9) in the claw mesh's frame, sits
+  # on the image's vertical centre line a quarter of the way up from the bottom.
+  # The fingers take the bottom quarter of the frame and the scene ahead the
+  # rest. The angles below are solved for the OV2710 module the bracket was
+  # printed for: 34.3 degrees below the axis - equidistant, 490.8 px/rad, the
+  # image circle's centre on row 516, measured off its footage. On the AR0234s
+  # as measured they put the shut fingertips 23 % up from the bottom, some 20 px
+  # below the quarter line; solved for those lenses (`pinkrab-sim lens`) the
+  # pitch is 5.1 to 5.5 degrees and the yaw unchanged, which the frame does not
+  # need.
+  pitch: 0.0533      # 3.05 degrees
+  # The jaw stays in frame as it opens: its tip runs 34.3 degrees off-axis at
+  # closed, 62.0 at 66 and 71.3 at 80, full travel.
+  yaw: 0.0892        # 5.11 degrees
+  # Image roll: the opening axis is the image horizontal, up away from the claw
+  # body, so the fingers enter from the bottom of the frame.
+
+clearance:
+  # Measured against the real bracket and its case, not a box: the bracket
+  # carries the camera to this pose and keeps the wrist's swept envelope and the
+  # key's path to its own screws out of itself.
+  # Both numbers were then measured back off the meshes - wrist over +/-175
+  # degrees of roll, jaw over -10 to 105 degrees of aperture. The jaw number is
+  # at the -10 preload limit, where the jaw is pressed shut against the fixed
+  # blade; from 0 degrees on it is 2.9 mm. Re-measure when the pose or the
+  # bracket moves; a camera further back spends the wrist number first, and a
+  # wider screw pad the jaw's.
+  wrist_roll_min: 0.0041
+  jaw_min: 0.0019
+
+# Each unit's lens is measured, not specified: `pinkrab-umi lens fit` writes its
+# Kannala-Brandt fit to the workspace's lens.yaml. Simulation lists it there as
+# ar0234_<hand>, beside the equidistant 200 degree lens it renders by default;
+# data collection must not lean on that one - a lens this wide is only as good
+# as its measured coefficients.

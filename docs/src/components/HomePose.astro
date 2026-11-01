@@ -1,0 +1,24 @@
+---
+// The home pose an arm is held in when it is calibrated.
+import Stage3D from './Stage3D.astro';
+---
+
+<figure class="pk-home not-content">
+	<Stage3D label="페그보드에 건 두 팔의 home 자세. 위팔은 베이스 윗면 위로 젖혀 눕고, 아래팔은 위팔 위로 접혀 있습니다." />
+</figure>
+
+<script>
+	import { SOURCES, whenNear } from '../scripts/arm-figure';
+
+	const figure = document.querySelector<HTMLElement>('.pk-home');
+	if (figure) whenNear(figure, () => import('../scripts/home.js').then(({ showHome }) => showHome(figure, SOURCES)));
+</script>
+
+<style>
+	.pk-home {
+		margin: 1.5rem 0;
+	}
+	.pk-home.no-robot {
+		display: none;
+	}
+</style>

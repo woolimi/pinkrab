@@ -1,0 +1,85 @@
+---
+title: 교정 데이터
+description: policy 실행 중 Hermit 으로 넘겨받아 바로잡은 동작을 dataset 에 더하는 원리와 녹화 방식. DAgger 와 HG-DAgger, 실행 기록의 녹화, 판정, 다시 학습, 좋은 교정.
+---
+
+import Timeline from '../../../components/corrections/Timeline.astro';
+
+교정 데이터는 학습한 policy 를 실행하다가 사람이 두 팔을 넘겨받아 바로잡은 동작입니다. 시연과 같은 LeRobot dataset 의 에피소드가 되어 시연과 함께 다시 학습에 쓰입니다. 페달로 넘겨받고 돌려주는 조작은 [실행](../../use/run/#hermit-으로-교정)에, 넘겨받은 동안 팔이 Hermit 을 따라가는 방식은 [Hermit 과 teleoperation](../teleoperation/#교정에서의-차이)에 있습니다.
+
+## 교정이 필요한 이유
+
+시연 dataset 에는 사람이 작업을 잘 해낸 state 만 들어 있습니다. policy 는 실행에서 매 step 조금씩 틀리고, 한 번 틀리면 시연에 없던 state 에 놓여 더 크게 틀리기 쉽습니다([compounding error](../policies/#compounding-error-와-action-chunking)). 그런데 시연에는 이렇게 조금 벗어난 자리에서 어떻게 돌아와야 하는지 보여 주는 장면이 없어서, 시연을 늘려도 **사람이 잘 해낸 장면만 늘어납니다**.
+
+### DAgger
+
+DAgger(Dataset Aggregation, Ross et al., 2011)는 이 문제를 데이터로 풉니다. 학습한 policy 를 실행해 policy 가 실제로 가는 state 를 모으고, 그 state 마다 **전문가가 했을 동작을 정답으로** 붙여 dataset 에 더한 뒤 다시 학습하기를 되풀이합니다. 되풀이할수록 학습 dataset 의 state 분포가 policy 가 실행에서 만나는 분포를 따라가므로, 실행에서 만나는 state 에 대한 정답이 dataset 에 생깁니다.
+
+원래의 DAgger 는 policy 가 지나간 모든 state 에 전문가가 정답 동작을 붙입니다. 사람에게는 이것이 어렵습니다. 녹화된 영상을 보며 프레임마다 손이 어디로 몇 mm 움직였어야 하는지를 숫자로 적을 수는 없고, 팔을 직접 움직이지 않은 채 머릿속으로 낸 동작은 사람이 실제로 할 동작과도 다릅니다.
+
+### HG-DAgger
+
+HG-DAgger(Human-Gated DAgger, Kelly et al., 2019)는 사람이 policy 의 실행을 지켜보다가 **틀어질 때만 넘겨받아** 직접 조종하고, **넘겨받은 구간만** dataset 에 더합니다. 정답은 사람이 그 자리에서 실제로 움직인 동작이고, 넘겨받는 순간이 곧 policy 가 틀린 state 이므로 dataset 에 더해지는 것은 policy 가 실제로 벗어난 자리와 그 자리에서 돌아오는 법입니다. Pinkrab 의 교정은 이 방식입니다.
+
+policy 가 움직인 구간은 **dataset 에 넣지 않습니다**. policy 가 낸 동작은 정답 라벨이 아니라서, 잘 된 구간은 policy 가 이미 할 줄 아는 것이고 틀어진 구간을 넣으면 그 실수를 다시 배우게 됩니다.
+
+## 녹화 방식
+
+[Policy 페이지](../../use/run/#policy-페이지)에서 Drive 를 누르면, policy 를 시작하기 전에 녹화부터 시작해 실행 전체를 `kind` 가 `rollout` 인 원시 에피소드 하나로 남깁니다. 녹화를 시작할 수 없으면 **실행하지 않고**, 녹화는 Stop, 교정 중이 아닐 때의 페달 3, Disconnect 로 끝나며 저장됩니다. 넘겨받기, 따라가기, 세우기, 돌려주기는 녹화를 나누거나 멈추지 않고 읽기값에 붙는 표시만 바꿉니다.
+
+| 파일 | 내용 |
+|---|---|
+| `gripper_left.mp4`, `gripper_right.mp4` | 두 팔의 그리퍼 카메라 영상. 탑 카메라 영상은 저장하지 않습니다 |
+| `robot.jsonl` | 두 팔의 관절 읽기값, 초당 60번. 줄마다 관절각, gate 의 mode, `controller`, 교정 중이면 `correction` |
+| `events.jsonl` | 시작과 끝, 버린 교정의 `redo` |
+| `meta.json` | `kind: rollout`, 실행한 팔, checkpoint, 녹화할 때 팔의 description 지문, 카메라의 렌즈 중심, 지켜본 사람의 판정(`outcome`: `succeeded`·`failed`, 판정한 경우만) |
+
+`controller` 는 그 읽기값의 순간에 누가 팔을 움직였는지입니다.
+
+| `controller` | 그때의 상태 |
+|---|---|
+| `policy` | gate 가 policy mode 이고 policy 가 팔을 움직이는 중 |
+| `human` | gate 가 교정 mode 이고 팔이 Hermit 을 따라가는 중 |
+| `hold` | gate 가 교정 mode 이고 페달 1 로 팔을 세운 중 |
+| `none` | 그 밖. Ready 로 가는 동안, 버린 교정 뒤에 서 있거나 넘겨받은 자세로 되돌아가는 동안 |
+
+`correction` 은 몇 번째 넘겨받기인지입니다. 페달 2 로 넘겨받을 때마다 1 씩 늘고, gate 가 교정 mode 인 동안의 읽기값에만 붙습니다. 한 교정 안에서 페달 1 로 세웠다가 다시 따라가도 번호는 같습니다.
+
+<Timeline />
+
+교정을 잘못해 페달 3 으로 버리면, 팔은 Hermit 을 더 따라가지 않고 서고 `events.jsonl` 에 그 교정 번호의 `redo` 가 남습니다. 버린 교정의 읽기값은 **파일에서 지우지 않고**, Convert 가 `redo` 를 보고 뺍니다. 그다음 페달 2 를 밟으면 두 팔이 넘겨받았던 자세로 걸어 돌아가고, 돌아간 뒤에는 다음 번호의 교정으로 다시 세운 상태에서 시작합니다.
+
+실행 전체를 남기고 쓸 구간을 Convert 가 고르는 것은 **원시 기록을 다시 만들 수 없기** 때문입니다. 실행 기록은 policy 가 어디서 어떻게 틀렸는지 다시 보는 자료이기도 하고, 어느 구간을 dataset 에 넣을지의 규칙이 바뀌어도 같은 기록에서 dataset 을 다시 만들 수 있습니다.
+
+## dataset 이 되는 방식
+
+실행 기록은 시연과 같은 Convert 로 dataset 이 되지만, 영상과 동작을 Hermit 이 아니라 팔에서 계산합니다. 영상은 팔의 그리퍼 카메라이고 tool pose 는 관절각의 forward kinematics 이며, `controller` 가 `human` 이고 **버리지 않은 교정의 구간만** 남아 구간마다 dataset 의 에피소드 하나가 됩니다. state 도 실행 때 policy 에게 주는 것과 같은 계산이라, 교정 에피소드의 state 는 policy 가 실행에서 보는 state 와 같은 값입니다. 단계별 계산은 [dataset 변환](../convert/#실행-기록의-변환)에 있습니다.
+
+## 교정의 판정
+
+Collect 페이지의 Episodes 목록에는 실행 기록도 시연과 함께 나타나고, **판정은 시연과 다른 기준**으로 합니다. 교정은 마커가 아니라 관절 읽기값으로 계산하므로, 넘겨받은 동안 탑 카메라가 Hermit 의 마커 다면체를 놓쳐도 그 구간의 팔은 서 있었을 뿐이라 구멍이 아닙니다.
+
+| 판정 | 기준 |
+|---|---|
+| 떨어짐 | 관절을 읽지 못한 시간이 모두 합쳐 1/6 초를 넘음 |
+| 경고 | Hermit 이 팔을 움직인 시간이 1 초 미만, 교정하는 동안 어느 jaw 도 움직이지 않음 |
+
+교정이 거의 없는 실행 기록도 떨어뜨리지 않고 경고만 붙입니다. Convert 가 그 기록에서 가져갈 것은 없지만, policy 가 무엇을 했는지의 기록으로는 남겨 둘 만하기 때문입니다.
+
+## dataset 에 더하기와 다시 학습
+
+교정을 더하려면 시연과 실행 기록을 함께 Convert 해 **새 이름의 dataset** 을 만들고, 그 dataset 으로 새로 학습합니다([시연과 교정이 섞인 dataset](../convert/#시연과-교정이-섞인-dataset)).
+
+학습에서 교정 에피소드는 시연 에피소드와 구별되지 않고 **같은 무게로 쓰입니다**. LeRobot 의 학습은 에피소드의 종류를 보지 않으므로, dataset 안에서 교정이 차지하는 비중은 교정 에피소드의 수와 길이로 정해집니다.
+
+## 좋은 교정
+
+- **일찍 넘겨받기**: 팔이 틀어지기 시작할 때 넘겨받습니다. 이미 크게 벗어난 뒤의 장면은 다시 학습한 policy 도 좀처럼 다시 만나지 않아, 그 교정은 쓰일 일이 적습니다.
+- **짧게 돌려주기**: policy 가 이어받을 수 있는 자세까지만 바로잡고 돌려줍니다. 교정의 목적은 작업 전체를 다시 보여 주는 것이 아니라, 벗어난 자리에서 돌아오는 법을 보여 주는 것입니다.
+- **같은 방식으로 바로잡기**: 시연과 다른 방식으로 바로잡으면 같은 장면에서 동작이 갈려 multimodality 가 생깁니다. 시연에서 쓴 잡는 방식과 순서를 따릅니다.
+- **잘못한 교정은 버리기**: 바로잡다 실수했으면 페달 3 으로 버리고 다시 합니다. 버리지 않은 교정은 **모두 정답으로 학습됩니다**.
+
+## 참고 문헌
+
+- Ross, Gordon, Bagnell. *A Reduction of Imitation Learning and Structured Prediction to No-Regret Online Learning* (DAgger). AISTATS 2011.
+- Kelly, Sidrane, Driggs-Campbell, Kochenderfer. *HG-DAgger: Interactive Imitation Learning with Human Experts*. ICRA 2019.

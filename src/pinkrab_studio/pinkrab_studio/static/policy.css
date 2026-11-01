@@ -1,0 +1,275 @@
+/* The policy page: three steps down the left - the checkpoint, the rig
+ * connected, the run - and on the right what the policy is shown and what it
+ * answers, with the answer over time under both.
+ *
+ * The camera tiles, the metric cards and the pedalboard are the collect
+ * page's - handheld.css is loaded before this and owns them; the step heads
+ * are style.css's. What is here is this page's own layout, the controls and
+ * the traces. */
+
+body.policy main.home { max-width: 1440px; padding-top: 28px; }
+.policy-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0 28px; margin-bottom: 18px; }
+@media (min-width: 1100px) {
+  .policy-grid { grid-template-columns: 400px minmax(0, 1fr); align-items: start; }
+  body.policy #readout .metric { flex: 1 1 0; min-width: 0; }
+}
+.col.steps .step-section { padding: 16px 0; border-top: 1px solid var(--line); }
+.col.steps .step-section:first-child { border-top: 0; padding-top: 2px; }
+.col.look { min-width: 0; }
+.checkpoint-row { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
+.checkpoint-row select { flex: 1 1 auto; min-width: 0; }
+.checkpoint-row button.icon { flex: 0 0 auto; width: 38px; height: 38px; padding: 0; display: grid; place-items: center; border-radius: 7px; }
+.checkpoint-row button.icon svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linejoin: round; }
+.checkpoint-row button.icon:disabled { opacity: .45; cursor: default; }
+#step-run .poses { margin-top: 10px; }
+#step-run .poses[hidden] { display: none; }
+.step-head .state { display: inline-flex; align-items: center; gap: 6px; }
+#step-run .wants { margin-top: 10px; }
+#step-run .orders { margin-top: 12px; }
+#step-run .status, #step-run .note { margin-top: 8px; }
+
+/* --- the two pictures --------------------------------------------------- */
+
+body.policy .cam-grid {
+  display: grid; gap: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-areas: "left right";
+  margin-bottom: 14px;
+}
+#cam-gripper-left { grid-area: left; }
+#cam-gripper-right { grid-area: right; }
+/* A correction: the arms' cameras and, beside them, the top camera following the hands. */
+body.policy .cam-grid.with-head { grid-template-columns: repeat(3, minmax(0, 1fr)); grid-template-areas: "left right head"; }
+body.policy .cam-grid #cam-head { grid-area: head; }
+body.policy .cam-grid #cam-head img { object-fit: contain; background: #000; }
+/* A camera the checkpoint is shown, marked. */
+.cam.fed { border-color: var(--shell); }
+.cam.fed figcaption .name::after { content: "  ·  shown to the policy"; font-weight: 400; text-transform: none; letter-spacing: 0; }
+@media (max-width: 640px) {
+  body.policy .cam-grid, body.policy .cam-grid.with-head { grid-template-columns: 1fr; grid-template-areas: "left" "right" "head"; }
+}
+
+/* --- how it is asked, out of the way ----------------------------------- */
+
+dialog#settings-drawer {
+  width: min(760px, calc(100vw - 32px)); max-width: none; max-height: calc(100vh - 32px);
+  padding: 0; border: 1px solid var(--line-strong); border-radius: 14px; background: var(--panel); color: var(--text);
+  box-shadow: 0 20px 60px rgba(0,0,0,.35); display: flex; flex-direction: column; overflow: hidden;
+}
+dialog#settings-drawer:not([open]) { display: none; }
+dialog#settings-drawer::backdrop { background: rgba(44,26,37,.55); }
+dialog#settings-drawer header { display: flex; align-items: center; gap: 12px; padding: 10px 16px; border-bottom: 1px solid var(--line); }
+dialog#settings-drawer header h2 { flex: 1 1 auto; margin: 0; font-size: 14px; color: var(--shell-deep); }
+dialog#settings-drawer header button { flex: 0 0 auto; padding: 4px 12px; }
+.drawer-body { overflow-y: auto; padding: 14px 16px 18px; }
+.drawer-body .sources h3 { margin: 0 0 8px; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--dim); }
+.drawer-body .source-row { margin: 0; padding: 6px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
+.drawer-body .source-row figcaption { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.drawer-body .source-row select { flex: 0 0 auto; padding: 4px 8px; border: 1px solid var(--line-strong); border-radius: 6px; background: var(--paper); font: inherit; font-size: 12.5px; }
+.drawer-body .settings { margin-top: 18px; padding: 0; border: 0; background: none; }
+
+/* --- the controls ------------------------------------------------------- */
+
+.controls .field {
+  display: flex; flex-direction: column; gap: 5px;
+  font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--dim);
+}
+.controls .field.command { margin-top: 10px; }
+.controls .field[hidden] { display: none; }
+.controls select, .controls input[type="text"] {
+  font: inherit; font-size: 13px; color: var(--text); width: 100%;
+  background: var(--paper); border: 1px solid var(--line-strong); border-radius: 7px;
+  padding: 8px 10px; text-overflow: ellipsis;
+}
+.bar .segmented { margin-right: 4px; }
+
+/* The three orders. Drive is the page's one filled button - what it is for;
+ * Ask the same pink in outline, the look before it; Stop quiet until there is
+ * something to stop, then the deep pink the page says trouble in. */
+.controls .orders { flex: 1 0 100%; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.controls .order {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  padding: 8px 12px; border-radius: 8px; border-width: 1px;
+  transition: background .12s, border-color .12s, transform .06s;
+}
+.controls .order svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linejoin: round; }
+.controls .order b { font-size: 14px; font-weight: 700; }
+.controls .order:active:not(:disabled) { transform: translateY(1px); }
+.controls .order:disabled { opacity: .45; cursor: not-allowed; filter: saturate(.6); }
+.controls .order.ask { background: var(--panel); border-color: var(--shell); color: var(--shell-deep); }
+.controls .order.ask:hover:not(:disabled) { background: #fde8f1; }
+.controls .order.drive { background: var(--shell); border-color: var(--shell-deep); color: #fff; }
+.controls .order.drive svg { fill: currentColor; stroke: none; }
+.controls .order.drive:hover:not(:disabled) { background: var(--shell-deep); }
+.controls .order.halt { background: var(--panel); border-color: var(--line-strong); color: var(--dim); }
+.controls .order.halt svg { fill: currentColor; stroke: none; }
+.controls .order.halt:not(:disabled) { border-color: var(--shell-deep); color: var(--shell-deep); }
+.controls .order.halt:hover:not(:disabled) { background: var(--shell-deep); color: #fff; }
+/* The order under way stays lit with a pulse while the other waits greyed,
+ * and Stop comes up beside it. Idle, nothing is lit and Stop is greyed:
+ * there is nothing to stop. */
+.controls .order.active:disabled { opacity: 1; filter: none; cursor: default; }
+/* Waiting - not ready, or another order under way - is plain grey, so the
+ * one lit is the only colour among the orders. */
+.controls .order:disabled:not(.active) {
+  background: var(--panel); border-color: var(--line); color: var(--dim); opacity: 1; filter: none;
+}
+.controls .order.ask.active { background: var(--shell); border-color: var(--shell-deep); color: #fff; }
+.controls .order.drive.active { background: var(--shell-deep); border-color: var(--shell-deep); color: #fff; }
+.controls .order.active::after {
+  content: ''; width: 7px; height: 7px; border-radius: 50%; background: currentColor;
+  animation: order-pulse 1.2s ease-in-out infinite;
+}
+@keyframes order-pulse { 0%, 100% { opacity: .3; transform: scale(.8); } 50% { opacity: 1; transform: scale(1.15); } }
+@media (prefers-reduced-motion: reduce) { .controls .order.active::after { animation: none; } }
+.controls .order.halt:not(:disabled) { background: #fde8f1; }
+@media (max-width: 640px) { .controls .orders { grid-template-columns: 1fr; } }
+.controls .status { flex: 1 0 100%; margin: 0; font-size: 12px; color: var(--text); font-variant-numeric: tabular-nums; }
+.controls .status:empty { display: none; }
+/* The lines that say why nothing is happening, and what the checkpoint
+ * wants. Each takes the whole width so a long one does not push the buttons
+ * around. */
+.controls .note, .controls .wants { flex: 1 0 100%; margin: 0; font-size: 12px; }
+.controls .note { color: var(--shell-deep); }
+.controls .wants { color: var(--dim); }
+.controls .wants b { font-weight: 600; color: var(--text); }
+.controls .wants .missing { color: var(--shell-deep); }
+.controls .note:empty, .controls .wants:empty { display: none; }
+
+/* --- how it is asked ------------------------------------------------------ */
+
+.settings {
+  background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+  padding: 12px 14px; margin-bottom: 14px; font-size: 13px;
+}
+.settings[hidden] { display: none; }
+.settings h3 { margin: 0 0 8px; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--dim); display: flex; gap: 10px; flex-wrap: wrap; }
+.settings h3 .file { text-transform: none; letter-spacing: 0; font-weight: 400; }
+.settings details.common { margin-top: 14px; }
+.settings details.common > summary {
+  cursor: pointer; font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--dim);
+  padding: 4px 0; user-select: none;
+}
+.settings details.common > summary:hover { color: var(--text); }
+.settings details.common[open] > summary { margin-bottom: 4px; }
+.settings table[hidden] { display: none; }
+.settings table { width: 100%; border-collapse: collapse; }
+.settings th { text-align: left; font-size: 11px; font-weight: 600; color: var(--dim); padding: 4px 6px; border-bottom: 1px solid var(--line); }
+.settings td { padding: 6px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.settings td.name { white-space: nowrap; }
+.settings td b { font-weight: 600; font-family: ui-monospace, monospace; font-size: 12px; }
+/* What a setting does, behind a ? beside its name - the training page's ? -
+ * shown on hover or keyboard focus. */
+.settings .help {
+  position: relative; display: inline-flex; align-items: center; justify-content: center; vertical-align: 1px;
+  width: 16px; height: 16px; margin-left: 6px; border-radius: 50%; cursor: help;
+  font-size: 10px; font-weight: 700; line-height: 1; color: var(--dim);
+  border: 1px solid var(--line-strong); background: var(--panel);
+}
+.settings .help:hover, .settings .help:focus-visible { color: var(--text); background: var(--claw-soft); border-color: var(--claw); outline: none; }
+.settings .help .tip {
+  position: absolute; left: -8px; bottom: calc(100% + 8px); z-index: 10;
+  width: max-content; max-width: 300px; padding: 8px 10px; border-radius: 8px;
+  background: var(--text); color: var(--paper); box-shadow: 0 6px 18px rgba(0, 0, 0, .18);
+  font-size: 12px; font-weight: 400; line-height: 1.45; text-align: left; white-space: normal; cursor: default;
+  opacity: 0; visibility: hidden; pointer-events: none; transition: opacity .12s;
+}
+.settings .help:hover .tip, .settings .help:focus .tip { opacity: 1; visibility: visible; }
+.settings td.value { white-space: nowrap; }
+.settings td.value input[type=number], .settings td.value select {
+  width: 7em; font: inherit; padding: 4px 6px; border: 1px solid var(--line-strong); border-radius: 6px; background: var(--paper);
+}
+.settings td.value .off { margin-left: 8px; font-size: 12px; color: var(--dim); }
+.settings td.trained { color: var(--dim); font-variant-numeric: tabular-nums; }
+.settings tr.set td.value input, .settings tr.set td.value select { border-color: var(--shell); }
+.settings button.reset { flex: 0 0 auto; padding: 2px 8px; font-size: 11px; white-space: nowrap; }
+.settings .fixed, .settings .inuse { margin: 8px 0 0; font-size: 12px; color: var(--dim); }
+.settings .fixed:empty, .settings .inuse:empty { display: none; }
+.settings .save { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
+.settings .save button { flex: 0 0 auto; padding: 6px 18px; }
+.settings .save .note { font-size: 12px; color: var(--shell-deep); }
+
+/* --- the answer --------------------------------------------------------- */
+
+body.policy .cards { margin-bottom: 12px; }
+
+/* --- the traces --------------------------------------------------------- */
+
+.traces { display: flex; gap: 12px; align-items: stretch; }
+.traces[hidden] { display: none; }
+.traces .panel {
+  flex: 1 1 auto; min-width: 0;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px;
+}
+.traces .panel.narrow { flex: 0 0 auto; width: 300px; }
+.traces h3 {
+  margin: 0 0 10px; font-size: 11px; letter-spacing: .06em;
+  text-transform: uppercase; color: var(--dim); font-weight: 700;
+}
+.traces canvas { display: block; width: 100%; height: auto; }
+.traces .arm-label { margin: 6px 0 2px; font-size: 11px; font-weight: 700; color: var(--text); }
+.traces .arm-label:first-of-type { margin-top: 0; }
+
+.key { list-style: none; display: flex; flex-wrap: wrap; gap: 14px; margin: 8px 0 0; padding: 0; font-size: 11px; color: var(--dim); }
+.key li { display: inline-flex; align-items: center; gap: 5px; }
+.key i { width: 14px; height: 3px; border-radius: 2px; background: var(--dim); }
+.key .k-dx { background: #e2488e; }
+.key .k-dy { background: #1668c9; }
+.key .k-dz { background: #17a673; }
+.key .k-rot { background: #f5b301; }
+.key .k-grip { background: #7a4fd6; }
+.key .wild i { height: 10px; width: 3px; background: var(--shell-deep); opacity: .45; }
+/* The two arms' paths: a colour and a line each, so neither rests on the colour alone. */
+.key .k-left { background: #e2488e; }
+.key .k-right { background: repeating-linear-gradient(90deg, #1668c9 0 4px, transparent 4px 7px); }
+
+.traces .hint { margin: 8px 0 0; font-size: 11px; color: var(--dim); }
+
+/* --- what the rig is missing, in the dialog ------------------------------ */
+
+dialog#bringup ul.needs { list-style: none; margin: 0 0 8px; padding: 0; }
+dialog#bringup ul.needs li { margin: 0 0 10px; font-size: 13px; line-height: 1.45; }
+dialog#bringup ul.needs b { color: var(--shell-deep); }
+dialog#bringup ul.needs .why { color: var(--dim); }
+dialog#bringup ul.needs pre { margin: 4px 0 0; }
+
+/* The correction: the collect page's record panel and pedal board, under the cameras. */
+.policy .correct { margin: 16px 0 0; padding: 14px 0 0; border: 0; border-top: 1px solid var(--line); border-radius: 0; }
+.policy .correct h3 { margin: 0 0 10px; }
+.policy .correct .pedalboard { max-width: none; }
+.policy .correct .jaws { display: flex; align-items: center; gap: 10px; margin-top: 10px; font-size: 12px; color: var(--dim); }
+.policy .correct .jaws[hidden] { display: none; }
+.policy .correct .jaws + .jaws { margin-top: 6px; }
+.policy .correct .jaws .label { text-transform: uppercase; letter-spacing: .08em; font-weight: 700; }
+.policy .correct .jaws .gauge { position: relative; flex: 0 0 140px; height: 8px; border-radius: 4px; background: var(--line); }
+.policy .correct .jaws .gauge i { position: absolute; top: -3px; width: 4px; height: 14px; border-radius: 2px; margin-left: -2px; }
+.policy .correct .jaws .gauge .hand { background: var(--claw); }
+.policy .correct .jaws .gauge .arm { background: var(--shell); }
+.policy .correct .kept { margin-top: 8px; font-size: 12px; color: var(--dim); }
+.policy .correct .kept ul { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.policy .correct .kept li { display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  font-variant-numeric: tabular-nums; color: var(--text); }
+.policy .correct .kept button.drop { flex: 0 0 auto; padding: 0 8px; line-height: 20px; font-size: 14px; }
+.policy .correct .kept button.play { flex: 1 1 auto; padding: 0 8px; line-height: 20px; font: inherit;
+  font-variant-numeric: tabular-nums; text-align: left; background: none; border: 0; color: var(--text); cursor: pointer; }
+.policy .correct .kept button.play:hover { color: var(--shell-deep); }
+.policy .correct .kept .segmented.judge > button { padding: 0 9px; line-height: 20px; font-size: 11px; white-space: nowrap; }
+.policy .correct .kept .judged { flex: 0 0 auto; font-size: 11px; color: var(--dim); white-space: nowrap; }
+
+/* --- a kept correction, played back ------------------------------------ */
+dialog#corr-play {
+  width: min(960px, calc(100vw - 32px)); max-width: none; padding: 14px 16px;
+  border: 1px solid var(--line-strong); border-radius: 14px; background: var(--panel); color: var(--text);
+  box-shadow: 0 20px 60px rgba(0,0,0,.35);
+}
+dialog#corr-play::backdrop { background: rgba(44,26,37,.55); }
+dialog#corr-play h2 { margin: 0 0 10px; font-size: 14px; color: var(--shell-deep); font-variant-numeric: tabular-nums; }
+dialog#corr-play .choice { display: flex; justify-content: flex-end; margin-top: 10px; }
+dialog#corr-play .choice button { flex: 0 0 auto; padding: 4px 16px; }
+dialog#corr-play .clips { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 10px; }
+dialog#corr-play figure { margin: 0; }
+dialog#corr-play video { width: 100%; display: block; border-radius: 8px; background: #000; }
+dialog#corr-play figcaption { margin-top: 4px; font-size: 12px; color: var(--dim); }
+/* This sitting's runs and a correction's jaws: shown once there is any. */
+.policy .correct:not(:has(li, .jaws:not([hidden]), .note:not(:empty), #corr-count:not(:empty))) { display: none; }
+body.policy button.primary:disabled { opacity: .45; cursor: default; }

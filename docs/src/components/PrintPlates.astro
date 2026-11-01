@@ -1,0 +1,113 @@
+---
+// A print project's plates on the bed, drawn from the 3MF it offers for
+// download; with several projects, a tab each.
+import Download from './Download.astro';
+import Stage3D from './Stage3D.astro';
+
+interface Props {
+	/** The projects, by file name in public/print, and what each tab says. */
+	files: { file: string; label: string }[];
+	/** What the picture shows, for a screen reader. */
+	label: string;
+}
+const { files, label } = Astro.props;
+const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+const href = (file: string) => `${base}/print/${file}`;
+---
+
+<figure class="pk-print not-content">
+	<div class="bar">
+		{files.length > 1 && (
+			<div class="files" role="group" aria-label="프로젝트">
+				{files.map(({ file, label }, i) => (
+					<button type="button" data-file={href(file)} aria-pressed={i === 0 ? 'true' : 'false'}>{label}</button>
+				))}
+			</div>
+		)}
+		{files.length === 1 && <span hidden data-file={href(files[0].file)}></span>}
+		<div class="plates" role="group" aria-label="plate"></div>
+		<span class="get"><Download file={files[0].file} /></span>
+	</div>
+	<Stage3D label={label} />
+</figure>
+
+<script>
+	import { whenNear } from '../scripts/arm-figure';
+
+	for (const figure of document.querySelectorAll<HTMLElement>('.pk-print')) {
+		whenNear(figure, () => import('../scripts/printview.js').then(({ showPrint }) => showPrint(figure)));
+	}
+</script>
+
+<style>
+	.pk-print {
+		margin: 1.5rem 0;
+	}
+	.bar {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 0.5rem 1rem;
+		margin-bottom: 0.6rem;
+	}
+	.files,
+	.plates {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.35rem;
+	}
+	.files button,
+	.plates :global(button) {
+		min-height: 36px;
+		padding: 0.3rem 0.8rem;
+		border: 1px solid var(--pk-line);
+		border-radius: 999px;
+		background: var(--pk-panel);
+		color: var(--pk-text);
+		font: inherit;
+		font-size: 0.85rem;
+		cursor: pointer;
+		transition: border-color 150ms ease, background-color 150ms ease;
+	}
+	.files button:hover,
+	.plates :global(button:hover) {
+		border-color: var(--pk-shell);
+	}
+	.files button[aria-pressed='true'],
+	.plates :global(button[aria-pressed='true']) {
+		border-color: var(--pk-shell);
+		background: var(--sl-color-accent-low);
+		font-weight: 600;
+	}
+	.files button:focus-visible,
+	.plates :global(button:focus-visible) {
+		outline: 2px solid var(--sl-color-accent);
+		outline-offset: 2px;
+	}
+	.files {
+		padding-right: 1rem;
+		border-right: 1px solid var(--pk-line);
+	}
+	.get {
+		margin-left: auto;
+	}
+
+	/* The picture only says something once a project is on the bed; the link always works. */
+	.pk-print:not(.ready) .plates,
+	.pk-print.loading :global(canvas) {
+		opacity: 0.4;
+	}
+	.pk-print.no-robot :global(.stage),
+	.pk-print.no-robot .plates {
+		display: none;
+	}
+	@media (max-width: 560px) {
+		.files {
+			padding-right: 0;
+			border-right: 0;
+		}
+		.get {
+			margin-left: 0;
+		}
+	}
+</style>

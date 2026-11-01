@@ -1,0 +1,4 @@
+  Naming the follower arm cameras by their USB sockets, one plug at a time.
+
+  UNPLUG both follower arm cameras - then press Enter
+  ...

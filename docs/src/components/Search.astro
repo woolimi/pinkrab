@@ -1,0 +1,23 @@
+---
+// Starlight hides the header's social links behind the menu on a phone; the
+// GitHub link stays beside the search there, as it is on a wide screen.
+import Default from '@astrojs/starlight/components/Search.astro';
+import SocialIcons from 'virtual:starlight/components/SocialIcons';
+---
+
+<Default />
+<span class="pk-social"><SocialIcons /></span>
+
+<style>
+	.pk-social {
+		display: flex;
+		align-items: center;
+		gap: 1rem;
+		margin-inline-start: 0.75rem;
+	}
+	@media (min-width: 50rem) {
+		.pk-social {
+			display: none;
+		}
+	}
+</style>

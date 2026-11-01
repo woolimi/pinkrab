@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pinkrab UMI live</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>&#129408;</text></svg>">
+  <style>
+    /* Dark and monospace, because the picture is a camera frame and the panel
+       is a column of numbers that change every fifth of a second. A pale page
+       beside a dark frame makes the frame unreadable, and a proportional font
+       makes a settling standard deviation jump sideways as its digits change. */
+    :root {
+      --ink: #e6e1d8;
+      --dim: #7d776c;
+      --panel: #201e1b;
+      --line: #37332d;
+      --good: #4ec36a;
+      --bad: #e0533a;
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0; min-height: 100%;
+      background: #161513; color: var(--ink);
+      font: 13px/1.6 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+    main { display: flex; flex-direction: column; gap: 16px; padding: 16px; }
+    #view { width: 100%; }
+    #view img { width: 100%; max-height: 62vh; object-fit: contain; display: block;
+                border: 1px solid var(--line); border-radius: 6px; background: #000; }
+    #cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
+    .card {
+      background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px;
+    }
+    .card h1 { margin-bottom: 8px; }
+    h1 { font-size: 13px; font-weight: 600; margin: 0 0 10px; letter-spacing: 0.04em; }
+    h2 {
+      font-size: 11px; font-weight: 600; color: var(--dim);
+      margin: 16px 0 6px; letter-spacing: 0.08em; text-transform: uppercase;
+    }
+    .row { display: flex; justify-content: space-between; gap: 12px; }
+    .row span:first-child { color: var(--dim); }
+    .row span:last-child { text-align: right; white-space: nowrap; }
+    .big { font-size: 22px; line-height: 1.3; }
+    .dim { color: var(--dim); }
+    .good { color: var(--good); }
+    .bad { color: var(--bad); }
+    button {
+      width: 100%; margin-top: 14px; padding: 8px;
+      font: inherit; color: var(--ink); background: #2c2925;
+      border: 1px solid var(--line); border-radius: 6px; cursor: pointer;
+    }
+    button:hover { background: #3a3630; }
+    button.recording { background: #4a2620; border-color: #6b3328; }
+    input {
+      width: 100%; margin-top: 8px; padding: 6px 8px;
+      font: inherit; color: var(--ink); background: #161513;
+      border: 1px solid var(--line); border-radius: 6px;
+    }
+    input::placeholder { color: var(--dim); }
+    #verdict { margin-top: 10px; padding-top: 4px; border-top: 1px solid var(--line); }
+    footer { color: var(--dim); padding: 0 16px 16px; }
+  </style>
+</head>
+<body>
+<main>
+  <section id="view">
+    <img src="/stream" alt="the top camera">
+  </section>
+
+  <section id="cards">
+    <div class="card">
+      <h1>left hand</h1>
+      <div class="row"><span>distance</span><span class="big" id="hand-left">-</span></div>
+      <div class="row"><span>faces</span><span id="hand-left-detail">-</span></div>
+    </div>
+    <div class="card">
+      <h1>right hand</h1>
+      <div class="row"><span>distance</span><span class="big" id="hand-right">-</span></div>
+      <div class="row"><span>faces</span><span id="hand-right-detail">-</span></div>
+    </div>
+    <div class="card">
+      <h1>desk</h1>
+      <div class="row"><span>world</span><span class="big" id="desk">-</span></div>
+      <div class="row"><span>rate</span><span id="fps">-</span></div>
+    </div>
+
+    <div class="card">
+      <h1>window</h1>
+      <div class="row"><span>on</span><span id="solve">-</span></div>
+      <div class="row"><span>distance</span><span id="distance">-</span></div>
+      <div class="row"><span>faces</span><span id="faces">-</span></div>
+      <div class="row"><span>reprojection</span><span id="reproj">-</span></div>
+      <div class="row"><span>samples</span><span id="samples">-</span></div>
+      <div class="row"><span>std x</span><span id="stdx">-</span></div>
+      <div class="row"><span>std y</span><span id="stdy">-</span></div>
+      <div class="row"><span>std z</span><span id="stdz">-</span></div>
+      <div class="row"><span>rotation mean</span><span id="rotmean">-</span></div>
+      <div class="row"><span>rotation max</span><span id="rotmax">-</span></div>
+      <button id="reset">reset window</button>
+    </div>
+    <div class="card">
+      <h1>seen since reset</h1>
+      <div id="counts"></div>
+    </div>
+    <div class="card">
+      <h1>closure take</h1>
+      <div class="row"><span>state</span><span id="takestate">idle</span></div>
+      <input id="takename" placeholder="session name (blank: timestamp)">
+      <button id="take">start take</button>
+      <div id="verdict" hidden>
+        <div class="row"><span>closure</span><span id="vclosure">-</span></div>
+        <div class="row"><span>rotation</span><span id="vrot">-</span></div>
+        <div class="row"><span>coverage</span><span id="vcover">-</span></div>
+        <div class="row"><span>verdict</span><span class="big" id="vpass">-</span></div>
+        <div class="row"><span>session</span><span id="vname">-</span></div>
+      </div>
+    </div>
+  </section>
+</main>
+<footer id="reason"></footer>
+
+<script>
+  const el = id => document.getElementById(id);
+
+  const fixed = (v, digits, unit) =>
+    (v === null || v === undefined || Number.isNaN(v)) ? "-" : v.toFixed(digits) + " " + unit;
+
+  function counts(stats) {
+    const box = el("counts");
+    const ids = Object.keys(stats.counts).sort((a, b) => a - b);
+    box.innerHTML = "";
+    for (const id of ids) {
+      const row = document.createElement("div");
+      row.className = "row";
+      const name = document.createElement("span");
+      name.textContent = id + "  " + (stats.labels[id] || "");
+      const seen = document.createElement("span");
+      seen.textContent = stats.counts[id];
+      if (stats.counts[id] === 0) seen.className = "dim";
+      row.append(name, seen);
+      box.append(row);
+    }
+  }
+
+  async function poll() {
+    let stats;
+    try {
+      stats = await (await fetch("/stats")).json();
+    } catch {
+      el("solve").textContent = "no server";
+      return;
+    }
+    const last = stats.last;
+
+    el("distance").textContent =
+      last.distance_mm === null ? "-" : (last.distance_mm / 10).toFixed(1) + " cm";
+
+    // Both hands, each on its own: what it reads and how far off it is.
+    for (const hand of ["left", "right"]) {
+      const solid = (last.solids || {})["handheld_" + hand];
+      const line = el("hand-" + hand), detail = el("hand-" + hand + "-detail");
+      if (!solid) { line.textContent = "-"; line.className = "big"; detail.textContent = "-"; continue; }
+      if (solid.solved) {
+        line.textContent = (solid.distance_mm / 10).toFixed(1) + " cm";
+        line.className = "big good";
+        detail.textContent = solid.faces.length + " faces  " + fixed(solid.reproj_px, 2, "px");
+      } else {
+        line.textContent = solid.faces.length || solid.reason ? "rejected" : "not in view";
+        line.className = "big bad";
+        detail.textContent = solid.reason || "-";
+      }
+    }
+    const solve = el("solve");
+    solve.textContent = (last.solid || "-") + (last.solved ? "" : "  (no solid)");
+    solve.className = last.solved ? "good" : "bad";
+
+    el("faces").textContent = last.faces.length
+      ? last.faces.map(id => stats.labels[id] || id).join(" ")
+      : "-";
+    // The world: whether this frame placed the camera against the desk dome.
+    const world = last.world;
+    const desk = el("desk");
+    if (!world) { desk.textContent = "-"; desk.className = ""; }
+    else if (world.tracking) {
+      desk.textContent = world.faces + " faces  " + fixed(world.reproj_px, 2, "px");
+      desk.className = "good";
+    } else { desk.textContent = world.reason || "not in view"; desk.className = "bad"; }
+    el("reproj").textContent = fixed(last.reproj_px, 2, "px");
+    el("reproj").className = last.reproj_px > stats.max_reproj_px ? "bad" : "";
+    el("fps").textContent = fixed(stats.fps, 1, "fps");
+
+    el("samples").textContent = stats.window.samples + " / " + stats.window.size;
+    el("stdx").textContent = fixed(stats.window.std_mm.x, 3, "mm");
+    el("stdy").textContent = fixed(stats.window.std_mm.y, 3, "mm");
+    el("stdz").textContent = fixed(stats.window.std_mm.z, 3, "mm");
+    el("rotmean").textContent = fixed(stats.window.rotation.mean_deg, 3, "deg");
+    el("rotmax").textContent = fixed(stats.window.rotation.max_deg, 3, "deg");
+
+    counts(stats);
+    take(stats);
+    el("reason").textContent = last.reason || "";
+  }
+
+  function take(stats) {
+    const state = el("takestate");
+    const button = el("take");
+    if (!stats.take.available) {
+      state.textContent = "unavailable";
+      button.disabled = true;
+    } else if (stats.take.active) {
+      state.textContent = "recording  " + stats.take.seconds.toFixed(0) + " s  "
+        + stats.take.frames + " f";
+      state.className = "bad";
+      button.textContent = "stop take";
+      button.className = "recording";
+    } else {
+      state.textContent = "idle";
+      state.className = "dim";
+      button.textContent = "start take";
+      button.className = "";
+    }
+
+    const v = stats.verdict;
+    el("verdict").hidden = !v;
+    if (!v) return;
+    const t = stats.thresholds;
+    const gate = (elem, text, ok) => {
+      elem.textContent = text;
+      elem.className = ok ? "good" : "bad";
+    };
+    gate(el("vclosure"),
+         fixed(v.closure.translation_mm, 2, "mm  (gate " + t.translation_mm + ")"),
+         v.closure.translation_mm !== null && v.closure.translation_mm <= t.translation_mm);
+    gate(el("vrot"),
+         fixed(v.closure.rotation_deg, 2, "deg  (gate " + t.rotation_deg + ")"),
+         v.closure.rotation_deg !== null && v.closure.rotation_deg <= t.rotation_deg);
+    gate(el("vcover"),
+         (v.coverage.fraction * 100).toFixed(1) + " %  (" + v.coverage.composed
+           + "/" + v.coverage.frames + ", gate " + (t.coverage * 100) + "%)",
+         v.coverage.passes);
+    gate(el("vpass"), v.passes ? "PASS" : "FAIL", v.passes);
+    el("vname").textContent = v.name;
+  }
+
+  el("take").onclick = async () => {
+    const active = el("take").textContent === "stop take";
+    const url = active ? "/take/stop" : "/take/start";
+    const body = active ? "{}" : JSON.stringify({ name: el("takename").value.trim() || null });
+    const reply = await (await fetch(url, { method: "POST", body })).json();
+    if (reply.error) el("reason").textContent = reply.error;
+    poll();
+  };
+
+  el("reset").onclick = async () => {
+    await fetch("/reset", { method: "POST" });
+    poll();
+  };
+
+  poll();
+  setInterval(poll, 200);
+</script>
+</body>
+</html>

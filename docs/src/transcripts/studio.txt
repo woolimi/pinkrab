@@ -1,0 +1,9 @@
+  Pinkrab studio  ->  http://localhost:8730/
+  reachable from: this machine only
+  physics: scene.xml - 14 joints, 14 actuators, 500 Hz
+  arms:    simulation until the page says otherwise - the robot switch
+           on the page starts the bridge and the handheld loop beside
+           it (the pedal starts with this server); the rig's own side
+           is not started here:
+           ros2 launch pinkrab_bringup robot.launch.py
+  Ctrl+C to stop.

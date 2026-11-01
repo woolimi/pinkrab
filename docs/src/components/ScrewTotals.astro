@@ -1,0 +1,23 @@
+---
+// Every screw an assembly takes, by size, read off its steps: for one, and
+// for the pair the robot has.
+import { ARM, HERMIT, screwTotals } from '../data/assembly';
+
+interface Props {
+	kind: 'arm' | 'hermit';
+}
+const { kind } = Astro.props;
+const totals = screwTotals(kind === 'arm' ? ARM : HERMIT);
+const one = kind === 'arm' ? 'Pinkrab 팔 하나' : 'Hermit 하나';
+---
+
+<table>
+	<thead>
+		<tr><th>나사</th><th>{one}</th><th>한 벌(2개)</th></tr>
+	</thead>
+	<tbody>
+		{totals.map(({ size, count }) => (
+			<tr><td><code>{size}</code></td><td>{count}</td><td>{count * 2}</td></tr>
+		))}
+	</tbody>
+</table>

@@ -1,0 +1,37 @@
+---
+// A short screen recording: plays on its own, silent and looping, as a moving
+// picture in the text rather than a video to sit through.
+interface Props {
+	src: string;
+	/** What it shows, for whoever cannot see it. */
+	label: string;
+	caption?: string;
+}
+
+const { src, label, caption } = Astro.props;
+---
+
+<figure class="pk-clip not-content">
+	<video src={src} aria-label={label} autoplay muted loop playsinline preload="metadata"></video>
+	{caption ? <figcaption>{caption}</figcaption> : null}
+</figure>
+
+<style>
+	.pk-clip {
+		margin: 1.5rem 0;
+	}
+	video {
+		display: block;
+		width: 100%;
+		height: auto;
+		border: 1px solid var(--pk-line);
+		border-radius: 0.75rem;
+		background: var(--pk-panel);
+	}
+	figcaption {
+		margin-top: 0.4rem;
+		font-size: 0.85rem;
+		color: var(--pk-dim);
+		text-align: center;
+	}
+</style>

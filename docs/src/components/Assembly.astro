@@ -1,0 +1,240 @@
+---
+// An assembly walked through step by step: the 3D picture of the parts as
+// they go on, the side to build, and the steps - each one's parts named for
+// the script, its words in the list, which is all a reader without the
+// picture gets and all it needs.
+import Stage3D from './Stage3D.astro';
+import { ARM, HERMIT } from '../data/assembly';
+
+interface Props {
+	kind: 'arm' | 'hermit';
+}
+const { kind } = Astro.props;
+const steps = kind === 'arm' ? ARM : HERMIT;
+const sides = kind === 'arm' ? ['왼팔', '오른팔'] : ['왼손', '오른손'];
+const label = kind === 'arm'
+	? 'Pinkrab 팔의 조립 단계. 단계마다 새로 붙는 부품이 끼워지는 방향으로 분홍색으로 들어오고, 이어서 그 단계의 나사가 돌아 들어갑니다. 앞서 붙인 부품은 옅게 보입니다.'
+	: 'Hermit 의 조립 단계. 단계마다 새로 붙는 부품이 끼워지는 방향으로 분홍색으로 들어오고, 이어서 그 단계의 나사가 돌아 들어갑니다. UMI 마커는 출력한 대로 흰색입니다. 앞서 붙인 부품은 옅게 보입니다.';
+---
+
+<figure class="pk-assembly not-content" data-kind={kind} tabindex="-1">
+	<div class="sides" role="group" aria-label="조립할 쪽">
+		<button type="button" data-side="left" aria-pressed="true">{sides[0]}</button>
+		<button type="button" data-side="right" aria-pressed="false">{sides[1]}</button>
+	</div>
+	<Stage3D label={label} zoom />
+	<div class="controls">
+		<button type="button" class="prev" aria-label="이전 단계">
+			<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"></path></svg>
+		</button>
+		<span class="count" aria-live="polite">1 / {steps.length}</span>
+		<button type="button" class="next" aria-label="다음 단계">
+			<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7"></path></svg>
+		</button>
+	</div>
+	<ol class="steps">
+		{steps.map((step, i) => (
+			<li data-parts={step.parts.join(' ')} class={i === 0 ? 'on' : ''}>
+				<button type="button" class="title" disabled><span class="n">{i + 1}</span>{step.title}</button>
+				<div class="body">
+					<p>{step.text}</p>
+					{step.screws?.length ? (
+						<ul class="screws" aria-label="나사">
+							{step.screws.map((s) => (
+								<li><b>{s.size}</b><span class="x">×{s.count}</span><span class="what">{s.what}</span></li>
+							))}
+						</ul>
+					) : null}
+				</div>
+			</li>
+		))}
+	</ol>
+</figure>
+
+<script>
+	import { SOURCES, whenNear } from '../scripts/arm-figure';
+
+	for (const figure of document.querySelectorAll<HTMLElement>('.pk-assembly')) {
+		whenNear(figure, () => import('../scripts/assembly.js').then(({ showAssembly }) =>
+			showAssembly(figure, SOURCES, figure.dataset.kind)));
+	}
+</script>
+
+<style>
+	.pk-assembly {
+		margin: 1.5rem 0;
+		outline: none;
+	}
+	.sides {
+		display: inline-flex;
+		gap: 0.25rem;
+		margin-bottom: 0.6rem;
+		padding: 0.25rem;
+		border: 1px solid var(--pk-line);
+		border-radius: 999px;
+		background: var(--pk-panel);
+	}
+	.sides button {
+		min-height: 2.25rem;
+		padding: 0 1rem;
+		border: 0;
+		border-radius: 999px;
+		background: transparent;
+		color: var(--pk-dim);
+		font: inherit;
+		font-weight: 600;
+		cursor: pointer;
+	}
+	.sides button[aria-pressed='true'] {
+		background: var(--pk-shell);
+		color: #fff;
+	}
+	.controls {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		gap: 1rem;
+		margin: 0.75rem 0;
+	}
+	.controls button {
+		display: grid;
+		place-items: center;
+		width: 2.75rem;
+		height: 2.75rem;
+		border: 1px solid var(--pk-line);
+		border-radius: 999px;
+		background: #fff;
+		color: var(--pk-text);
+		cursor: pointer;
+		transition: background-color 0.15s ease, border-color 0.15s ease;
+	}
+	.controls button:hover:not(:disabled) {
+		border-color: #e3b6ca;
+		background: var(--sl-color-accent-low);
+	}
+	.controls button:disabled {
+		opacity: 0.4;
+		cursor: default;
+	}
+	.controls svg {
+		width: 1.25rem;
+		height: 1.25rem;
+		fill: none;
+		stroke: currentColor;
+		stroke-width: 2;
+		stroke-linecap: round;
+		stroke-linejoin: round;
+	}
+	.count {
+		min-width: 4.5rem;
+		text-align: center;
+		font-variant-numeric: tabular-nums;
+		font-weight: 600;
+		color: var(--pk-text);
+	}
+	button:focus-visible {
+		outline: 2px solid var(--pk-shell);
+		outline-offset: 2px;
+	}
+	.steps {
+		margin: 0;
+		padding: 0;
+		list-style: none;
+		border: 1px solid var(--pk-line);
+		border-radius: 0.75rem;
+		background: var(--pk-panel);
+		overflow: hidden;
+	}
+	.steps > li + li {
+		border-top: 1px solid var(--pk-line);
+	}
+	.steps .title {
+		display: flex;
+		align-items: center;
+		gap: 0.6rem;
+		width: 100%;
+		min-height: 2.75rem;
+		padding: 0.5rem 0.9rem;
+		border: 0;
+		background: transparent;
+		color: var(--pk-text);
+		font: inherit;
+		font-weight: 600;
+		text-align: left;
+		cursor: pointer;
+	}
+	/* Before the picture, or without it, a title is only a title. */
+	.steps .title:disabled {
+		cursor: default;
+	}
+	.steps .n {
+		display: inline-grid;
+		flex: none;
+		place-items: center;
+		width: 1.6rem;
+		height: 1.6rem;
+		border-radius: 50%;
+		background: var(--sl-color-gray-5);
+		color: var(--pk-text);
+		font-size: 0.8rem;
+		font-variant-numeric: tabular-nums;
+	}
+	.steps li.on {
+		background: #fff;
+	}
+	.steps li.on .n {
+		background: var(--pk-shell);
+		color: #fff;
+	}
+	.steps .body {
+		padding: 0 0.9rem 0.8rem 3.1rem;
+	}
+	.steps p {
+		margin: 0;
+		color: var(--pk-text);
+		line-height: 1.6;
+	}
+	.screws {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.4rem;
+		margin: 0.6rem 0 0;
+		padding: 0;
+		list-style: none;
+	}
+	.screws li {
+		display: inline-flex;
+		align-items: baseline;
+		gap: 0.35rem;
+		padding: 0.2rem 0.6rem;
+		border: 1px solid #e3b6ca;
+		border-radius: 999px;
+		background: #fdf0f6;
+		font-size: 0.85rem;
+	}
+	.screws b {
+		font-family: var(--sl-font-mono);
+		font-weight: 600;
+		color: #8a2453;
+	}
+	.screws .x {
+		font-weight: 700;
+		color: var(--pk-text);
+	}
+	.screws .what {
+		color: var(--pk-dim);
+	}
+	/* With the picture there, only the step in hand says its words. */
+	.pk-assembly.ready .steps > li:not(.on) .body {
+		display: none;
+	}
+	.pk-assembly:not(.ready) .controls,
+	.pk-assembly:not(.ready) .sides {
+		visibility: hidden;
+	}
+	.pk-assembly.no-robot .controls,
+	.pk-assembly.no-robot .sides,
+	.pk-assembly.no-robot :global(.stage) {
+		display: none;
+	}
+</style>

@@ -1,0 +1,28 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>pinkrab_umi</name>
+  <version>0.1.0</version>
+  <description>
+    Top-camera tracking for the handheld UMI gripper: print an ArUco marker solid,
+    record the top camera over the desk, recover the solid's pose per frame
+    against the desk solid, and get the gripper's path in the world.
+  </description>
+  <maintainer email="woolimi91@naver.com">Woolim Park</maintainer>
+  <license>Apache-2.0</license>
+
+  <!-- OpenCV is not declared here. It comes from requirements/umi.in, because
+       the machine that records is not necessarily a ROS machine. -->
+
+  <!-- The workspace root (~/pinkrab) is pinkrab_core's to define, and sessions
+       land under it. -->
+  <exec_depend>pinkrab_core</exec_depend>
+
+  <test_depend>ament_copyright</test_depend>
+  <test_depend>ament_flake8</test_depend>
+  <test_depend>ament_pep257</test_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

@@ -1,0 +1,16 @@
+Servo check (read-only)
+
+  left  tty.usbmodem5B7B0139551
+    joint          id  ok   position   temp
+    shoulder_pan    1  [32m/[0m        2047    31C
+    shoulder_lift   2  [32m/[0m        3235    31C
+    elbow_flex      3  [32m/[0m         928    30C
+    wrist_flex      4  [32m/[0m        2128    30C
+    wrist_yaw       5  [32m/[0m        3112    34C
+    wrist_roll      6  [32m/[0m        1999    32C
+    gripper         7  [32m/[0m        2609    33C
+
+  right  tty.usbmodem5B790834521
+    ...
+
+[32m/[0m All servos responded on 2 arm(s).

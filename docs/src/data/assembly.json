@@ -1,0 +1,258 @@
+{
+	"pose": {
+		"shoulder_pan": 0,
+		"shoulder_lift": -175,
+		"elbow_flex": 120
+	},
+	"arm": [
+		{
+			"title": "베이스",
+			"text": "베이스를 페그보드에 대고 볼트를 앞에서 끼워 뒤에서 너트로 조입니다. 베이스 판 8 mm 와 패널 5 mm 를 지나고 남은 7 mm 에 너트가 물립니다. 두 팔의 간격은 480 mm, 베이스 윗면 높이는 책상 위 180 mm 입니다.",
+			"parts": [
+				"base_link:base"
+			]
+		},
+		{
+			"title": "shoulder_pan 서보 (id 1)",
+			"text": "서보 양쪽에 혼을 끼우고 윗면 혼만 가운데 나사로 고정합니다. 서보를 base servo mount 에 넣어 위아래 2개씩 나사로 고정하고, mount 를 베이스에 얹어 양옆을 고정합니다.",
+			"parts": [
+				"base_servo_link:servo",
+				"base_link:base_servo_mount"
+			]
+		},
+		{
+			"title": "서보 보드",
+			"text": "Seeed XIAO bus servo 보드를 driver mount 에 나사 4개로 고정한 뒤, driver mount 를 베이스와 서보 홀더 사이의 홈에 옆에서 밀어 넣습니다. 나사 머리가 mount 에 묻히므로 밀어 넣기 전에 보드부터 답니다.",
+			"parts": [
+				"base_link:driver_mount"
+			],
+			"board": {
+				"servo": {
+					"axis": [
+						0,
+						0,
+						-1
+					]
+				},
+				"left": {
+					"usb": "out"
+				},
+				"right": {
+					"usb": "in"
+				},
+				"xiao": true
+			}
+		},
+		{
+			"title": "어깨",
+			"text": "어깨를 id 1 서보의 위아래 혼에 맞춰 얹고, 혼마다 나사 4개로 고정합니다. 어깨에는 shoulder servo mount 가 함께 붙습니다.",
+			"parts": [
+				"shoulder_link:shoulder",
+				"shoulder_link:shoulder_servo_mount"
+			]
+		},
+		{
+			"title": "shoulder_lift 서보 (id 2)",
+			"text": "혼을 끼우고 윗면 혼을 고정한 뒤, 서보를 shoulder servo mount 에 넣어 고정합니다.",
+			"parts": [
+				"shoulder_servo_link:servo"
+			]
+		},
+		{
+			"title": "위팔",
+			"text": "위팔(upper_arm)을 id 2 서보의 양쪽 혼에 고정합니다.",
+			"parts": [
+				"upper_arm_link:upper_arm"
+			]
+		},
+		{
+			"title": "elbow_flex 서보 (id 3)",
+			"text": "혼을 끼우고 윗면 혼을 고정한 뒤, 서보를 위팔 끝의 서보 자리에 넣어 고정합니다.",
+			"parts": [
+				"upper_arm_servo_link:servo"
+			]
+		},
+		{
+			"title": "아래팔",
+			"text": "아래팔이 되는 wrist_yaw_bracket 을 id 3 서보의 양쪽 혼에 고정합니다.",
+			"parts": [
+				"lower_arm_link:wrist_yaw_bracket"
+			]
+		},
+		{
+			"title": "wrist_flex 서보 (id 4)",
+			"text": "혼을 끼우고 윗면 혼을 고정한 뒤, 서보를 아래팔의 서보 자리에 넣어 고정합니다.",
+			"parts": [
+				"lower_arm_servo_link:servo"
+			]
+		},
+		{
+			"title": "wrist_yaw 브래킷",
+			"text": "두 번째 wrist_yaw_bracket 을 id 4 서보의 양쪽 혼에 고정합니다.",
+			"parts": [
+				"wrist_yaw_link:wrist_yaw_bracket"
+			]
+		},
+		{
+			"title": "wrist_yaw 서보 (id 5)",
+			"text": "혼을 끼우고 윗면 혼을 고정한 뒤, 서보를 브래킷의 서보 자리에 넣어 고정합니다.",
+			"parts": [
+				"wrist_yaw_servo_link:servo"
+			]
+		},
+		{
+			"title": "손목",
+			"text": "손목(wrist)을 id 5 서보의 양쪽 혼에 고정합니다.",
+			"parts": [
+				"wrist_link:wrist"
+			]
+		},
+		{
+			"title": "wrist_roll 서보 (id 6)",
+			"text": "이 서보는 혼을 윗면 하나만 끼워 가운데 나사로 고정합니다. 서보를 손목의 서보 자리에 넣어 앞쪽 나사 2개로 고정하고, 혼이 claw 가 붙을 바깥쪽을 향하게 합니다.",
+			"parts": [
+				"wrist_servo_link:servo_no_horn"
+			]
+		},
+		{
+			"title": "claw",
+			"text": "claw 바닥을 id 6 서보의 혼에 대고, claw 안쪽 서보 자리에서 나사 4개를 조입니다. 다음 단계의 서보가 이 자리를 덮으므로 나사부터 조입니다.",
+			"parts": [
+				"gripper_link:claw"
+			]
+		},
+		{
+			"title": "카메라 너트",
+			"text": "claw 옆면 안쪽의 너트 자리 2곳에 M3 육각 너트를 하나씩 끼워 넣습니다. 다음 단계에서 서보가 들어가면 너트 자리가 막히므로 서보보다 먼저 넣습니다. 이 너트가 카메라 bracket 을 고정하는 M3×10 볼트를 받습니다.",
+			"parts": [],
+			"nuts": "camera_bracket_link:camera_bracket"
+		},
+		{
+			"title": "gripper 서보 (id 7)",
+			"text": "혼을 끼우고 윗면 혼을 고정한 뒤, 서보를 claw 의 서보 자리에 넣어 양옆 2개씩 나사로 고정합니다.",
+			"parts": [
+				"gripper_servo_link:servo"
+			]
+		},
+		{
+			"title": "jaw",
+			"text": "jaw 를 id 7 서보의 혼에 혼 나사로 고정합니다. 나사 머리 자리는 jaw 양면에 있습니다. jaw 를 손으로 돌려 claw 와 맞물려 닫히는지 확인합니다.",
+			"parts": [
+				"jaw_link:jaw"
+			],
+			"horn": "M2.5"
+		},
+		{
+			"title": "카메라",
+			"text": "AR0234 카메라 모듈의 네 모서리 나사를 빼고, camera bracket 의 앞벽을 지날 만큼 긴 M2 나사 4개로 모듈을 bracket 에 고정합니다. bracket 은 claw 옆면에 볼트 2개로 고정하고, 볼트는 앞서 claw 안에 넣어 둔 너트에 조입니다.",
+			"parts": [
+				"camera_bracket_link:camera_bracket"
+			],
+			"screws": [
+				{
+					"size": "M2",
+					"count": 4,
+					"what": "카메라 모듈 → bracket"
+				}
+			]
+		},
+		{
+			"title": "케이블",
+			"text": "서보를 베이스부터 손끝까지 서보 케이블로 차례로 잇고, 첫 서보를 서보 보드에 연결합니다. 서보 보드에는 12 V 전원을, 보드와 카메라는 USB 로 호스트에 연결합니다. 서보 id 는 조립한 뒤 준비 단계에서 하나씩 씁니다.",
+			"parts": []
+		}
+	],
+	"hermit": [
+		{
+			"title": "body",
+			"text": "handheld body 가 Hermit 의 뼈대입니다. 고정된 날 아래로 검지가 들어가는 터널이 있고, 위에는 UMI 마커를 거는 지붕이 있습니다.",
+			"parts": [
+				"body"
+			]
+		},
+		{
+			"title": "카메라 너트",
+			"text": "body 의 claw 옆면 안쪽의 너트 자리 2곳에 M3 육각 너트를 하나씩 끼워 넣습니다. 다음 단계에서 서보가 들어가면 너트 자리가 막히므로 서보보다 먼저 넣습니다. 이 너트가 카메라 bracket 을 고정하는 M3×10 볼트를 받습니다.",
+			"parts": [],
+			"nuts": "camera_bracket"
+		},
+		{
+			"title": "서보",
+			"text": "STS3215 7.4 V 서보에 혼을 끼우고 윗면 혼을 가운데 나사로 고정한 뒤, 서보를 body 의 서보 자리에 넣어 양옆 2개씩 나사로 고정합니다. 이 서보는 모터로 돌지 않고 jaw 가 열린 각도만 읽습니다.",
+			"parts": [
+				"servo"
+			]
+		},
+		{
+			"title": "jaw",
+			"text": "handheld jaw 를 서보의 혼에 혼 나사로 고정합니다. 나사 머리 자리는 jaw 양면에 있습니다. 엄지가 jaw 아래 터널에 들어가 검지와 함께 jaw 를 여닫습니다.",
+			"parts": [
+				"jaw"
+			],
+			"horn": "M2.5"
+		},
+		{
+			"title": "카메라",
+			"text": "AR0234 카메라 모듈의 네 모서리 나사를 빼고, camera bracket 의 앞벽을 지날 만큼 긴 M2 나사 4개로 모듈을 bracket 에 고정합니다. bracket 은 body 의 claw 옆면에 볼트 2개로 고정하고, 볼트는 앞서 넣어 둔 너트에 조입니다. 카메라는 팔과 같은 자리에 붙습니다.",
+			"parts": [
+				"camera_bracket"
+			],
+			"screws": [
+				{
+					"size": "M2",
+					"count": 4,
+					"what": "카메라 모듈 → bracket"
+				}
+			]
+		},
+		{
+			"title": "peg",
+			"text": "peg 를 body 지붕 아래의 사각 구멍에 끝까지 끼웁니다. 나사 없이 꽉 끼워지며, 사각이라 UMI 마커가 peg 위에서 돌지 않습니다.",
+			"parts": [
+				"peg"
+			]
+		},
+		{
+			"title": "UMI 마커",
+			"text": "UMI 마커의 면마다 마커 타일을 끼운 뒤, 마커의 소켓을 peg 에 끝까지 끼웁니다. 빈 면 하나가 지붕에 닿고, 다른 빈 면 하나가 손 쪽을 향합니다.",
+			"parts": [
+				"solid"
+			]
+		},
+		{
+			"title": "board mount",
+			"text": "board mount 를 UMI 마커의 손 쪽 빈 면에 끼웁니다.",
+			"parts": [
+				"board_mount"
+			]
+		},
+		{
+			"title": "driver plate 와 서보 보드",
+			"text": "Waveshare Bus Servo Adapter (A) 를 driver plate 에 나사 4개로 고정하고, plate 를 board mount 에 끼웁니다. 나사 머리는 plate 의 끼우는 면에 묻힙니다. 보드의 jumper 는 USB-Servo 쪽에 둡니다.",
+			"parts": [
+				"driver_plate"
+			],
+			"board": {
+				"servo": {
+					"of": "body",
+					"axis": [
+						0,
+						0,
+						1
+					]
+				},
+				"left": {
+					"usb": "back"
+				},
+				"right": {
+					"usb": "back"
+				}
+			}
+		},
+		{
+			"title": "케이블",
+			"text": "서보를 서보 보드에 연결하고, 보드의 USB-C 와 카메라의 USB 를 호스트에 연결합니다. 보드의 USB-C 로는 서보에 전원이 가지 않으므로 USB → DC5521 케이블로 5 V 를 따로 넣습니다.",
+			"parts": []
+		}
+	]
+}

@@ -1,0 +1,119 @@
+---
+title: ACT
+description: LeRobot 의 ACT 를 Pinkrab 에서 학습하고 실행하는 방식. 구조, 학습과 실행의 한 step, CVAE 와 KL 항, temporal ensembling, 학습·추론 설정, 장단점.
+---
+
+import ActArch from '../../../../components/policies/ActArch.astro';
+import LatentSpace from '../../../../components/policies/LatentSpace.astro';
+
+ACT(Action Chunking with Transformers, Zhao et al., 2023)는 ALOHA 양팔 로봇과 함께 발표된 policy 로, 적은 시연으로 정밀한 양팔 작업을 학습한 결과로 알려졌습니다. Pinkrab 은 LeRobot 에 들어 있는 ACT 구현을 그 기본 설정(`ACTConfig` 의 기본값)으로 학습합니다. 이 기본값은 KL 가중치 10, latent 32차원처럼 ACT 논문의 설정을 따릅니다. chunk 도 논문과 같은 **2 초 분량**으로, 기본 50 fps 에서 100 step 입니다. 다른 fps 에서는 같은 2 초가 되도록 학습 때 step 수를 맞춥니다. 실행 때는 Pinkrab 의 추론 설정이 한 번에 실행하는 step 수(`n_action_steps`)를 chunk 전체에서 **0.1 초 분량**(50 fps 에서 5)으로 줄입니다.
+
+action chunking 과 multimodality 가 무엇이고 왜 문제인지는 [policy 개요](../#behavior-cloning-의-난점)에 있습니다.
+
+## 구조
+
+<ActArch />
+
+| 부분 | 구성 |
+|---|---|
+| 영상 | 카메라마다 ImageNet ResNet-18(batch normalization 고정)의 마지막 feature map(32 px 당 한 칸)을 폭 512 로 투영하고, 칸마다 2D sine 위치를 더해 token 으로 씁니다. 780×570 영상은 25×18 칸, 카메라마다 450 token 입니다 |
+| encoder | transformer 4 층, 폭 512, head 8개, feed-forward 3200(ReLU). latent token 하나, state token 하나, 두 카메라의 영상 token 900개를 함께 읽습니다 |
+| decoder | transformer 1 층. chunk 의 step 마다 query 가 하나씩(50 fps 에서 100개) 있어 서로를 보고 encoder 출력을 읽은 뒤, 선형층 하나가 step 마다 동작 20개를 냅니다 |
+| CVAE encoder | 학습 때만 쓰는 transformer 4 층이 정답 chunk 와 state 를 읽어 32차원 latent 의 평균과 분산을 냅니다 |
+| loss | 정답 chunk 와의 L1, latent 분포의 KL(가중치 10) |
+| 크기 | parameter 약 52M. 그 가운데 CVAE encoder 약 17M 은 학습 때만 쓰여 실행에는 약 34M |
+
+decoder 의 query 는 값이 0 인 입력에 step 마다 학습되는 위치 embedding 을 더한 것으로, DETR 의 object query 와 같은 방식입니다. 그래서 query 끼리는 "몇 번째 step 인가" 만 다르고, 그 step 의 동작은 encoder 출력에서 읽어 옵니다. ACT 논문의 decoder 는 7 층이지만 원래 구현이 첫 층만 썼기 때문에, LeRobot 은 그 동작에 맞춰 1 층으로 둡니다.
+
+## 학습 한 step
+
+batch 의 sample 하나는 한 시각의 관찰과 그 시각부터 2 초 동안의 정답 chunk 입니다. episode 끝에 가까워 2 초가 다 차지 않는 sample 은 남는 step 을 padding 으로 채우고 loss 에서 뺍니다.
+
+1. **CVAE encoder**: `[CLS]` token, state token, 정답 chunk 의 step 마다 하나씩인 동작 token 100개에 1D sine 위치를 더해 transformer 4 층에 넣습니다. `[CLS]` 자리의 출력을 선형층이 64개 숫자로 바꾸어, 앞 32개를 평균 `μ`, 뒤 32개를 `log σ²` 로 씁니다.
+2. **latent 뽑기**: `z = μ + σ · ε`, `ε ~ N(0, I)` 로 `z` 를 뽑습니다. 무작위성을 `ε` 로 밀어내 두어 `μ` 와 `σ` 까지 gradient 가 흐르게 하는 reparameterization trick 입니다.
+3. **transformer encoder**: `z` 를 선형층으로 폭 512 token 하나로 만들고, state token 하나, 두 카메라의 영상 token 900개와 이어 4 층에 넣습니다.
+4. **transformer decoder**: query 100개가 encoder 출력을 cross-attention 으로 읽고, 선형층이 100×20 chunk 를 냅니다.
+5. **loss**: 정답 chunk 와의 L1 에 KL 항의 10배를 더합니다.
+
+## latent 와 CVAE
+
+latent 는 데이터에 적혀 있지 않지만 데이터가 그렇게 된 원인을 나타내는 숨은 변수입니다. 시연 dataset 에는 영상·state·동작만 있고 "이번에는 왼쪽으로 돌았다" 는 라벨은 없는데, 같은 장면에서 동작이 갈린 것은 **이 적히지 않은 선택 때문**입니다. ACT 는 이 선택을 숫자 32개짜리 벡터 `z` 로 나타내고, 각 숫자가 무엇을 뜻할지는 사람이 정하지 않고 학습이 정합니다.
+
+autoencoder 는 입력을 encoder 로 작은 latent 로 줄였다가 decoder 로 되살리도록 학습해, 되살리는 데 꼭 필요한 정보만 latent 에 남깁니다. VAE(Variational Autoencoder)는 latent 를 값 하나가 아니라 분포로 내고 그 분포를 표준정규분포 `N(0, I)` 근처에 붙잡아 두어, 나중에 그 근처의 어느 점을 골라도 decoder 가 그럴듯한 출력을 내게 합니다. CVAE(Conditional VAE)는 encoder 와 decoder 가 조건을 함께 받는 VAE 입니다.
+
+ACT 에서 줄였다 되살리는 대상은 정답 chunk 이고, decoder 쪽 조건은 영상과 state 입니다(CVAE encoder 는 계산을 줄이려고 영상은 빼고 state 만 받습니다). 관찰로 알 수 있는 것은 조건이 이미 알려 주므로, latent 에는 관찰만으로는 알 수 없는 것, 곧 **그 시연이 어느 방식이었는지**가 남습니다. 여기서 decoder 는 위 그림의 transformer encoder·decoder 전체를 가리킵니다.
+
+<LatentSpace />
+
+학습 때는 정답 chunk 를 본 CVAE encoder 가 `z` 의 분포 `q(z | a, s)` 를 내고, 거기서 뽑은 `z` 가 transformer encoder 에 token 하나로 들어갑니다. 그 뒤의 transformer encoder·decoder 는 어느 방식인지를 `z` 로 듣기 때문에 **두 방식을 평균하지 않고** `z` 가 가리키는 쪽의 동작을 배웁니다.
+
+## KL 항
+
+KL 항은 두 분포가 얼마나 다른지를 재는 KL divergence(Kullback–Leibler divergence)로, 두 분포가 같으면 0 이고 멀어질수록 커집니다. ACT 의 loss 는 `L1 + β·KL` 이고 β 가 앞의 KL 가중치 10 입니다. L1 은 `z` 에 시연 방식을 많이 실을수록 줄지만 KL 은 `q(z | a, s)` 가 정답과 상관없이 `N(0, I)` 와 같아질수록 줄어서, β 가 **`z` 에 실리는 정보의 양**을 정합니다. β 가 너무 크면 아래 단점의 posterior collapse 로 빠집니다.
+
+두 분포가 모두 정규분포라 KL 은 적분 없이 `μ` 와 `σ` 로 바로 계산됩니다. latent 의 32차원마다 아래 값을 구해 더하고, batch 에 대해 평균합니다.
+
+```text
+KL( N(μ, σ²) ‖ N(0, 1) ) = ½ ( μ² + σ² − 1 − log σ² )
+```
+
+`μ = 0`, `σ = 1` 일 때 0 이 되고, `μ` 가 0 에서 멀어지거나 `σ` 가 1 보다 작아질수록 커집니다. CVAE encoder 가 시연마다 `z` 를 서로 멀리 떨어뜨리거나 분산을 좁혀 정확히 짚으려 하면 KL 이 그만큼 벌점을 줍니다.
+
+KL 항은 이렇게 `q(z | a, s)` 를 `N(0, I)` 에 가깝게 붙잡아, 실행 때 정답 없이도 쓸 수 있는 `z` 의 자리를 만듭니다. ACT 는 실행 때 `z` 를 뽑지 않고 그 중심인 0 으로 둡니다. 그래서 같은 관찰에는 **늘 같은 chunk** 가 나옵니다. 0 이 어느 방식에 해당하는지는 학습이 정하는데, 흔한 방식일수록 latent 공간의 넓은 영역을 차지해 중심을 가져가기 쉽습니다. 두 방식이 반씩이면 0 이 두 영역의 경계 근처에 놓여 사이의 동작이 나올 수도 있습니다.
+
+## 실행 한 step
+
+실행에는 정답 chunk 가 없으므로 CVAE encoder 를 쓰지 않고 `z = 0` 을 넣습니다. 영상 두 장과 state 로 forward 한 번을 돌려 100 step chunk 를 받고, 그 앞 5 step 을 대기열에 넣어 dataset 의 fps 로 하나씩 꺼내 실행합니다. 대기열이 비면 그때의 영상과 state 로 다시 추론하므로, **0.1 초마다 새로 보고** 나머지 95 step 은 버립니다.
+
+chunk 의 동작은 dataset 통계로 정규화된 값이라, 실행 전에 평균과 표준편차로 원래 단위로 되돌립니다. 영상은 ImageNet 의 평균과 표준편차로 정규화합니다.
+
+## temporal ensembling
+
+ACT 논문은 chunk 를 `k = 1` 로, 즉 매 step 새로 추론하고 같은 시각에 대해 지난 chunk 들이 낸 동작을 가중 평균하는 temporal ensembling 을 제안했습니다. 가중치는 오래된 chunk 부터 `wᵢ = exp(−m·i)` 이고 논문의 `m` 은 0.01 입니다. 동작이 더 매끄러워지는 대신 매 step 추론해야 하므로, Pinkrab 에서는 추론 설정의 `temporal_ensemble_coeff` 로 켜고 이때 **`n_action_steps` 는 1** 이어야 합니다.
+
+`m` 이 양수이면 오래된 chunk 를, 음수이면 새 chunk 를 더 믿고, 0 이면 모두 같은 무게로 평균합니다. 평균하는 동작이 같은 방식에서 나온 것이어야 매끄러워지고, 두 chunk 가 서로 다른 방식이면 그 평균이 **다시 봉우리 사이에** 놓입니다.
+
+## 학습 설정
+
+[Train 페이지](../../../use/train/#새-학습)에서 ACT 를 고르면 아래 값으로 학습합니다. batch 와 step 수를 뺀 나머지는 LeRobot `ACTConfig` 의 기본값입니다.
+
+| 항목 | 값 |
+|---|---|
+| batch, step | 8, 100 000 |
+| chunk | 2 초(50 fps 에서 100 step) |
+| optimizer | AdamW, learning rate 1e-5(backbone 도 1e-5), weight decay 1e-4, gradient clip 10 |
+| learning rate 일정 | 처음부터 끝까지 같은 값 |
+| dropout | 0.1 |
+| 정규화 | state·동작은 dataset 의 평균·표준편차, 영상은 ImageNet 의 평균·표준편차 |
+| image augmentation | 켬(밝기·대비 등) |
+
+## 추론 설정
+
+다시 학습하지 않고 [추론 설정](../../../use/run/#추론-설정)에서 바꿀 수 있는 값입니다.
+
+| 값 | 기본 | 뜻 |
+|---|---|---|
+| `n_action_steps` | 0.1 초(50 fps 에서 5) | chunk 에서 실행한 뒤 다시 볼 step 수. 1 부터 chunk 길이까지 |
+| `temporal_ensemble_coeff` | 끔 | temporal ensembling 의 `m`. 켜면 `n_action_steps` 는 1 |
+
+## 장점
+
+- **빠른 추론**: chunk 하나가 forward 한 번으로 나와 실행 비용이 낮습니다.
+- **적은 데이터**: action chunking 덕분에 수십 개의 시연으로도 정밀한 작업을 배운 사례가 많습니다.
+- **검증된 기준선**: 논문·구현·학습 설정이 널리 쓰여, 새 작업의 첫 기준을 잡기에 좋습니다. 문제가 생기면 policy 보다 데이터를 먼저 의심할 수 있습니다.
+- **multimodality 의 부분적 처리**: CVAE 가 학습 때 방식을 구분해 주므로 순수 regression 보다 평균으로 무너지는 일이 적습니다.
+
+## 단점
+
+- **실행 때의 `z = 0`**: 실행에서는 latent 를 고정하므로 여러 방식 가운데 하나를 고르는 것이 아니라 늘 같은 하나를 냅니다. 그 하나가 지금 장면에서 막혀 있는 방식이어도 다른 쪽으로 바꾸지 못합니다.
+- **posterior collapse**: KL 가중치가 크면 CVAE encoder 가 `z` 에 정보를 거의 싣지 않는 해로 빠지기 쉽습니다. 이렇게 되면 transformer 는 `z` 를 무시하고 다시 L1 regression 이 되어, 두 방식이 비슷하게 섞인 데이터에서는 봉우리 사이로 갑니다.
+- **봉우리 안의 중앙값**: 정답 chunk 와의 L1 은 같은 방식 안에서도 세부 동작의 중앙값을 냅니다. 파지 위치처럼 mm 단위의 차이가 중요한 장면에서 동작이 뭉개질 수 있습니다.
+- **큰 학습 메모리**: batch 8 에서 학습 메모리가 5.7 GB 입니다. CVAE encoder 의 parameter 약 17M 도 실행에는 쓰이지 않고 학습에만 듭니다.
+- **얕은 decoder, 명령 없음**: decoder 가 1 층이고 언어 입력이 없어 한 policy 가 한 가지 작업만 배웁니다.
+
+## 참고 문헌
+
+- Zhao, Kumar, Levine, Finn. *Learning Fine-Grained Bimanual Manipulation with Low-Cost Hardware* (ACT). RSS 2023.
+- Kingma, Welling. *Auto-Encoding Variational Bayes* (VAE). ICLR 2014.
+- Sohn, Lee, Yan. *Learning Structured Output Representation using Deep Conditional Generative Models* (CVAE). NeurIPS 2015.
+- Carion et al. *End-to-End Object Detection with Transformers* (DETR). ECCV 2020.

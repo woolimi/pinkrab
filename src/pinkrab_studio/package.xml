@@ -1,0 +1,25 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>pinkrab_studio</name>
+  <version>0.1.0</version>
+  <description>
+    A one-page browser view of Pinkrab: the description rendered with three.js,
+    posed by sliders or compared against what the servos report. Serves itself
+    from the standard library, so the rig needs no display and the page opens
+    from whatever machine is nearby.
+  </description>
+  <maintainer email="woolimi91@naver.com">Woolim Park</maintainer>
+  <license>Apache-2.0</license>
+
+  <exec_depend>pinkrab_core</exec_depend>
+  <exec_depend>pinkrab_mujoco</exec_depend>
+  <exec_depend>pinkrab_umi</exec_depend>
+  <exec_depend>pinkrab_policy</exec_depend>
+  <exec_depend>pinkrab_description</exec_depend>
+  <exec_depend>xacro</exec_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

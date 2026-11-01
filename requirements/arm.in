@@ -1,0 +1,43 @@
+# arm - talk to the servos on the wall.
+#
+# This is the slice P0 needs: the Feetech bus, calibration, and the lerobot-*
+# CLIs that `pinkrab` wraps.
+#
+# LeRobot is pinned to an exact release rather than a range. Its CLI argument
+# shapes and the directory it keeps calibration in are part of this project's
+# contract - pinkrab_core builds `--robot.left_arm_config.port=...` strings and
+# reads back `calibration/robots/pinkrab_follower/<id>.json`. A minor bump can move
+# either without breaking anything that looks like an API.
+#
+# Requires Python >= 3.12 (lerobot's own floor).
+lerobot[diffusion,feetech,placo-dep,scipy-dep,smolvla,training]==0.6.1
+
+# placo is not optional on this rig. With no leader arm there is no joint-space
+# copy, so everything that moves these arms solves inverse kinematics, and
+# lerobot.model.kinematics refuses to load without it.
+
+# scipy is not optional either, though lerobot leaves it to an extra. Importing
+# lerobot.policies pulls in pi0_fast, which imports scipy.fftpack at module level,
+# so any lerobot-* command fails without it. The extra pins a numpy 2 build; a
+# venv with --system-site-packages otherwise falls through to the distribution's
+# scipy, which is compiled against numpy 1 and raises a dtype size mismatch.
+
+# diffusion brings diffusers, which Diffusion Policy needs to train and to run:
+# its noise scheduler denoises every chunk at inference too.
+
+# smolvla brings transformers, which SmolVLA needs to run, not only to train, so it
+# is here rather than in a training slice.
+
+# training brings the dataset side - datasets, pyarrow, torchcodec - that
+# `pinkrab-umi convert` writes with and lerobot-train reads with, and a venv
+# built from this lock alone cannot do either without it.
+
+# ruckig shapes a policy's commands in the safety gate: the quickest trajectory
+# to each command that keeps a joint's speed, acceleration and jerk under their
+# limits, worked out every tick. A wheel with no dependencies of its own.
+ruckig==0.19.4
+
+# setuptools stays below 80: from 80 on `setup.py develop` no longer takes
+# --editable, which colcon passes to every Python package on a
+# `colcon build --symlink-install`, so the workspace would only build as copies.
+setuptools<80

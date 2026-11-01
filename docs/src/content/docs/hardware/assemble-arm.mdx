@@ -1,0 +1,19 @@
+---
+title: Pinkrab 조립
+description: 출력한 부품과 STS3215 서보 7개로 Pinkrab 팔 하나를 조립하는 순서. 베이스부터 손끝까지 단계마다 붙이는 부품과 나사.
+---
+
+import Assembly from '../../../components/Assembly.astro';
+import ScrewTotals from '../../../components/ScrewTotals.astro';
+
+팔 하나는 출력 부품, STS3215 서보 7개, 서보 보드 하나, 카메라 하나로 조립합니다. 베이스부터 손끝까지 서보와 그 서보가 돌리는 부품을 번갈아 붙이며, 서보의 id 는 **베이스부터 1–7** 입니다. 왼팔과 오른팔은 서로 거울상이라 순서가 같습니다.
+
+<Assembly kind="arm" />
+
+- 서보 id 는 조립을 마친 뒤 [준비](../../use/setup/#서보-id)에서 **서보를 하나씩 연결해** 씁니다.
+
+## 나사
+
+단계마다 쓰는 나사를 모두 더한 수입니다.
+
+<ScrewTotals kind="arm" />

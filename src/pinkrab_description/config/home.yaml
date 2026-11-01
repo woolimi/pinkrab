@@ -1,0 +1,57 @@
+# home.yaml - the pose the description calls zero.
+#
+# Upstream's zero is an arbitrary configuration of the CAD: the arm reaching forward
+# and up, a pose nobody can set by hand and nobody can check. These angles are baked
+# into the joint origins instead, so commanding zero puts the arms where they
+# physically sit at home - a pose you can see, photograph and reproduce.
+#
+# Degrees, about each joint's own axis. Read off the servos at the home pose and
+# converted through ~/pinkrab/joint_offsets.yaml.
+#
+# Some zeros are CHOSEN rather than parked: where a joint's travel ends against
+# another part, its zero sits at that end so the joint counts up from a stop instead
+# of straddling one. Each is noted below.
+#
+# THE GRIPPER IS NOT LISTED, on purpose. It is the one joint LeRobot normalises as
+# RANGE_0_100 rather than DEGREES, so the degree conversion behind every other
+# number here does not apply to it. Its zero stays where upstream puts it, closed,
+# and it opens to 80 degrees - swept against the claw, not inherited.
+#
+# The joint limits, and the printed wrist_roll stop, are cut in the frame this bake
+# leaves behind, so moving a zero here without recutting them puts the description
+# and the hardware out of step.
+#
+# The two arms are listed separately. Each joint axis points the way its servo
+# counts up, and a servo is turned round rather than mirrored to fit the mirrored
+# arm, so for the same pose the left reads the opposite sign from the right on
+# every joint but wrist_roll, whose chosen zero reads the same on both (below).
+
+right:
+  shoulder_pan: -0.9
+  # Chosen: the upper arm lying back over the base's top, a millimetre and a half
+  # off it - where it rests when the arm is parked. The joint reads 0 there and
+  # counts up to 210, four degrees short of its first contact at that end.
+  shoulder_lift: -105.2
+  # Chosen: the forearm folded forward until it lies on the upper arm, with four
+  # degrees kept in hand - where it rests when the arm is parked. Zero is that
+  # fold, the end of the joint's travel, and it counts down from there as the
+  # arm opens, to -196 where the forearm bracket meets the upper arm's truss.
+  elbow_flex: 171.2
+  # Chosen: the yaw bracket centred on the wrist_flex axis, leaning neither way.
+  wrist_flex: 90.9
+  # Chosen at one end: the wrist against the yaw bracket's mouth wall. Zero is that
+  # stop and the joint counts up from it to the wall at the other end. Range 0..189.
+  wrist_yaw: -95.0
+  # Chosen: the grasp plane perpendicular to the wall with the claw on the outside.
+  # The printed lugs are symmetric about this pose, their dead zone a half turn
+  # behind it, so the joint travels 175 degrees either way: -175..175.
+  wrist_roll: -89.8
+
+left:
+  shoulder_pan: 0.7
+  shoulder_lift: 105.2    # the same chosen pose as the right, counted the other way
+  elbow_flex: -171.2      # the same chosen fold as the right, counted the other way
+  wrist_flex: -89.3       # the same chosen pose as the right, counted the other way
+  wrist_yaw: 95.0         # the same chosen end as the right, counted the other way: -189..0
+  # The same chosen zero as the right, and the same -175..175.
+  wrist_roll: -89.8

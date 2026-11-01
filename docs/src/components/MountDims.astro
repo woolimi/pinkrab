@@ -1,0 +1,137 @@
+---
+// The two measurements `pinkrab mount` asks for, drawn over the arms at home
+// (scripts/mount.js): from the front, the spacing and the height; from the
+// side, the face the height is measured to. The pictures do not turn.
+---
+
+<div class="pk-mount not-content">
+	<figure data-view="front">
+		<div class="stage">
+			<canvas role="img" aria-label="정면에서 본 두 팔. 두 팔의 shoulder_pan 축 사이의 간격과 책상 면에서 베이스 윗면까지의 높이가 표시되어 있습니다."></canvas>
+			<svg aria-hidden="true"></svg>
+		</div>
+		<figcaption>정면 — 팔 간격과 높이</figcaption>
+	</figure>
+	<figure data-view="side">
+		<div class="stage">
+			<canvas role="img" aria-label="옆에서 본 팔. 베이스 판, 빔, 첫 서보의 덮개가 이루는 평평한 윗면과 그 높이가 표시되어 있습니다."></canvas>
+			<svg aria-hidden="true"></svg>
+		</div>
+		<figcaption>옆면 — 높이를 재는 면</figcaption>
+	</figure>
+</div>
+
+<script>
+	import { SOURCES, whenNear } from '../scripts/arm-figure';
+
+	for (const figure of document.querySelectorAll<HTMLElement>('.pk-mount figure')) {
+		whenNear(figure, () => import('../scripts/mount.js').then(({ showMount }) => showMount(figure, SOURCES, figure.dataset.view)));
+	}
+</script>
+
+<style>
+	.pk-mount {
+		display: grid;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		gap: 1rem;
+		margin: 1.5rem 0;
+		color: var(--pk-text);
+	}
+	figure {
+		margin: 0;
+	}
+	.stage {
+		position: relative;
+		aspect-ratio: 4 / 3;
+		border: 1px solid var(--pk-line);
+		border-radius: 0.75rem;
+		background: var(--pk-panel);
+		overflow: hidden;
+	}
+	canvas,
+	svg {
+		position: absolute;
+		inset: 0;
+		display: block;
+		width: 100%;
+		height: 100%;
+	}
+	svg {
+		pointer-events: none;
+		overflow: visible;
+	}
+	figcaption {
+		margin-top: 0.4rem;
+		font-size: 0.85rem;
+		color: var(--pk-dim);
+		text-align: center;
+	}
+	.pk-mount :global(.no-robot) .stage {
+		display: none;
+	}
+	svg :global(.desk) {
+		fill: #efe9dd;
+	}
+	svg :global(.desk-edge) {
+		stroke: #c9bda6;
+		stroke-width: 1.5;
+	}
+	svg :global(.axis) {
+		stroke: var(--pk-dim);
+		stroke-width: 1;
+		stroke-dasharray: 8 3 2 3;
+	}
+	svg :global(.dim) {
+		stroke: currentColor;
+		stroke-width: 1.25;
+	}
+	svg :global(.ext) {
+		stroke: currentColor;
+		stroke-width: 0.9;
+		stroke-dasharray: 3 3;
+	}
+	/* White under the face and the labels, so they read over the pink arm. */
+	svg :global(.face-halo) {
+		stroke: #fff;
+		stroke-width: 7;
+		stroke-linecap: round;
+	}
+	svg :global(.label),
+	svg :global(.value) {
+		paint-order: stroke;
+		stroke: #fff;
+		stroke-width: 3px;
+		stroke-linejoin: round;
+	}
+	svg :global(.face) {
+		stroke: var(--pk-shell-deep);
+		stroke-width: 3;
+		stroke-linecap: round;
+	}
+	svg :global(.tag) {
+		fill: #fff;
+		stroke: var(--pk-line);
+	}
+	svg :global(.value) {
+		fill: currentColor;
+		font-size: 13px;
+		font-weight: 700;
+	}
+	svg :global(.label) {
+		fill: currentColor;
+		font-size: 12px;
+	}
+	svg :global(.dimmed) {
+		fill: var(--pk-dim);
+		font-size: 11px;
+	}
+	svg :global(.hot) {
+		fill: var(--pk-shell-deep);
+		font-weight: 600;
+	}
+	@media (max-width: 560px) {
+		.pk-mount {
+			grid-template-columns: 1fr;
+		}
+	}
+</style>

@@ -1,0 +1,1009 @@
+<?xml version="1.0" ?>
+<!--
+  Pinkrab - two SO-ARM 101 arms on a wall.
+
+  This file holds the arm and the two of them on their jig. Where yours is bolted
+  is not here - it comes from config/mount.yaml, which is a measurement of one
+  installation and the only thing that changes between rigs.
+
+  Arm source:  https://github.com/TheRobotStudio/SO-ARM100.git
+               Simulation/SO101/so101_new_calib.urdf
+  Commit:      7629d2ad9853d10fb903093a33ef6114099d97e5
+  License:     Apache-2.0 (TheRobotStudio) - same as this project.
+
+  The wrist yaw between wrist_flex and the wrist is ahb's printed clevis,
+  makerworld model 2845098, CC BY-SA. The rest of the chain is upstream's.
+
+      xacro urdf/pinkrab.urdf.xacro > /tmp/pinkrab.urdf
+      xacro urdf/pinkrab.urdf.xacro mount:=/path/to/other_rig.yaml
+      xacro urdf/pinkrab.urdf.xacro arm:=left     one bare arm, rooted at `mount`
+-->
+<robot name="pinkrab">
+  <!-- Printed parts and servo bodies. Named once, at robot scope, because that is
+       where URDF looks a material up from - and stated here rather than in whatever
+       is drawing, so RViz and the studio show the same robot.
+
+       The split is a real one: the shell is what gets printed, the black is what
+       gets bought. A servo is not part of the animal, and it has a link of its own
+       so that no link wears two materials - RViz takes one material for a whole
+       link, from the first visual it finds, and drew whole printed arms in the
+       colour of the servo they carry. -->
+  <material name="3d_printed">
+    <color rgba="0.8784 0.2941 0.5569 1.0"/>
+  </material>
+  <material name="sts3215">
+    <color rgba="0.1 0.1 0.1 1.0"/>
+  </material>
+  <!-- The wall surface. x points out of it, so a positive x is away from the wall
+         and into the space the arms work in. world sits at the back of the board;
+         wall_link is its face, one board thickness out. -->
+  <link name="world"/>
+  <link name="wall_link"/>
+  <joint name="wall_joint" type="fixed">
+    <parent link="world"/>
+    <child link="wall_link"/>
+    <origin rpy="0 0 0" xyz="0.018 0 0"/>
+  </joint>
+  <!-- The mounting jig both arms share. Everything measured about this rig is
+         measured to here. -->
+  <link name="pinkrab_base_link"/>
+  <joint name="pinkrab_base_joint" type="fixed">
+    <parent link="wall_link"/>
+    <child link="pinkrab_base_link"/>
+    <origin rpy="0 0 0" xyz="0.0 0 0.18"/>
+  </joint>
+  <!-- Where the arm is mounted arrives as the *origin block. -->
+  <joint name="left_base_joint" type="fixed">
+    <parent link="pinkrab_base_link"/>
+    <child link="left_base_link"/>
+    <origin rpy="0.0 0.0 0.0" xyz="0.0 0.24 0.0"/>
+  </joint>
+  <link name="left_base_link">
+    <inertial>
+      <origin rpy="0 0 0" xyz="0.0803826 5.19711e-05 -0.0361157"/>
+      <mass value="0.147"/>
+      <inertia ixx="0.000114686" ixy="4.59787e-07" ixz="4.97151e-06" iyy="0.000136117" iyz="-9.75275e-08" izz="0.000130364"/>
+    </inertial>
+    <visual>
+      <origin rpy="-1.5707963267948966 0 -1.5707963267948966" xyz="0.0603 9.94414e-05 -0.072"/>
+      <geometry>
+        <mesh filename="meshes/base_servo_mount_left.stl"/>
+      </geometry>
+      <material name="3d_printed"/>
+    </visual>
+    <collision>
+      <origin rpy="-1.5707963267948966 0 -1.5707963267948966" xyz="0.0603 9.94414e-05 -0.072"/>
+      <geometry>
+        <mesh filename="meshes/base_servo_mount_left.stl"/>
+      </geometry>
+    </collision>
+    <visual>
+      <origin rpy="-1.5707963267948966 0 -1.5707963267948966" xyz="0.0603 0 -0.072"/>
+      <geometry>
+        <mesh filename="meshes/base_left.stl"/>
+      </geometry>
+      <material name="3d_printed"/>
+    </visual>
+    <collision>
+      <origin rpy="-1.5707963267948966 0 -1.5707963267948966" xyz="0.0603 0 -0.072"/>
+      <geometry>
+        <mesh filename="meshes/base_left.stl"/>
+      </geometry>
+    </collision>
+    <visual>
+      <origin rpy="-1.5707963267948966 0 -1.5707963267948966" xyz="0.0603 9.94414e-05 -0.072"/>
+      <geometry>
+        <mesh filename="meshes/driver_mount_left.stl"/>
+      </geometry>
+      <material name="3d_printed"/>
+    </visual>
+    <collision>
+      <origin rpy="-1.5707963267948966 0 -1.5707963267948966" xyz="0.0603 9.94414e-05 -0.072"/>
+      <geometry>
+        <mesh filename="meshes/driver_mount_left.stl"/>
+      </geometry>
+    </collision>
+  </link>
+  <!-- The servo base carries. Its own link because it is its
+         own part - bought rather than printed - and because a viewer that colours
+         a link at a time can then tell the two apart. The mass stays with the
+         parent: the inertial there describes both, and splitting it wants the
+         servo on a scale rather than a number invented here. -->
+  <link name="left_base_servo_link">
+    <visual>
+      <origin rpy="0 1.5707963267948966 0" xyz="0.0437 0 0.0125"/>
+      <geometry>
+        <mesh filename="meshes/servo.stl"/>
+      </geometry>
+      <material name="sts3215"/>
+    </visual>
+    <collision>
+      <origin rpy="0 1.5707963267948966 0" xyz="0.0437 0 0.0125"/>
+      <geometry>
+        <mesh filename="meshes/servo.stl"/>
+      </geometry>
+    </collision>
+  </link>
+  <joint name="left_base_servo_joint" type="fixed">
+    <parent link="left_base_link"/>
+    <child link="left_base_servo_link"/>
+    <origin rpy="0 -1.5707963267948966 0" xyz="0.1055 0 -0.0696"/>
+  </joint>
+  <link name="left_shoulder_link">
+    <inertial>
+      <origin rpy="0 0 0" xyz="-0.0307604 1.66727e-05 -0.0252713"/>
+      <mass value="0.100006"/>
+      <inertia ixx="8.3759e-05" ixy="-7.55525e-08" ixz="-1.16342e-06" iyy="8.10403e-05" iyz="-1.54663e-07" izz="2.39783e-05"/>
+    </inertial>
+    <visual>
+      <origin rpy="-1.5708 -1.5708 0" xyz="-0.0675992 0.000177759 0.0158499"/>
+      <geometry>
+        <mesh filename="meshes/shoulder_servo_mount_left.stl"/>
+      </geometry>
+      <material name="3d_printed"/>
+    </visual>
+    <visual>
+      <origin rpy="1.5708 2.35221e-33 0" xyz="0.0122008 -2.22413e-05 0.0464"/>
+      <geometry>
+        <mesh filename="meshes/shoulder_left.stl"/>
+      </geometry>
+      <material name="3d_printed"/>
+    </visual>
+    <collision>
+      <origin rpy="-1.5708 -1.5708 0" xyz="-0.0675992 0.000177759 0.0158499"/>
+      <geometry>
+        <mesh filename="meshes/shoulder_servo_mount_left.stl"/>
+      </geometry>
+    </collision>
+    <collision>
+      <origin rpy="1.5708 2.35221e-33 0" xyz="0.0122008 -2.22413e-05 0.0464"/>
+      <geometry>
+        <mesh filename="meshes/shoulder_left.stl"/>
+      </geometry>
+    </collision>
+  </link>
+  <!-- The servo shoulder carries. Its own link because it is its
+         own part - bought rather than printed - and because a viewer that colours
+         a link at a time can then tell the two apart. The mass stays with the
+         parent: the inertial there describes both, and splitting it wants the
+         servo on a scale rather than a number invented here. -->
+  <link name="left_shoulder_servo_link">
+    <collision>
+      <origin rpy="-1.5708 1.5708 0" xyz="-0.0303992 -0.000422241 -0.0417"/>
+      <geometry>
+        <mesh filename="meshes/servo.stl"/>
+      </geometry>
+    </collision>
+    <visual>
+      <origin rpy="-1.5708 1.5708 0" xyz="-0.0303992 -0.000422241 -0.0417"/>
+      <geometry>
+        <mesh filename="meshes/servo.stl"/>
+      </geometry>
+      <material name="sts3215"/>
+    </visual>
+  </link>
+  <joint name="left_shoulder_servo_joint" type="fixed">
+    <parent link="left_shoulder_link"/>
+    <child link="left_shoulder_servo_link"/>
+    <origin rpy="0 0 0" xyz="0 0 0"/>
+  </joint>
+  <link name="left_upper_arm_link">
+    <inertial>
+      <origin rpy="0 0 0" xyz="-0.0898471 0.00838224 0.0184089"/>
+      <mass value="0.103"/>
+      <inertia ixx="4.08002e-05" ixy="1.97819e-05" ixz="-4.03016e-08" iyy="0.000147318" iyz="-8.97326e-09" izz="0.000142487"/>
+    </inertial>
+    <visual>
+      <origin rpy="-3.14159 -0 1.30911e-30" xyz="-0.065085 -0.012 0.0182"/>
+      <geometry>
+        <mesh filename="meshes/upper_arm_left.stl"/>
+      </geometry>
+      <material name="3d_printed"/>
+    </visual>
+    <collision>
+      <origin rpy="-3.14159 -0 1.30911e-30" xyz="-0.065085 -0.012 0.0182"/>
+      <geometry>
+        <mesh filename="meshes/upper_arm_left.stl"/>
+      </geometry>
+    </collision>
+  </link>
+  <!-- The servo upper arm carries. Its own link because it is its
+         own part - bought rather than printed - and because a viewer that colours
+         a link at a time can then tell the two apart. The mass stays with the
+         parent: the inertial there describes both, and splitting it wants the
+         servo on a scale rather than a number invented here. -->
+  <link name="left_upper_arm_servo_link">
+    <collision>
+      <origin rpy="3.14159 -5.27356e-16 1.5708" xyz="-0.11257 0.0155 0.0187"/>
+      <geometry>
+        <mesh filename="meshes/servo.stl"/>
+      </geometry>
+    </collision>
+    <visual>
+      <origin rpy="3.14159 -5.27356e-16 1.5708" xyz="-0.11257 0.0155 0.0187"/>
+      <geometry>
+        <mesh filename="meshes/servo.stl"/>
+      </geometry>
+      <material name="sts3215"/>
+    </visual>
+  </link>
+  <joint name="left_upper_arm_servo_joint" type="fixed">
+    <parent link="left_upper_arm_link"/>
+    <child link="left_upper_arm_servo_link"/>
+    <origin rpy="0 0 0" xyz="0 0 0"/>
+  </joint>
+  <link name="left_lower_arm_link">
+    <visual>
+      <origin rpy="0 -1.57079633 3.14159265" xyz="-0.014555 0.000707 0.0167"/>
+      <geometry>
+        <mesh filename="meshes/wrist_yaw_bracket_left.stl"/>
+      </geometry>
+      <material name="3d_printed"/>
+    </visual>
+    <collision>
+      <origin rpy="0 -1.57079633 3.14159265" xyz="-0.014555 0.000707 0.0167"/>
+      <geometry>
+        <mesh filename="meshes/wrist_yaw_bracket_left.stl"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <origin rpy="0 0 0" xyz="-0.012 0.035 0.0167"/>
+      <mass value="0.079"/>
+      <inertia ixx="4e-05" ixy="0" ixz="0" iyy="2e-05" iyz="0" izz="4e-05"/>
+    </inertial>
+  </link>
+  <!-- The servo lower arm carries. Its own link because it is its
+         own part - bought rather than printed - and because a viewer that colours
+         a link at a time can then tell the two apart. The mass stays with the
+         parent: the inertial there describes both, and splitting it wants the
+         servo on a scale rather than a number invented here. -->
+  <link name="left_lower_arm_servo_link">
+    <visual>
+      <origin rpy="-1.57079633 -0 -3.14159265" xyz="-0.064455 0.000497 0.01739"/>
+      <geometry>
+        <mesh filename="meshes/servo.stl"/>
+      </geometry>
+      <material name="sts3215"/>
+    </visual>
+    <collision>
+      <origin rpy="-1.57079633 -0 -3.14159265" xyz="-0.064455 0.000497 0.01739"/>
+      <geometry>
+        <mesh filename="meshes/servo.stl"/>
+      </geometry>
+    </collision>
+  </link>
+  <joint name="left_lower_arm_servo_joint" type="fixed">
+    <parent link="left_lower_arm_link"/>
+    <child link="left_lower_arm_servo_link"/>
+    <origin rpy="0 0 0" xyz="0 0 0"/>
+  </joint>
+  <link name="left_wrist_link">
+    <inertial>
+      <origin rpy="0 0 0" xyz="-0.000103312 0.0386143 0.0281156"/>
+      <mass value="0.079"/>
+      <inertia ixx="3.68263e-05" ixy="-1.7893e-08" ixz="-5.28128e-08" iyy="2.5391e-05" iyz="-3.6412e-06" izz="2.1e-05"/>
+    </inertial>
+    <visual>
+      <origin rpy="1.5708 -1.5708 0" xyz="0 0.028 0.0181"/>
+      <geometry>
+        <mesh filename="meshes/wrist_left.stl"/>
+      </geometry>
+      <material name="3d_printed"/>
+    </visual>
+    <collision>
+      <origin rpy="1.5708 -1.5708 0" xyz="0 0.028 0.0181"/>
+      <geometry>
+        <mesh filename="meshes/wrist_left.stl"/>
+      </geometry>
+    </collision>
+  </link>
+  <!-- The servo wrist carries. Its own link because it is its
+         own part - bought rather than printed - and because a viewer that colours
+         a link at a time can then tell the two apart. The mass stays with the
+         parent: the inertial there describes both, and splitting it wants the
+         servo on a scale rather than a number invented here. -->
+  <link name="left_wrist_servo_link">
+    <collision>
+      <origin rpy="-1.5708 1.5708 0" xyz="8.32667e-17 0.0424 0.0306"/>
+      <geometry>
+        <mesh filename="meshes/servo_no_horn.stl"/>
+      </geometry>
+    </collision>
+    <visual>
+      <origin rpy="-1.5708 1.5708 0" xyz="8.32667e-17 0.0424 0.0306"/>
+      <geometry>
+        <mesh filename="meshes/servo_no_horn.stl"/>
+      </geometry>
+      <material name="sts3215"/>
+    </visual>
+  </link>
+  <joint name="left_wrist_servo_joint" type="fixed">
+    <parent link="left_wrist_link"/>
+    <child link="left_wrist_servo_link"/>
+    <origin rpy="0 0 0" xyz="0 0 0"/>
+  </joint>
+  <link name="left_gripper_link">
+    <inertial>
+      <origin rpy="0 0 0" xyz="0.000213627 -0.000245138 -0.025187"/>
+      <mass value="0.087"/>
+      <inertia ixx="2.75087e-05" ixy="3.35241e-07" ixz="-5.7352e-06" iyy="4.33657e-05" iyz="5.17847e-08" izz="3.45059e-05"/>
+    </inertial>
+    <visual>
+      <origin rpy="3.14159 -5.55112e-17 0" xyz="8.32667e-17 0.000218214 0.000949706"/>
+      <geometry>
+        <mesh filename="meshes/claw_left.stl"/>
+      </geometry>
+      <material name="3d_printed"/>
+    </visual>
+    <collision>
+      <origin rpy="3.14159 -5.55112e-17 0" xyz="8.32667e-17 0.000218214 0.000949706"/>
+      <geometry>
+        <mesh filename="meshes/claw_left.stl"/>
+      </geometry>
+    </collision>
+  </link>
+  <!-- The servo gripper carries. Its own link because it is its
+         own part - bought rather than printed - and because a viewer that colours
+         a link at a time can then tell the two apart. The mass stays with the
+         parent: the inertial there describes both, and splitting it wants the
+         servo on a scale rather than a number invented here. -->
+  <link name="left_gripper_servo_link">
+    <collision>
+      <origin rpy="1.5708 -5.19179e-17 1.66533e-16" xyz="0.0077 -0.0001 -0.0234"/>
+      <geometry>
+        <mesh filename="meshes/servo.stl"/>
+      </geometry>
+    </collision>
+    <visual>
+      <origin rpy="1.5708 -5.19179e-17 1.66533e-16" xyz="0.0077 -0.0001 -0.0234"/>
+      <geometry>
+        <mesh filename="meshes/servo.stl"/>
+      </geometry>
+      <material name="sts3215"/>
+    </visual>
+  </link>
+  <joint name="left_gripper_servo_joint" type="fixed">
+    <parent link="left_gripper_link"/>
+    <child link="left_gripper_servo_link"/>
+    <origin rpy="0 0 0" xyz="0 0 0"/>
+  </joint>
+  <!-- The UMI camera's bracket and the case the camera clicks into, bolted to
+         the claw's camera-side wall.
+         pinkrab_umi builds this part and the handheld carries the same one: what
+         the hand sees while a demonstration is collected and what the arm sees
+         while the policy runs are one viewpoint, which is the whole reason the
+         mount is shared rather than designed twice. config/camera.yaml is where
+         that pose is stated, and build_camera_bracket.py is what carries the
+         board to it.
+
+         The mesh is cut in the claw's own frame, so it is placed by the SAME
+         origin the claw is - measured back: it lands against the wall at y 24 mm
+         with the claw ending there. It is drawn and collided: the arm can meet
+         the desk with it, and a camera that is invisible to the scene is one the
+         gate would let an operator drive into the board. -->
+  <link name="left_camera_bracket_link">
+    <visual>
+      <origin rpy="3.14159 -5.55112e-17 0" xyz="8.32667e-17 0.000218214 0.000949706"/>
+      <geometry>
+        <mesh filename="meshes/camera_bracket_left.stl"/>
+      </geometry>
+      <material name="3d_printed"/>
+    </visual>
+    <collision>
+      <origin rpy="3.14159 -5.55112e-17 0" xyz="8.32667e-17 0.000218214 0.000949706"/>
+      <geometry>
+        <mesh filename="meshes/camera_bracket_left.stl"/>
+      </geometry>
+    </collision>
+  </link>
+  <joint name="left_camera_bracket_joint" type="fixed">
+    <parent link="left_gripper_link"/>
+    <child link="left_camera_bracket_link"/>
+    <origin rpy="0 0 0" xyz="0 0 0"/>
+  </joint>
+  <link name="left_gripper_frame_link">
+    <origin rpy="0 -0 0" xyz="0 0 0"/>
+    <inertial>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <mass value="1e-9"/>
+      <inertia ixx="0" ixy="0" ixz="0" iyy="0" iyz="0" izz="0"/>
+    </inertial>
+  </link>
+  <link name="left_jaw_link">
+    <inertial>
+      <origin rpy="0 0 0" xyz="-0.00157495 0.0300244 0.0192755"/>
+      <mass value="0.012"/>
+      <inertia ixx="6.61427e-06" ixy="3.19807e-07" ixz="-5.90717e-09" iyy="1.89032e-06" iyz="1.09945e-07" izz="5.28738e-06"/>
+    </inertial>
+    <visual>
+      <origin rpy="-9.53145e-17 6.93889e-18 -1.24077e-24" xyz="-5.55112e-17 5.55112e-17 0.0189"/>
+      <geometry>
+        <mesh filename="meshes/jaw_left.stl"/>
+      </geometry>
+      <material name="3d_printed"/>
+    </visual>
+    <collision>
+      <origin rpy="-9.53145e-17 6.93889e-18 -1.24077e-24" xyz="-5.55112e-17 5.55112e-17 0.0189"/>
+      <geometry>
+        <mesh filename="meshes/jaw_left.stl"/>
+      </geometry>
+    </collision>
+  </link>
+  <link name="left_wrist_yaw_link">
+    <inertial>
+      <origin rpy="0 0 0" xyz="-0.012 0.035 0.0167"/>
+      <mass value="0.079"/>
+      <inertia ixx="4e-05" ixy="0" ixz="0" iyy="2e-05" iyz="0" izz="4e-05"/>
+    </inertial>
+    <visual>
+      <origin rpy="0 -1.57079633 3.14159265" xyz="-0.014555 0.000707 0.0167"/>
+      <geometry>
+        <mesh filename="meshes/wrist_yaw_bracket_left.stl"/>
+      </geometry>
+      <material name="3d_printed"/>
+    </visual>
+    <collision>
+      <origin rpy="0 -1.57079633 3.14159265" xyz="-0.014555 0.000707 0.0167"/>
+      <geometry>
+        <mesh filename="meshes/wrist_yaw_bracket_left.stl"/>
+      </geometry>
+    </collision>
+  </link>
+  <!-- The servo wrist yaw carries. Its own link because it is its
+         own part - bought rather than printed - and because a viewer that colours
+         a link at a time can then tell the two apart. The mass stays with the
+         parent: the inertial there describes both, and splitting it wants the
+         servo on a scale rather than a number invented here. -->
+  <link name="left_wrist_yaw_servo_link">
+    <visual>
+      <origin rpy="-1.57079633 -0 -3.14159265" xyz="-0.064455 0.000497 0.01739"/>
+      <geometry>
+        <mesh filename="meshes/servo.stl"/>
+      </geometry>
+      <material name="sts3215"/>
+    </visual>
+    <collision>
+      <origin rpy="-1.57079633 -0 -3.14159265" xyz="-0.064455 0.000497 0.01739"/>
+      <geometry>
+        <mesh filename="meshes/servo.stl"/>
+      </geometry>
+    </collision>
+  </link>
+  <joint name="left_wrist_yaw_servo_joint" type="fixed">
+    <parent link="left_wrist_yaw_link"/>
+    <child link="left_wrist_yaw_servo_link"/>
+    <origin rpy="0 0 0" xyz="0 0 0"/>
+  </joint>
+  <joint name="left_gripper_frame_joint" type="fixed">
+    <origin rpy="0 3.14159 0" xyz="-0.0079 0.000218121 -0.1081274"/>
+    <parent link="left_gripper_link"/>
+    <child link="left_gripper_frame_link"/>
+    <axis xyz="0 0 0"/>
+  </joint>
+  <joint name="left_gripper" type="revolute">
+    <origin rpy="-1.5708 -5.24284e-08 1.41553e-15" xyz="0.0202 -0.0188 -0.0234"/>
+    <parent link="left_gripper_link"/>
+    <child link="left_jaw_link"/>
+    <axis xyz="0 0 1"/>
+    <limit effort="10" lower="-1.3962634" upper="0.174532925" velocity="10"/>
+  </joint>
+  <joint name="left_wrist_roll" type="revolute">
+    <origin rpy="-1.570866671 -1.518626168 -3.14151957" xyz="5.55112e-17 0.0611 0.0181"/>
+    <parent link="left_wrist_link"/>
+    <child link="left_gripper_link"/>
+    <axis xyz="0 0 1"/>
+    <limit effort="10" lower="-3.0543261909900767" upper="3.0543261909900767" velocity="10"/>
+  </joint>
+  <joint name="left_wrist_flex" type="revolute">
+    <origin rpy="-1.57079633 0.0122236195 3.16713967e-09" xyz="-0.076955 -0.018203 0.01739"/>
+    <parent link="left_lower_arm_link"/>
+    <child link="left_wrist_yaw_link"/>
+    <axis xyz="0 0 1"/>
+    <limit effort="10" lower="-1.98967535" upper="1.98967535" velocity="10"/>
+  </joint>
+  <joint name="left_elbow_flex" type="revolute">
+    <origin rpy="-3.12892564e-15 1.78677717e-15 -2.988003683" xyz="-0.112570079 0.028 3.84545401e-17"/>
+    <parent link="left_upper_arm_link"/>
+    <child link="left_lower_arm_link"/>
+    <axis xyz="0 0 1"/>
+    <limit effort="10" lower="0" upper="3.42084533" velocity="10"/>
+  </joint>
+  <joint name="left_shoulder_lift" type="revolute">
+    <origin rpy="-1.57079633 0.26529372 -3.14158898" xyz="-0.0303992 0.0182778 -0.0542"/>
+    <parent link="left_shoulder_link"/>
+    <child link="left_upper_arm_link"/>
+    <axis xyz="0 0 1"/>
+    <limit effort="10" lower="-3.66519143" upper="0" velocity="10"/>
+  </joint>
+  <joint name="left_shoulder_pan" type="revolute">
+    <origin rpy="-3.14159 3.24e-08 3.1293727" xyz="0.1055 0 -0.0072"/>
+    <parent link="left_base_link"/>
+    <child link="left_shoulder_link"/>
+    <axis xyz="0 0 1"/>
+    <limit effort="10" lower="-2.07694181" upper="2.00712864" velocity="10"/>
+  </joint>
+  <joint name="left_wrist_yaw" type="revolute">
+    <origin rpy="1.57079633 -0.0872664626 -3.14159265" xyz="-0.076955 -0.018203 0.01739"/>
+    <parent link="left_wrist_yaw_link"/>
+    <child link="left_wrist_link"/>
+    <axis xyz="0 0 1"/>
+    <limit effort="10" lower="-3.29867229" upper="0" velocity="10"/>
+  </joint>
+  <!-- Where the arm is mounted arrives as the *origin block. -->
+  <joint name="right_base_joint" type="fixed">
+    <parent link="pinkrab_base_link"/>
+    <child link="right_base_link"/>
+    <origin rpy="0.0 0.0 0.0" xyz="0.0 -0.24 0.0"/>
+  </joint>
+  <link name="right_base_link">
+    <inertial>
+      <origin rpy="0 0 0" xyz="0.0803826 -5.19711e-05 -0.0361157"/>
+      <mass value="0.147"/>
+      <inertia ixx="0.000114686" ixy="-4.59787e-07" ixz="4.97151e-06" iyy="0.000136117" iyz="9.75275e-08" izz="0.000130364"/>
+    </inertial>
+    <visual>
+      <origin rpy="1.5707963267948966 0 1.5707963267948966" xyz="0.0603 -9.94414e-05 -0.072"/>
+      <geometry>
+        <mesh filename="meshes/base_servo_mount_right.stl"/>
+      </geometry>
+      <material name="3d_printed"/>
+    </visual>
+    <collision>
+      <origin rpy="1.5707963267948966 0 1.5707963267948966" xyz="0.0603 -9.94414e-05 -0.072"/>
+      <geometry>
+        <mesh filename="meshes/base_servo_mount_right.stl"/>
+      </geometry>
+    </collision>
+    <visual>
+      <origin rpy="1.5707963267948966 0 1.5707963267948966" xyz="0.0603 0 -0.072"/>
+      <geometry>
+        <mesh filename="meshes/base_right.stl"/>
+      </geometry>
+      <material name="3d_printed"/>
+    </visual>
+    <collision>
+      <origin rpy="1.5707963267948966 0 1.5707963267948966" xyz="0.0603 0 -0.072"/>
+      <geometry>
+        <mesh filename="meshes/base_right.stl"/>
+      </geometry>
+    </collision>
+    <visual>
+      <origin rpy="1.5707963267948966 0 1.5707963267948966" xyz="0.0603 -9.94414e-05 -0.072"/>
+      <geometry>
+        <mesh filename="meshes/driver_mount_right.stl"/>
+      </geometry>
+      <material name="3d_printed"/>
+    </visual>
+    <collision>
+      <origin rpy="1.5707963267948966 0 1.5707963267948966" xyz="0.0603 -9.94414e-05 -0.072"/>
+      <geometry>
+        <mesh filename="meshes/driver_mount_right.stl"/>
+      </geometry>
+    </collision>
+  </link>
+  <!-- The servo base carries. Its own link because it is its
+         own part - bought rather than printed - and because a viewer that colours
+         a link at a time can then tell the two apart. The mass stays with the
+         parent: the inertial there describes both, and splitting it wants the
+         servo on a scale rather than a number invented here. -->
+  <link name="right_base_servo_link">
+    <visual>
+      <origin rpy="0 1.5707963267948966 0" xyz="0.0437 0 0.0125"/>
+      <geometry>
+        <mesh filename="meshes/servo.stl"/>
+      </geometry>
+      <material name="sts3215"/>
+    </visual>
+    <collision>
+      <origin rpy="0 1.5707963267948966 0" xyz="0.0437 0 0.0125"/>
+      <geometry>
+        <mesh filename="meshes/servo.stl"/>
+      </geometry>
+    </collision>
+  </link>
+  <joint name="right_base_servo_joint" type="fixed">
+    <parent link="right_base_link"/>
+    <child link="right_base_servo_link"/>
+    <origin rpy="0 -1.5707963267948966 0" xyz="0.1055 0 -0.0696"/>
+  </joint>
+  <link name="right_shoulder_link">
+    <inertial>
+      <origin rpy="0 0 0" xyz="-0.0307604 -1.66727e-05 -0.0252713"/>
+      <mass value="0.100006"/>
+      <inertia ixx="8.3759e-05" ixy="7.55525e-08" ixz="-1.16342e-06" iyy="8.10403e-05" iyz="1.54663e-07" izz="2.39783e-05"/>
+    </inertial>
+    <visual>
+      <origin rpy="1.5708 -1.5708 0" xyz="-0.0675992 -0.000177759 0.0158499"/>
+      <geometry>
+        <mesh filename="meshes/shoulder_servo_mount_right.stl"/>
+      </geometry>
+      <material name="3d_printed"/>
+    </visual>
+    <visual>
+      <origin rpy="-1.5708 2.35221e-33 0" xyz="0.0122008 2.22413e-05 0.0464"/>
+      <geometry>
+        <mesh filename="meshes/shoulder_right.stl"/>
+      </geometry>
+      <material name="3d_printed"/>
+    </visual>
+    <collision>
+      <origin rpy="1.5708 -1.5708 0" xyz="-0.0675992 -0.000177759 0.0158499"/>
+      <geometry>
+        <mesh filename="meshes/shoulder_servo_mount_right.stl"/>
+      </geometry>
+    </collision>
+    <collision>
+      <origin rpy="-1.5708 2.35221e-33 0" xyz="0.0122008 2.22413e-05 0.0464"/>
+      <geometry>
+        <mesh filename="meshes/shoulder_right.stl"/>
+      </geometry>
+    </collision>
+  </link>
+  <!-- The servo shoulder carries. Its own link because it is its
+         own part - bought rather than printed - and because a viewer that colours
+         a link at a time can then tell the two apart. The mass stays with the
+         parent: the inertial there describes both, and splitting it wants the
+         servo on a scale rather than a number invented here. -->
+  <link name="right_shoulder_servo_link">
+    <collision>
+      <origin rpy="1.5708 1.5708 0" xyz="-0.0303992 0.000422241 -0.0417"/>
+      <geometry>
+        <mesh filename="meshes/servo.stl"/>
+      </geometry>
+    </collision>
+    <visual>
+      <origin rpy="1.5708 1.5708 0" xyz="-0.0303992 0.000422241 -0.0417"/>
+      <geometry>
+        <mesh filename="meshes/servo.stl"/>
+      </geometry>
+      <material name="sts3215"/>
+    </visual>
+  </link>
+  <joint name="right_shoulder_servo_joint" type="fixed">
+    <parent link="right_shoulder_link"/>
+    <child link="right_shoulder_servo_link"/>
+    <origin rpy="0 0 0" xyz="0 0 0"/>
+  </joint>
+  <link name="right_upper_arm_link">
+    <inertial>
+      <origin rpy="0 0 0" xyz="-0.0898471 -0.00838224 0.0184089"/>
+      <mass value="0.103"/>
+      <inertia ixx="4.08002e-05" ixy="-1.97819e-05" ixz="-4.03016e-08" iyy="0.000147318" iyz="8.97326e-09" izz="0.000142487"/>
+    </inertial>
+    <visual>
+      <origin rpy="3.14159 -0 -1.30911e-30" xyz="-0.065085 0.012 0.0182"/>
+      <geometry>
+        <mesh filename="meshes/upper_arm_right.stl"/>
+      </geometry>
+      <material name="3d_printed"/>
+    </visual>
+    <collision>
+      <origin rpy="3.14159 -0 -1.30911e-30" xyz="-0.065085 0.012 0.0182"/>
+      <geometry>
+        <mesh filename="meshes/upper_arm_right.stl"/>
+      </geometry>
+    </collision>
+  </link>
+  <!-- The servo upper arm carries. Its own link because it is its
+         own part - bought rather than printed - and because a viewer that colours
+         a link at a time can then tell the two apart. The mass stays with the
+         parent: the inertial there describes both, and splitting it wants the
+         servo on a scale rather than a number invented here. -->
+  <link name="right_upper_arm_servo_link">
+    <collision>
+      <origin rpy="-3.14159 -5.27356e-16 -1.5708" xyz="-0.11257 -0.0155 0.0187"/>
+      <geometry>
+        <mesh filename="meshes/servo.stl"/>
+      </geometry>
+    </collision>
+    <visual>
+      <origin rpy="-3.14159 -5.27356e-16 -1.5708" xyz="-0.11257 -0.0155 0.0187"/>
+      <geometry>
+        <mesh filename="meshes/servo.stl"/>
+      </geometry>
+      <material name="sts3215"/>
+    </visual>
+  </link>
+  <joint name="right_upper_arm_servo_joint" type="fixed">
+    <parent link="right_upper_arm_link"/>
+    <child link="right_upper_arm_servo_link"/>
+    <origin rpy="0 0 0" xyz="0 0 0"/>
+  </joint>
+  <link name="right_lower_arm_link">
+    <visual>
+      <origin rpy="0 -1.57079633 -3.14159265" xyz="-0.014555 -0.000707 0.0167"/>
+      <geometry>
+        <mesh filename="meshes/wrist_yaw_bracket_right.stl"/>
+      </geometry>
+      <material name="3d_printed"/>
+    </visual>
+    <collision>
+      <origin rpy="0 -1.57079633 -3.14159265" xyz="-0.014555 -0.000707 0.0167"/>
+      <geometry>
+        <mesh filename="meshes/wrist_yaw_bracket_right.stl"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <origin rpy="0 0 0" xyz="-0.012 0.035 0.0167"/>
+      <mass value="0.079"/>
+      <inertia ixx="4e-05" ixy="0" ixz="0" iyy="2e-05" iyz="0" izz="4e-05"/>
+    </inertial>
+  </link>
+  <!-- The servo lower arm carries. Its own link because it is its
+         own part - bought rather than printed - and because a viewer that colours
+         a link at a time can then tell the two apart. The mass stays with the
+         parent: the inertial there describes both, and splitting it wants the
+         servo on a scale rather than a number invented here. -->
+  <link name="right_lower_arm_servo_link">
+    <visual>
+      <origin rpy="1.57079633 -0 3.14159265" xyz="-0.064455 -0.000497 0.01739"/>
+      <geometry>
+        <mesh filename="meshes/servo.stl"/>
+      </geometry>
+      <material name="sts3215"/>
+    </visual>
+    <collision>
+      <origin rpy="1.57079633 -0 3.14159265" xyz="-0.064455 -0.000497 0.01739"/>
+      <geometry>
+        <mesh filename="meshes/servo.stl"/>
+      </geometry>
+    </collision>
+  </link>
+  <joint name="right_lower_arm_servo_joint" type="fixed">
+    <parent link="right_lower_arm_link"/>
+    <child link="right_lower_arm_servo_link"/>
+    <origin rpy="0 0 0" xyz="0 0 0"/>
+  </joint>
+  <link name="right_wrist_link">
+    <inertial>
+      <origin rpy="0 0 0" xyz="-0.000103312 -0.0386143 0.0281156"/>
+      <mass value="0.079"/>
+      <inertia ixx="3.68263e-05" ixy="1.7893e-08" ixz="-5.28128e-08" iyy="2.5391e-05" iyz="3.6412e-06" izz="2.1e-05"/>
+    </inertial>
+    <visual>
+      <origin rpy="-1.5708 -1.5708 0" xyz="0 -0.028 0.0181"/>
+      <geometry>
+        <mesh filename="meshes/wrist_right.stl"/>
+      </geometry>
+      <material name="3d_printed"/>
+    </visual>
+    <collision>
+      <origin rpy="-1.5708 -1.5708 0" xyz="0 -0.028 0.0181"/>
+      <geometry>
+        <mesh filename="meshes/wrist_right.stl"/>
+      </geometry>
+    </collision>
+  </link>
+  <!-- The servo wrist carries. Its own link because it is its
+         own part - bought rather than printed - and because a viewer that colours
+         a link at a time can then tell the two apart. The mass stays with the
+         parent: the inertial there describes both, and splitting it wants the
+         servo on a scale rather than a number invented here. -->
+  <link name="right_wrist_servo_link">
+    <collision>
+      <origin rpy="1.5708 1.5708 0" xyz="8.32667e-17 -0.0424 0.0306"/>
+      <geometry>
+        <mesh filename="meshes/servo_no_horn.stl"/>
+      </geometry>
+    </collision>
+    <visual>
+      <origin rpy="1.5708 1.5708 0" xyz="8.32667e-17 -0.0424 0.0306"/>
+      <geometry>
+        <mesh filename="meshes/servo_no_horn.stl"/>
+      </geometry>
+      <material name="sts3215"/>
+    </visual>
+  </link>
+  <joint name="right_wrist_servo_joint" type="fixed">
+    <parent link="right_wrist_link"/>
+    <child link="right_wrist_servo_link"/>
+    <origin rpy="0 0 0" xyz="0 0 0"/>
+  </joint>
+  <link name="right_gripper_link">
+    <inertial>
+      <origin rpy="0 0 0" xyz="0.000213627 0.000245138 -0.025187"/>
+      <mass value="0.087"/>
+      <inertia ixx="2.75087e-05" ixy="-3.35241e-07" ixz="-5.7352e-06" iyy="4.33657e-05" iyz="-5.17847e-08" izz="3.45059e-05"/>
+    </inertial>
+    <visual>
+      <origin rpy="-3.14159 -5.55112e-17 0" xyz="8.32667e-17 -0.000218214 0.000949706"/>
+      <geometry>
+        <mesh filename="meshes/claw_right.stl"/>
+      </geometry>
+      <material name="3d_printed"/>
+    </visual>
+    <collision>
+      <origin rpy="-3.14159 -5.55112e-17 0" xyz="8.32667e-17 -0.000218214 0.000949706"/>
+      <geometry>
+        <mesh filename="meshes/claw_right.stl"/>
+      </geometry>
+    </collision>
+  </link>
+  <!-- The servo gripper carries. Its own link because it is its
+         own part - bought rather than printed - and because a viewer that colours
+         a link at a time can then tell the two apart. The mass stays with the
+         parent: the inertial there describes both, and splitting it wants the
+         servo on a scale rather than a number invented here. -->
+  <link name="right_gripper_servo_link">
+    <collision>
+      <origin rpy="-1.5708 -5.19179e-17 -1.66533e-16" xyz="0.0077 0.0001 -0.0234"/>
+      <geometry>
+        <mesh filename="meshes/servo.stl"/>
+      </geometry>
+    </collision>
+    <visual>
+      <origin rpy="-1.5708 -5.19179e-17 -1.66533e-16" xyz="0.0077 0.0001 -0.0234"/>
+      <geometry>
+        <mesh filename="meshes/servo.stl"/>
+      </geometry>
+      <material name="sts3215"/>
+    </visual>
+  </link>
+  <joint name="right_gripper_servo_joint" type="fixed">
+    <parent link="right_gripper_link"/>
+    <child link="right_gripper_servo_link"/>
+    <origin rpy="0 0 0" xyz="0 0 0"/>
+  </joint>
+  <!-- The UMI camera's bracket and the case the camera clicks into, bolted to
+         the claw's camera-side wall.
+         pinkrab_umi builds this part and the handheld carries the same one: what
+         the hand sees while a demonstration is collected and what the arm sees
+         while the policy runs are one viewpoint, which is the whole reason the
+         mount is shared rather than designed twice. config/camera.yaml is where
+         that pose is stated, and build_camera_bracket.py is what carries the
+         board to it.
+
+         The mesh is cut in the claw's own frame, so it is placed by the SAME
+         origin the claw is - measured back: it lands against the wall at y 24 mm
+         with the claw ending there. It is drawn and collided: the arm can meet
+         the desk with it, and a camera that is invisible to the scene is one the
+         gate would let an operator drive into the board. -->
+  <link name="right_camera_bracket_link">
+    <visual>
+      <origin rpy="-3.14159 -5.55112e-17 0" xyz="8.32667e-17 -0.000218214 0.000949706"/>
+      <geometry>
+        <mesh filename="meshes/camera_bracket_right.stl"/>
+      </geometry>
+      <material name="3d_printed"/>
+    </visual>
+    <collision>
+      <origin rpy="-3.14159 -5.55112e-17 0" xyz="8.32667e-17 -0.000218214 0.000949706"/>
+      <geometry>
+        <mesh filename="meshes/camera_bracket_right.stl"/>
+      </geometry>
+    </collision>
+  </link>
+  <joint name="right_camera_bracket_joint" type="fixed">
+    <parent link="right_gripper_link"/>
+    <child link="right_camera_bracket_link"/>
+    <origin rpy="0 0 0" xyz="0 0 0"/>
+  </joint>
+  <link name="right_gripper_frame_link">
+    <origin rpy="0 -0 0" xyz="0 0 0"/>
+    <inertial>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <mass value="1e-9"/>
+      <inertia ixx="0" ixy="0" ixz="0" iyy="0" iyz="0" izz="0"/>
+    </inertial>
+  </link>
+  <link name="right_jaw_link">
+    <inertial>
+      <origin rpy="0 0 0" xyz="-0.00157495 -0.0300244 0.0192755"/>
+      <mass value="0.012"/>
+      <inertia ixx="6.61427e-06" ixy="-3.19807e-07" ixz="-5.90717e-09" iyy="1.89032e-06" iyz="-1.09945e-07" izz="5.28738e-06"/>
+    </inertial>
+    <visual>
+      <origin rpy="9.53145e-17 6.93889e-18 1.24077e-24" xyz="-5.55112e-17 -5.55112e-17 0.0189"/>
+      <geometry>
+        <mesh filename="meshes/jaw_right.stl"/>
+      </geometry>
+      <material name="3d_printed"/>
+    </visual>
+    <collision>
+      <origin rpy="9.53145e-17 6.93889e-18 1.24077e-24" xyz="-5.55112e-17 -5.55112e-17 0.0189"/>
+      <geometry>
+        <mesh filename="meshes/jaw_right.stl"/>
+      </geometry>
+    </collision>
+  </link>
+  <link name="right_wrist_yaw_link">
+    <inertial>
+      <origin rpy="0 0 0" xyz="-0.012 0.035 0.0167"/>
+      <mass value="0.079"/>
+      <inertia ixx="4e-05" ixy="0" ixz="0" iyy="2e-05" iyz="0" izz="4e-05"/>
+    </inertial>
+    <visual>
+      <origin rpy="0 -1.57079633 -3.14159265" xyz="-0.014555 -0.000707 0.0167"/>
+      <geometry>
+        <mesh filename="meshes/wrist_yaw_bracket_right.stl"/>
+      </geometry>
+      <material name="3d_printed"/>
+    </visual>
+    <collision>
+      <origin rpy="0 -1.57079633 -3.14159265" xyz="-0.014555 -0.000707 0.0167"/>
+      <geometry>
+        <mesh filename="meshes/wrist_yaw_bracket_right.stl"/>
+      </geometry>
+    </collision>
+  </link>
+  <!-- The servo wrist yaw carries. Its own link because it is its
+         own part - bought rather than printed - and because a viewer that colours
+         a link at a time can then tell the two apart. The mass stays with the
+         parent: the inertial there describes both, and splitting it wants the
+         servo on a scale rather than a number invented here. -->
+  <link name="right_wrist_yaw_servo_link">
+    <visual>
+      <origin rpy="1.57079633 -0 3.14159265" xyz="-0.064455 -0.000497 0.01739"/>
+      <geometry>
+        <mesh filename="meshes/servo.stl"/>
+      </geometry>
+      <material name="sts3215"/>
+    </visual>
+    <collision>
+      <origin rpy="1.57079633 -0 3.14159265" xyz="-0.064455 -0.000497 0.01739"/>
+      <geometry>
+        <mesh filename="meshes/servo.stl"/>
+      </geometry>
+    </collision>
+  </link>
+  <joint name="right_wrist_yaw_servo_joint" type="fixed">
+    <parent link="right_wrist_yaw_link"/>
+    <child link="right_wrist_yaw_servo_link"/>
+    <origin rpy="0 0 0" xyz="0 0 0"/>
+  </joint>
+  <joint name="right_gripper_frame_joint" type="fixed">
+    <origin rpy="0 3.14159 0" xyz="-0.0079 -0.000218121 -0.1081274"/>
+    <parent link="right_gripper_link"/>
+    <child link="right_gripper_frame_link"/>
+    <axis xyz="0 0 0"/>
+  </joint>
+  <joint name="right_gripper" type="revolute">
+    <origin rpy="1.5708 -5.24284e-08 -1.41553e-15" xyz="0.0202 0.0188 -0.0234"/>
+    <parent link="right_gripper_link"/>
+    <child link="right_jaw_link"/>
+    <axis xyz="0 0 1"/>
+    <limit effort="10" lower="-0.174532925" upper="1.3962634" velocity="10"/>
+  </joint>
+  <joint name="right_wrist_roll" type="revolute">
+    <origin rpy="1.570866671 -1.518626168 3.14151957" xyz="5.55112e-17 -0.0611 0.0181"/>
+    <parent link="right_wrist_link"/>
+    <child link="right_gripper_link"/>
+    <axis xyz="0 0 1"/>
+    <limit effort="10" lower="-3.0543261909900767" upper="3.0543261909900767" velocity="10"/>
+  </joint>
+  <joint name="right_wrist_flex" type="revolute">
+    <origin rpy="1.57079633 -0.0157016428 -3.25550667e-09" xyz="-0.076955 0.018203 0.01739"/>
+    <parent link="right_lower_arm_link"/>
+    <child link="right_wrist_yaw_link"/>
+    <axis xyz="0 0 1"/>
+    <limit effort="10" lower="-1.98967535" upper="1.98967535" velocity="10"/>
+  </joint>
+  <joint name="right_elbow_flex" type="revolute">
+    <origin rpy="3.12892564e-15 1.78677717e-15 2.988003683" xyz="-0.112570079 -0.028 3.84545401e-17"/>
+    <parent link="right_upper_arm_link"/>
+    <child link="right_lower_arm_link"/>
+    <axis xyz="0 0 1"/>
+    <limit effort="10" lower="-3.42084533" upper="0" velocity="10"/>
+  </joint>
+  <joint name="right_shoulder_lift" type="revolute">
+    <origin rpy="1.57079633 0.26529372 3.14158898" xyz="-0.0303992 -0.0182778 -0.0542"/>
+    <parent link="right_shoulder_link"/>
+    <child link="right_upper_arm_link"/>
+    <axis xyz="0 0 1"/>
+    <limit effort="10" lower="0" upper="3.66519143" velocity="10"/>
+  </joint>
+  <joint name="right_shoulder_pan" type="revolute">
+    <origin rpy="3.14159 -4.17e-08 3.12588734" xyz="0.1055 0 -0.0072"/>
+    <parent link="right_base_link"/>
+    <child link="right_shoulder_link"/>
+    <axis xyz="0 0 1"/>
+    <limit effort="10" lower="-2.00712864" upper="2.07694181" velocity="10"/>
+  </joint>
+  <joint name="right_wrist_yaw" type="revolute">
+    <origin rpy="-1.57079633 -0.0872664626 3.14159265" xyz="-0.076955 0.018203 0.01739"/>
+    <parent link="right_wrist_yaw_link"/>
+    <child link="right_wrist_link"/>
+    <axis xyz="0 0 1"/>
+    <limit effort="10" lower="0" upper="3.29867229" velocity="10"/>
+  </joint>
+</robot>

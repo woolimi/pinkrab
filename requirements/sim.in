@@ -1,0 +1,6 @@
+# sim - the robot in MuJoCo.
+#
+# Nothing here talks to hardware. This slice is for running the model in
+# src/pinkrab_description/mjcf/ and for the description check that compares it
+# against the URDF.
+mujoco

@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pinkrab training guide</title>
+  <link rel="icon" href="/static/claw.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/style.css">
+  <link rel="stylesheet" href="/static/home.css">
+  <link rel="stylesheet" href="/static/handheld.css">
+  <link rel="stylesheet" href="/static/train.css">
+</head>
+<body class="home train guide">
+  <main class="home">
+    <header class="bar">
+      <a class="back" href="/train" title="back to the training page">&larr;</a>
+      <h1><svg class="claw" viewBox="0 0 64 64" aria-hidden="true"><use href="/static/claw.svg#claw"/></svg><span>Training guide</span></h1>
+      <span class="state"></span>
+      <a class="button primary" href="/train">Training page</a>
+    </header>
+
+    <nav class="toc">
+      <a href="#map">The page</a>
+      <a href="#studio">The studio</a>
+      <a href="#datasets">Datasets</a>
+      <a href="#remote">A remote machine</a>
+      <a href="#start">A new run</a>
+      <a href="#watch">Run states</a>
+      <a href="#after">Stop, resume, checkpoints</a>
+      <a href="#terminal">The terminal</a>
+      <a href="#trouble">Trouble</a>
+      <a href="#files">Files</a>
+    </nav>
+
+    <article class="doc">
+      <section id="map">
+        <h2>The page</h2>
+        <p>The studio's front page, <b>Train</b> card, opens it at <code>/train</code>.</p>
+        <table>
+          <tr><th>Read now</th><td>every source read at once, instead of on its interval (this machine 10 s, ssh 30 s)</td></tr>
+          <tr><th>Sources</th><td>where runs are read from and started on: this machine, and ssh logins</td></tr>
+          <tr><th>New run</th><td>a run started on a source</td></tr>
+          <tr><th>the yellow strip</th><td>what the studio is doing for the page: a run being started, a checkpoint being copied</td></tr>
+          <tr><th>runs, left</th><td>newest first; a click on a card draws that run alone, the tick adds it beside the others, in the colour of its swatch; <i>details</i> opens the run</td></tr>
+          <tr><th>charts, right</th><td>one per metric, every ticked run on it; smoothing, x by step, hours or epochs, log axes for losses; hovering reads one step on every chart</td></tr>
+        </table>
+      </section>
+
+      <section id="studio">
+        <h2>The studio</h2>
+<pre><code>cd ~/projects/pinkrab && source .venv/bin/activate
+pinkrab-studio            # http://localhost:8730/</code></pre>
+        <p>It answers this machine only. Runs do not need it: they keep training with the studio closed, and what they wrote meanwhile is read when it comes back.</p>
+      </section>
+
+      <section id="datasets">
+        <h2>Datasets</h2>
+        <p>Every dataset under <code>~/pinkrab/datasets</code> is offered, as the collect page's <b>Convert</b> or <code>pinkrab-umi convert</code> made it. A dataset is sent to a machine once; a dataset converted again is sent again, beside the old one, so a run still reading the old one is left alone.</p>
+      </section>
+
+      <section id="remote">
+        <h2>A remote machine</h2>
+        <p>A machine this studio trains on over ssh. What it needs follows from the PyTorch the lock pins - 2.11, built for CUDA 13.0:</p>
+        <table>
+          <tr><th>system</th><td>Linux on x86_64, with <code>python3</code>, <code>curl</code> and an ssh login by key; the internet for the first setup</td></tr>
+          <tr><th>GPU</th><td>NVIDIA, compute capability 7.5 or higher (Turing on): T4, RTX 20 / 30 / 40 / 50 series, A10, A100, A6000, L4, L40S, H100, H200, B200. Not Volta (V100) or older</td></tr>
+          <tr><th>driver</th><td>580 or newer (CUDA 13.0). The CUDA toolkit need not be installed: PyTorch brings its own libraries</td></tr>
+          <tr><th>GPU memory</th><td>8 GB or more: on two gripper cameras at batch 8, ACT peaks near 5.7 GB</td></tr>
+          <tr><th>CPU</th><td>8 cores or more: decoding the video for each batch is the CPU's work, one core per loader worker</td></tr>
+          <tr><th>disk</th><td>about 15 GB for the Python, the venv and its download cache, then the datasets and the runs' checkpoints</td></tr>
+        </table>
+        <p><b>test</b> and <b>New run</b> check the GPU and the driver, and say what is short before anything is sent.</p>
+        <h3>Adding one</h3>
+        <p><b>Sources</b> on the training page:</p>
+        <table>
+          <tr><th>name</th><td>any, e.g. <code>gpu-box</code></td></tr>
+          <tr><th>ssh, sftp or scp line</th><td>the host, port, user and key are taken from it: <code>ssh -i ~/.ssh/id_ed25519 -p 22 user@gpu.example.com</code>, or the line a cloud console hands out for a session</td></tr>
+          <tr><th>key</th><td>its path here, or the file itself - either way copied into <code>~/pinkrab/keys</code>, readable by this user only, and used from there, so the original can be moved or deleted; never sent back to the page. Password logins are not used</td></tr>
+          <tr><th>runs are under</th><td>where the machine keeps everything: <code>~/pinkrab-train</code>. On a machine whose home directory is wiped between sessions, a directory on its persistent volume</td></tr>
+        </table>
+        <p><b>Save and read</b>, then <b>test</b>: its GPUs with their memory, driver and compute capability, its cores and free room, whether it is set up, what is running on it.</p>
+        <p>A machine given out by sessions - a new host or port each time - keeps its source: <b>edit</b> it with the new line. What was set up under its root is still there.</p>
+      </section>
+
+      <section id="start">
+        <h2>A new run</h2>
+        <table>
+          <tr><th>machine</th><td>a source; its state is shown under it as soon as it is picked</td></tr>
+          <tr><th>dataset</th><td>with its episodes, frames and picture size</td></tr>
+          <tr><th>policy</th><td><b>ACT</b>; batch 8 unless changed in <b>batch</b></td></tr>
+          <tr><th>steps, log every, checkpoint every</th><td>100 000, 50, 20 000 unless changed; a smaller <i>log every</i> is a denser chart at no cost to speed</td></tr>
+          <tr><th>name</th><td>policy-dataset-date if left empty</td></tr>
+          <tr><th>more arguments</th><td>anything else <code>lerobot-train</code> takes, e.g. <code>--policy.optimizer_lr=5e-5</code></td></tr>
+          <tr><th>copy each checkpoint here</th><td>on: every checkpoint is copied to this machine as it is saved</td></tr>
+        </table>
+        <p><b>Start</b>, and the strip says each step: the machine asked, the kit sent (the metrics logger, the setup script, this checkout's lock), the venv built or checked against the lock - minutes the first time on a machine, seconds after - the dataset sent if it is not there, the run started detached. It trains on with this page closed and the connection gone.</p>
+        <p>The run is <code>lerobot-train</code> started through <code>pinkrab-train</code>, the metrics logger: the same training, with a <code>metrics.jsonl</code> beside its checkpoints that this page reads. A run started with plain <code>lerobot-train</code> has none - it is only seen on the GPU, with no numbers (see <a href="#watch">Run states</a>).</p>
+      </section>
+
+      <section id="watch">
+        <h2>Run states</h2>
+        <table>
+          <tr><th><span class="chip running">running</span></th><td>its files grew in the last five minutes</td></tr>
+          <tr><th><span class="chip done">done</span></th><td>trained to its last step</td></tr>
+          <tr><th><span class="chip stopped">stopped</span></th><td>stopped from here, or interrupted</td></tr>
+          <tr><th><span class="chip failed">failed</span></th><td>ended on an error, shown under it</td></tr>
+          <tr><th><span class="chip quiet">quiet</span></th><td>no news for five minutes and no end: killed, or its machine gone</td></tr>
+        </table>
+        <p>What is drawn is what <code>pinkrab-train</code> writes to a run's <code>metrics.jsonl</code>: the exact numbers, the checkpoints, the end. A run started with plain <code>lerobot-train</code> keeps no such file and has nothing to draw.</p>
+        <p>Each read also asks the source's <code>nvidia-smi</code> what is on its GPUs. A process no run here accounts for is listed under <b>on a GPU, not recorded</b>, by the <code>--output_dir</code> on its command line, with the GPU memory it holds; the source's chip counts it and the front page's Train card lists it. It is only seen to be there: no progress, no loss, no checkpoints.</p>
+      </section>
+
+      <section id="after">
+        <h2>Stop, resume, checkpoints</h2>
+        <p>A run's <i>details</i> button opens it: where it runs, its terminal, its configuration, its checkpoints. A click outside the box closes it.</p>
+        <table>
+          <tr><th>Stop</th><td>pressed twice; the run is sent SIGTERM and ends <i>stopped</i></td></tr>
+          <tr><th>Resume</th><td>from its last checkpoint, on the same machine - for a run cut short by a machine that went away</td></tr>
+          <tr><th>copy here</th><td>one checkpoint copied to <code>~/pinkrab/train/&lt;run&gt;/checkpoints/&lt;step&gt;/pretrained_model</code>; marked <i>here</i> when it is</td></tr>
+          <tr><th>copy each one here</th><td>the same for every checkpoint, as it is saved, while the studio is up (and the ones missed, when it comes back)</td></tr>
+        </table>
+        <p>A checkpoint here is on the <a href="/policy">policy page</a>: <b>Ask</b> to see what it answers, <b>Drive</b> to run it on the arm.</p>
+      </section>
+
+      <section id="terminal">
+        <h2>The terminal</h2>
+        <p><code>pinkrab-remote</code> does the same on the same store: a source added there is on this page, a run started there is drawn here.</p>
+<pre><code>pinkrab-remote add gpu-box --line "ssh -i ~/.ssh/id_ed25519 -p 22 user@gpu.example.com" \
+               --root "~/pinkrab-train"
+pinkrab-remote probe gpu-box
+pinkrab-remote launch gpu-box blocks-left-v2-g2 --policy act --steps 100000
+pinkrab-remote runs                   # id, state, progress, loss, checkpoints
+pinkrab-remote fetch &lt;id&gt; --all
+pinkrab-remote stop &lt;id&gt;
+pinkrab-remote resume &lt;id&gt;</code></pre>
+        <p>A run started by hand is shown too when it is started with <code>pinkrab-train</code> in place of <code>lerobot-train</code> - the same arguments - under a source's root.</p>
+      </section>
+
+      <section id="trouble">
+        <h2>Trouble</h2>
+        <table>
+          <tr><th><code>Permission denied (publickey)</code></th><td>the machine does not take this key: the source's key, or the machine's <code>authorized_keys</code></td></tr>
+          <tr><th>a source's error in the header, <code>no answer</code></th><td>the machine is off, or its host or port changed: <b>edit</b> the source</td></tr>
+          <tr><th><i>cannot train here</i> on test</th><td>the driver or the GPU is short of what the lock's PyTorch needs - see <a href="#remote">A remote machine</a></td></tr>
+          <tr><th>a run <i>quiet</i></th><td>its process or its machine went away; with a checkpoint saved, <b>Resume</b></td></tr>
+          <tr><th>checkpoints not arriving</th><td>copies are made while the studio is up; the missed ones follow when it is up again</td></tr>
+          <tr><th>the first start is slow</th><td>the venv is being built on the machine, once; the strip says so</td></tr>
+        </table>
+      </section>
+
+      <section id="files">
+        <h2>Files</h2>
+        <table>
+          <tr><th>this machine</th><td><code>~/pinkrab/train.sqlite</code> every run read, <code>~/pinkrab/keys/</code> keys, <code>~/pinkrab/train/</code> local runs and copied checkpoints, <code>~/pinkrab/datasets/</code></td></tr>
+          <tr><th>a remote machine, under its root</th><td><code>train/&lt;run&gt;/</code> output and <code>metrics.jsonl</code>, <code>logs/&lt;run&gt;-&lt;time&gt;.log</code> terminal, <code>datasets/&lt;name&gt;--&lt;fingerprint&gt;/</code>, <code>.venv/</code> and <code>uv-python/</code></td></tr>
+        </table>
+      </section>
+    </article>
+  </main>
+</body>
+</html>

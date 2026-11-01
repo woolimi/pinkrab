@@ -1,0 +1,179 @@
+---
+// The arm's joint ranges: a list of the joints with their limits, read from the
+// exported description, and over it the arm moving the one picked. The list
+// stands on its own where the picture does not load.
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import Stage3D from './Stage3D.astro';
+
+const SIDE = 'left';
+const JOINTS = ['shoulder_pan', 'shoulder_lift', 'elbow_flex', 'wrist_flex', 'wrist_yaw', 'wrist_roll'];
+
+// Astro runs from the site's root, where public/ is.
+const urdf = readFileSync(resolve('public/robot/model.urdf'), 'utf8');
+const deg = (rad: number) => Math.round((rad * 180) / Math.PI);
+const signed = (d: number) => (d > 0 ? `+${d}°` : d < 0 ? `−${-d}°` : '0°');
+const joints = JOINTS.map((key) => {
+	const name = `${SIDE}_${key}`;
+	const tag = new RegExp(`<joint name="${name}"[\\s\\S]*?<limit[^>]*>`).exec(urdf)?.[0];
+	if (!tag) throw new Error(`no limit for ${name} in model.urdf`);
+	const lower = deg(Number(/lower="([^"]+)"/.exec(tag)?.[1]));
+	const upper = deg(Number(/upper="([^"]+)"/.exec(tag)?.[1]));
+	return { name, label: key.replace('_', ' '), span: upper - lower, lower: signed(lower), upper: signed(upper) };
+});
+---
+
+<figure class="pk-joints not-content" data-side={SIDE}>
+	<ul class="chips" aria-label="관절">
+		{joints.map((j) => (
+			<li>
+				<button type="button" data-joint={j.name} aria-pressed="false">
+					<span class="name">{j.label}</span>
+					<span class="span">{j.span}°</span>
+					<span class="limits">{j.lower} ~ {j.upper}</span>
+				</button>
+			</li>
+		))}
+	</ul>
+	<Stage3D label="페그보드에 건 왼팔. 고른 관절이 한쪽 한계에서 다른 쪽 한계까지 움직이고, 움직이는 범위를 부채꼴로 표시합니다." />
+	<div class="bar">
+		<button type="button" class="play" aria-pressed="true" aria-label="일시정지">
+			<svg class="pause" viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="5" width="4" height="14" rx="1"></rect><rect x="14" y="5" width="4" height="14" rx="1"></rect></svg>
+			<svg class="resume" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13a1 1 0 0 0 1.5.86l10.2-6.5a1 1 0 0 0 0-1.72L9.5 4.64A1 1 0 0 0 8 5.5z"></path></svg>
+		</button>
+		<input type="range" step="1" aria-label="관절 각도" />
+		<output class="angle" aria-live="off"></output>
+	</div>
+	<figcaption>각도는 관절 원점(점선) 기준입니다. 부채꼴이 관절이 움직이는 범위입니다.</figcaption>
+</figure>
+
+<script>
+	import { SOURCES, whenNear } from '../scripts/arm-figure';
+
+	const figure = document.querySelector<HTMLElement>('.pk-joints');
+	if (figure) whenNear(figure, () => import('../scripts/joints.js').then(({ showJoints }) => showJoints(figure, SOURCES)));
+</script>
+
+<style>
+	.pk-joints {
+		margin: 1.5rem 0;
+	}
+	.chips {
+		display: grid;
+		grid-template-columns: repeat(3, minmax(0, 1fr));
+		gap: 0.5rem;
+		margin: 0 0 0.75rem;
+		padding: 0;
+		list-style: none;
+	}
+	.chips button {
+		display: grid;
+		grid-template-columns: 1fr auto;
+		align-items: baseline;
+		gap: 0.1rem 0.5rem;
+		width: 100%;
+		min-height: 44px;
+		padding: 0.55rem 0.75rem;
+		border: 1px solid var(--pk-line);
+		border-radius: 0.6rem;
+		background: var(--pk-panel);
+		color: var(--pk-text);
+		font: inherit;
+		text-align: left;
+		cursor: pointer;
+		transition: border-color 150ms ease, background-color 150ms ease;
+	}
+	.chips button:hover {
+		border-color: var(--pk-shell);
+	}
+	.chips button:focus-visible,
+	.play:focus-visible {
+		outline: 2px solid var(--sl-color-accent);
+		outline-offset: 2px;
+	}
+	.chips button[aria-pressed='true'] {
+		border-color: var(--pk-shell);
+		background: var(--sl-color-accent-low);
+	}
+	.chips .name {
+		font-weight: 600;
+	}
+	.chips .span {
+		font-family: var(--sl-font-mono);
+		font-weight: 600;
+		color: var(--pk-shell-deep);
+	}
+	.chips .limits {
+		grid-column: 1 / -1;
+		font-family: var(--sl-font-mono);
+		font-size: 0.8rem;
+		color: var(--pk-dim);
+	}
+
+	.bar {
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
+		margin-top: 0.5rem;
+	}
+	.play {
+		display: grid;
+		place-items: center;
+		flex: none;
+		width: 44px;
+		height: 44px;
+		border: 0;
+		border-radius: 50%;
+		background: var(--pk-shell);
+		color: #fff;
+		cursor: pointer;
+	}
+	.play svg {
+		width: 20px;
+		height: 20px;
+		fill: currentColor;
+	}
+	.play[aria-pressed='true'] .resume,
+	.play[aria-pressed='false'] .pause {
+		display: none;
+	}
+	.bar input {
+		flex: 1;
+		min-width: 0;
+		accent-color: var(--pk-shell);
+	}
+	.angle {
+		flex: none;
+		min-width: 4.5ch;
+		font-family: var(--sl-font-mono);
+		font-weight: 600;
+		text-align: right;
+		color: var(--pk-text);
+	}
+	figcaption {
+		margin-top: 0.5rem;
+		font-size: 0.85rem;
+		color: var(--pk-dim);
+	}
+
+	/* Until the arm is drawn the controls have nothing to drive; where it
+	 * never is, the list is all there is. */
+	.pk-joints:not(.ready) .bar,
+	.pk-joints:not(.ready) .chips button {
+		pointer-events: none;
+	}
+	.pk-joints:not(.ready) .bar {
+		opacity: 0;
+	}
+	.pk-joints.no-robot :global(.stage),
+	.pk-joints.no-robot .bar,
+	.pk-joints.no-robot figcaption {
+		display: none;
+	}
+
+	@media (max-width: 560px) {
+		.chips {
+			grid-template-columns: repeat(2, minmax(0, 1fr));
+		}
+	}
+</style>

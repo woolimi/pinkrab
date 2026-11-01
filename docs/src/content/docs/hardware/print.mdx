@@ -1,0 +1,82 @@
+---
+title: 부품 출력
+description: Pinkrab, Hermit, 마커의 출력 부품. Bambu Studio 프로젝트(3MF) 다운로드, 공통 설정, plate 구성과 출력 시간.
+---
+
+import PrintPlates from '../../../components/PrintPlates.astro';
+
+출력 부품은 Bambu Lab P2S 에 맞춰 설정한 Bambu Studio 프로젝트(3MF)로 들어 있습니다. 프로젝트에 부품 배치와 출력 방향, 설정이 모두 들어 있으므로 내려받아 Bambu Studio 에서 열고 **plate 마다 slice 해서 출력**하면 됩니다. 아래 그림은 내려받는 3MF 를 그대로 읽어 plate 마다 부품이 bed 에 놓인 모습을 보여 줍니다. 같은 파일이 리포의 `src/pinkrab_description/print/` 와 `src/pinkrab_umi/print/` 에도 있습니다.
+
+## 공통 설정
+
+| 항목 | 값 |
+|---|---|
+| 프린터 | Bambu Lab P2S, 0.4 mm nozzle |
+| 필라멘트 | Bambu PLA Basic |
+| build plate | Textured PEI |
+| process | 0.20mm Standard @BBL P2S |
+| support | tree (auto) |
+
+process 는 시스템 설정에서 몇 가지 값만 바꿨고, 바꾼 값은 Bambu Studio 에서 process 이름 옆에 표시됩니다. 모든 프로젝트에 공통으로 바꾼 값은 다음과 같습니다.
+
+- `seam_position` back: seam 을 부품 뒤쪽에 모읍니다.
+- `precise_outer_wall` 1: 외벽 치수를 설계 치수에 맞춥니다.
+- `counterbore_hole_bridging` partiallybridge: 나사 머리 자리의 바닥을 support 없이 bridge 로 만듭니다.
+
+Pinkrab 과 Hermit 은 핫핑크 PLA 로, UMI 마커와 테이블 마커는 흰색 PLA 로 출력하며, 프로젝트의 필라멘트 색도 그렇게 맞춰 두었습니다. 마커 타일만 흰색과 검은색 두 가지를 씁니다.
+
+## Pinkrab
+
+팔마다 프로젝트가 하나씩 있고, 프로젝트마다 plate 가 2장입니다. 오른팔의 plate 는 왼팔 plate 를 좌우로 뒤집은 배치입니다. 벽은 3겹, infill 은 15 % gyroid, brim 은 바깥쪽 3 mm 입니다.
+
+<PrintPlates
+	files={[{ file: 'pinkrab_arm_left.3mf', label: '왼팔' }, { file: 'pinkrab_arm_right.3mf', label: '오른팔' }]}
+	label="Pinkrab 프로젝트의 plate. P2S bed 위에 팔 부품이 출력 방향대로 놓여 있습니다."
+/>
+
+| plate | 부품 | 출력 시간 | PLA |
+|---|---|---:|---:|
+| 1 | base, claw, wrist yaw bracket 2개, driver mount, shoulder servo mount | 6시간 53분 | 206 g |
+| 2 | shoulder, wrist, upper arm, jaw, base servo mount, camera bracket | 6시간 41분 | 190 g |
+
+표의 시간과 무게는 왼팔 기준입니다. 오른팔의 driver mount 는 왼팔 것의 **거울상이 아니라 모양이 달라서**, 오른팔 plate 1 은 1분, 1 g 정도 더 걸립니다.
+
+## Hermit
+
+손마다 프로젝트가 하나씩 있고, 한 손의 부품이 plate 1장에 모두 들어갑니다. 손에 쥐고 다루는 부품이라 벽은 4겹, infill 은 25 % gyroid 로 **Pinkrab 보다 단단하게** 출력하고, brim 은 바깥쪽 3 mm 입니다.
+
+<PrintPlates
+	files={[{ file: 'umi_handheld_parts_left.3mf', label: '왼손' }, { file: 'umi_handheld_parts_right.3mf', label: '오른손' }]}
+	label="Hermit 프로젝트의 plate. P2S bed 위에 Hermit 부품이 출력 방향대로 놓여 있습니다."
+/>
+
+| plate | 부품 | 출력 시간 | PLA |
+|---|---|---:|---:|
+| 1 | handheld body, peg, jaw, camera bracket, board mount, driver plate | 4시간 47분 | 128 g |
+
+표의 시간과 무게는 왼손 기준이고, 오른손도 1분 안쪽으로 같습니다.
+
+## 마커
+
+마커는 Hermit 손잡이에 다는 UMI 마커 2개와 책상에 두는 테이블 마커 1개입니다. 두 마커의 면마다 포켓이 있고, **따로 출력한 마커 타일**을 그 포켓에 끼웁니다.
+
+<PrintPlates
+	files={[
+		{ file: 'umi_handheld_solids.3mf', label: 'UMI 마커' },
+		{ file: 'umi_handheld_tiles.3mf', label: 'UMI 마커 타일' },
+		{ file: 'umi_desk.3mf', label: '테이블 마커' },
+		{ file: 'umi_desk_tiles.3mf', label: '테이블 마커 타일' },
+	]}
+	label="마커 프로젝트의 plate. P2S bed 위에 UMI 마커와 테이블 마커, 타일이 출력 방향대로 놓여 있습니다."
+/>
+
+| 프로젝트 | plate | 출력 시간 | PLA |
+|---|---:|---:|---:|
+| UMI 마커 (`umi_handheld_solids.3mf`) | 1 | 3시간 41분 | 135 g |
+| UMI 마커 타일 (`umi_handheld_tiles.3mf`) | 2 | 1시간 38분 | 36 g |
+| 테이블 마커 (`umi_desk.3mf`) | 1 | 1시간 7분 | 50 g |
+| 테이블 마커 타일 (`umi_desk_tiles.3mf`) | 1 | 41분 | 15 g |
+
+- UMI 마커와 테이블 마커는 벽 4겹, infill 10 % cubic 입니다. 타일을 끼울 때 포켓 바닥이 눌리므로 **lightning infill 로 바꾸면 안 됩니다**.
+- 테이블 마커는 자른 면을 바닥에 두고 **support 없이 출력**합니다.
+- 타일은 흰 바탕과 그 위의 검은 칸이 한 개체를 이루는 두 부품이라, 흰색과 검은색 PLA 두 가지로 출력합니다. 끼워맞춤 면이 바닥에 닿기 때문에 **brim 을 쓰지 않고**, 벽은 2겹입니다.

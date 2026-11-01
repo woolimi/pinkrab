@@ -1,0 +1,20 @@
+# Turn the servo torque of one arm on or off.
+#
+# Both halves travel in one call. Setting an arm through a parameter and then
+# triggering the change is two round trips, and a second client arriving in
+# between turns the torque off on an arm nobody asked about.
+
+# ARM_LEFT, ARM_RIGHT or ARM_BOTH.
+string arm
+
+string ARM_LEFT=left
+string ARM_RIGHT=right
+string ARM_BOTH=both
+
+# Not called `on`. YAML reads a bare `on` as a boolean, so `ros2 service call`
+# hands the field name True instead of a string and refuses the call - which is
+# a thing an operator meets while typing at a robot, not while writing code.
+bool enable
+---
+bool success
+string message

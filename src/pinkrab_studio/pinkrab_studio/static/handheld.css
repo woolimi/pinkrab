@@ -1,0 +1,273 @@
+/* The handheld page: the two gripper cameras down the left, the top camera
+   large on the right, what the top camera makes of each under it, then
+   recording and the shelf - sections parted by a rule, not boxed. */
+body.handheld main.home { max-width: 1440px; padding-top: 0; }
+main.home header.bar { display: flex; align-items: center; gap: 14px; margin-bottom: 16px; background: none; padding: 0; border: 0; box-shadow: none; }
+/* The Collect and Policy pages' bar holds the pedals and what is recording,
+   and stays at the top while the page scrolls under it. */
+:is(body.handheld, body.policy) main.home header.bar {
+  position: sticky; top: 0; z-index: 10; flex-wrap: wrap; row-gap: 8px;
+  padding: 12px 0; margin-bottom: 8px; background: var(--paper); border-bottom: 1px solid var(--line);
+}
+:is(body.handheld, body.policy) .bar .record-bar { flex: 0 1 auto; min-width: 0; gap: 8px; flex-wrap: nowrap; }
+:is(body.handheld, body.policy) .bar .rec-line { font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* The board, small: one row of three pedals the height of a button. */
+:is(body.handheld, body.policy) .bar .pedalboard {
+  display: flex; flex: 0 0 auto; width: 380px; padding: 5px 8px 7px; border-radius: 10px 10px 16px 16px / 10px 10px 22px 22px;
+}
+:is(body.handheld, body.policy) .bar button.pedal {
+  flex: 1 1 0; min-width: 0; height: 34px; padding: 0 8px; flex-direction: row; align-items: center; justify-content: center; gap: 6px;
+  font-size: 12px; white-space: nowrap; box-shadow: 0 3px 0 #0a0a0b, 0 4px 5px rgba(0,0,0,.4), inset 0 1px 0 rgba(255,255,255,.12);
+}
+:is(body.handheld, body.policy) .bar button.pedal .num { display: inline; margin: 0; }
+:is(body.handheld, body.policy) .bar button.pedal:active, :is(body.handheld, body.policy) .bar button.pedal.on {
+  transform: translateY(2px); box-shadow: 0 1px 0 #0a0a0b, 0 1px 2px rgba(0,0,0,.4), inset 0 1px 0 rgba(255,255,255,.08);
+}
+:is(body.handheld, body.policy) .bar .pedalboard .pedal:nth-of-type(2) { margin-bottom: 4px; }
+:is(body.handheld, body.policy) .bar .plate-mark { width: 16px; padding-bottom: 4px; font-size: 12px; }
+#rec-note { margin: 0 0 8px; }
+@media (max-width: 1000px) {
+  :is(body.handheld, body.policy) .bar .pedalboard { order: 5; flex: 1 1 100%; width: auto; }
+}
+main.home .bar h1 { margin: 0; flex: 0 0 auto; display: inline-flex; align-items: center; gap: 8px; line-height: 1; }
+.bar h1 svg.claw { vertical-align: 0; margin: 0; }
+.bar .state { flex: 1 1 auto; display: inline-flex; align-items: center; gap: 8px; font-size: 12px; color: var(--dim); min-width: 0; }
+.bar .state.bad { color: var(--shell-deep); }
+.bar button { flex: 0 0 auto; padding: 8px 16px; }
+.bar button.stop:not(.pedal) { background: var(--panel); color: var(--text); border-color: var(--line-strong); }
+/* Connect or Disconnect on its way: a turning ring and the word, and no second click. */
+button.busy, button.busy:hover {
+  display: inline-flex; align-items: center; gap: 8px; cursor: wait;
+  background: var(--panel); color: var(--dim); border-color: var(--line-strong);
+}
+button.busy::before {
+  content: ''; width: 10px; height: 10px; border-radius: 50%;
+  border: 2px solid currentColor; border-right-color: transparent;
+  animation: busy-turn .8s linear infinite;
+}
+@keyframes busy-turn { to { transform: rotate(360deg); } }
+
+/* The gripper cameras down the left, left hand's above right hand's, each
+   with what the top camera makes of that hand under it; the top camera
+   large on the right - the picture the hands are lined up in and the
+   markers watched on - with the desk and the camera's light under it. */
+.feeds {
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); column-gap: 16px; row-gap: 10px;
+  align-items: start;
+  /* The top camera is about as tall as the left gripper camera, its reading
+     and the right one together, so the desk's reading comes level with the
+     right hand's. */
+  grid-template-areas: "left head" "mleft head" "right head" "mright mdesk" ". light" "note note";
+}
+#cam-head { aspect-ratio: 16 / 10; }
+#cam-left { grid-area: left; }
+#cam-right { grid-area: right; }
+#cam-head { grid-area: head; }
+/* The top camera's light, a name, a slider and its value a row, and what the
+   camera holds under them. */
+#head-light {
+  grid-area: light; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center;
+  gap: 4px 10px; padding: 10px 2px 0; background: none; border: 0; border-top: 1px solid var(--line);
+  color: var(--dim);
+}
+#head-light label { display: contents; }
+#head-light input[type=range] { width: 100%; margin: 0; }
+#head-light output { min-width: 0; text-align: right; }
+#head-light .held { grid-column: 1 / -1; }
+#head-light .held:empty { display: none; }
+.feeds .cards { display: contents; }
+#card-left { grid-area: mleft; }
+#card-right { grid-area: mright; }
+#card-desk { grid-area: mdesk; }
+.feeds .note { grid-area: note; }
+@media (max-width: 1000px) {
+  .feeds { grid-template-columns: repeat(2, minmax(0, 1fr));
+           grid-template-areas: "head head" "mdesk light" "left right" "mleft mright" "note note"; }
+}
+@media (max-width: 640px) {
+  .feeds { grid-template-columns: 1fr;
+           grid-template-areas: "head" "mdesk" "light" "left" "mleft" "right" "mright" "note"; }
+}
+
+.cam {
+  position: relative; margin: 0; aspect-ratio: 16 / 9; overflow: hidden;
+  border-radius: 12px; background: #141416; border: 1px solid #0c0c0d;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.05);
+}
+.cam img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; display: block; }
+.cam .off {
+  position: absolute; inset: 0; margin: 0; padding: 0 24px; display: flex; align-items: center; justify-content: center;
+  text-align: center; font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: #6b6660;
+}
+.cam .off.why { text-transform: none; letter-spacing: 0; line-height: 1.5; }
+.cam figcaption {
+  position: absolute; left: 0; right: 0; bottom: 0; display: flex; justify-content: space-between;
+  align-items: baseline; gap: 12px; padding: 8px 12px; font-size: 11px; color: #e6e2d8;
+  background: linear-gradient(180deg, rgba(0,0,0,0), rgba(0,0,0,.55));
+}
+.cam figcaption { flex-wrap: wrap; row-gap: 2px; }
+.cam figcaption .name { font-weight: 700; letter-spacing: .06em; text-transform: uppercase; white-space: nowrap; }
+.cam figcaption .stat { font-variant-numeric: tabular-nums; color: #cfc9be; white-space: nowrap; }
+.cam figcaption select.source { margin-left: auto; font-size: 11px; padding: 1px 4px; background: rgba(0,0,0,.35); color: #e8e2d6; border: 1px solid rgba(255,255,255,.25); border-radius: 4px; max-width: 40%; }
+.cam.on { border-color: var(--shell); }
+
+.cards { display: flex; flex-direction: row; flex-wrap: wrap; gap: 10px; min-width: 0; }
+.cards .metric { flex: 1 1 200px; }
+.cards .note { flex: 1 1 100%; }
+/* A reading: its name with a dot that says how it stands, then the number. */
+.metric { padding: 0 2px; }
+.metric h2 {
+  display: flex; align-items: center; gap: 6px;
+  margin: 0 0 4px; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--dim);
+}
+.metric h2::before { content: ''; flex: 0 0 auto; width: 7px; height: 7px; border-radius: 50%; background: var(--line-strong); }
+.metric.ok h2::before { background: #2e9e4f; }
+.metric.bad h2::before { background: var(--shell); }
+.metric .big { margin: 0; font-size: 22px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; line-height: 1.1; }
+.metric .sub { margin: 4px 0 0; font-size: 12px; color: var(--dim); font-variant-numeric: tabular-nums; }
+.metric .sub:empty { display: none; }
+.metric.bad .big { color: var(--shell-deep); }
+/* Under the pictures each reading keeps one height and one line per row
+   whatever it says, so a word coming or going never moves a picture. */
+body.handheld .feeds .metric { height: 68px; overflow: hidden; }
+body.handheld .feeds .metric :is(h2, .big, .sub) { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+body.handheld .feeds .metric .sub:empty { display: block; min-height: 18px; }
+.note { margin: 0; font-size: 12px; color: var(--shell-deep); }
+.note:empty { display: none; }
+
+/* Retry, over the dark tile, under the reason. */
+.cam .retry {
+  position: absolute; left: 50%; top: 62%; transform: translateX(-50%);
+  flex: 0 0 auto; padding: 8px 16px; border-radius: 7px;
+  background: var(--shell); color: #fff; border: 1px solid var(--shell-deep); font-weight: 600;
+}
+.cam .retry:hover { background: var(--shell-deep); }
+.cam .retry:disabled { opacity: .6; cursor: wait; }
+.cam .off.why { top: 0; bottom: 30%; }
+
+/* Recording: one bar, then the shelf. */
+.record { margin-top: 28px; padding-top: 18px; border-top: 1px solid var(--line); }
+.record-bar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.record-bar .switch { flex: 0 0 auto; }
+.rec-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--line-strong); flex: 0 0 auto; }
+.rec-dot.on { background: var(--shell); box-shadow: 0 0 0 4px rgba(226,72,142,.2); animation: rec-blink 1s ease-in-out infinite; }
+@keyframes rec-blink { 50% { opacity: .35; } }
+.rec-line { flex: 1 1 auto; font-size: 13px; color: var(--text); font-variant-numeric: tabular-nums; }
+table.episodes { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 12px; font-variant-numeric: tabular-nums; }
+table.episodes th { text-align: left; font-weight: 600; color: var(--dim); font-size: 11px; letter-spacing: .04em; text-transform: uppercase; padding: 4px 8px; border-bottom: 1px solid var(--line); }
+table.episodes td { padding: 6px 8px; border-bottom: 1px solid var(--line); }
+table.episodes tr.partial td { color: var(--dim); }
+table.episodes td.name { font-weight: 600; }
+table.episodes button { flex: 0 0 auto; padding: 2px 8px; font-size: 11px; }
+table.episodes button.sure, #delete-ticked.sure { background: var(--shell-deep); color: #fff; border-color: var(--shell-deep); }
+table.episodes:has(tbody:empty) { display: none; }
+table.episodes th.sort { cursor: pointer; user-select: none; }
+table.episodes th.sort.on::after { content: ' ▲'; }
+table.episodes td.verdict { color: var(--dim); }
+table.episodes td.verdict.fail { color: var(--shell-deep); font-weight: 600; }
+table.episodes td.verdict .warns { color: var(--dim); font-weight: 400; }
+table.episodes td.verdict .fails + .warns::before { content: " · "; }
+table.episodes td.verdict.warn { color: #9a6b00; }
+
+.record .pedalboard { display: flex; margin-top: 12px; max-width: 520px; }
+.record .pedalboard .pedal:nth-of-type(2) { margin-bottom: 8px; }
+
+/* Coming up: a panel floating at the bottom right, over the page rather than
+ * in it, so nothing below moves while it is shown. */
+.progress.startup {
+  position: fixed; right: 20px; bottom: 20px; z-index: 20; width: min(360px, calc(100vw - 40px));
+  margin: 0; padding: 12px 16px 10px; border-radius: 12px;
+  background: rgba(44,26,37,.92); color: #f3e6ec; border: 1px solid rgba(255,255,255,.08);
+  box-shadow: 0 12px 32px rgba(0,0,0,.35); backdrop-filter: blur(6px);
+}
+.progress.startup .bar { background: rgba(255,255,255,.12); }
+.progress.startup ul { color: #cdbac4; }
+.progress.startup li.running, .progress.startup li.already { color: #fff; }
+.progress.startup li.failed, .progress.startup li.exited { color: #ff9ccb; }
+.progress.startup li::before { background: rgba(255,255,255,.25); }
+.progress.startup li.running::before, .progress.startup li.already::before { background: #5fd38a; }
+.progress.startup li.failed::before { background: #ff5fa8; }
+.progress.startup li.starting::before { background: var(--claw); }
+.progress.startup h3 { margin: 0 0 8px; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: #cdbac4; font-weight: 700; cursor: pointer; user-select: none; }
+.progress.startup h3::after { content: ' ▾'; }
+.progress.startup.folded h3 { margin: 0; }
+.progress.startup.folded h3::after { content: ' ▸'; }
+.progress.startup.folded ul, .progress.startup.folded .bar { display: none; }
+.progress.startup li { display: flex; align-items: center; gap: 8px; }
+.progress.startup li > span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.progress.startup button.refresh {
+  flex: none; width: 26px; height: 22px; padding: 0; border-radius: 6px; font-size: 13px; line-height: 1;
+  background: rgba(255,255,255,.10); color: #f3e6ec; border: 1px solid rgba(255,255,255,.14); cursor: pointer;
+}
+.progress.startup button.refresh:hover:not(:disabled) { background: rgba(255,255,255,.2); }
+.progress.startup button.refresh:disabled { opacity: .4; cursor: default; }
+
+/* The replay, over the page. */
+/* Filled pink, a shade deeper under the pointer. */
+table.episodes button.play { padding: 2px 9px; font-size: 12px; background: var(--shell); color: #fff; border-color: var(--shell-deep); }
+table.episodes button.play:hover:not(:disabled) { background: var(--shell-deep); color: #fff; border-color: var(--shell-deep); }
+table.episodes tbody tr:hover td { background: #fdf0f5; }
+table.episodes button.play:disabled { opacity: .4; }
+dialog#replay {
+  width: min(1400px, calc(100vw - 32px)); max-width: none; height: min(880px, calc(100vh - 32px));
+  padding: 0; border: 1px solid var(--line-strong); border-radius: 14px; background: var(--panel); color: var(--text);
+  box-shadow: 0 20px 60px rgba(0,0,0,.35); display: flex; flex-direction: column; overflow: hidden;
+}
+dialog#replay:not([open]) { display: none; }
+dialog#replay::backdrop { background: rgba(44,26,37,.55); }
+dialog#replay header { display: flex; align-items: center; gap: 12px; padding: 10px 16px; border-bottom: 1px solid var(--line); }
+dialog#replay header h2 { margin: 0; font-size: 14px; color: var(--shell-deep); }
+dialog#replay header .note { flex: 1 1 auto; font-size: 12px; color: var(--dim); }
+dialog#replay header button { flex: 0 0 auto; padding: 4px 12px; }
+.replay-body { flex: 1 1 auto; display: grid; grid-template-columns: 300px 1fr; min-height: 0; }
+.replay-body .videos { display: flex; flex-direction: column; gap: 10px; padding: 10px; overflow-y: auto; background: var(--paper); border-right: 1px solid var(--line); }
+.replay-body figure { margin: 0; }
+.replay-body video { display: block; width: 100%; aspect-ratio: 16 / 9; background: #141416; border-radius: 8px; }
+.replay-body figcaption { font-size: 11px; color: var(--dim); padding: 4px 2px 0; letter-spacing: .06em; text-transform: uppercase; }
+#replay-view { display: block; width: 100%; height: 100%; }
+.timeline { display: flex; align-items: center; gap: 12px; padding: 10px 16px; border-top: 1px solid var(--line); }
+.timeline button { flex: 0 0 auto; padding: 5px 14px; }
+.timeline .frame { flex: 0 0 auto; width: 150px; font-size: 12px; color: var(--dim); font-variant-numeric: tabular-nums; white-space: pre; }
+.timeline .track { flex: 1 1 auto; position: relative; height: 26px; }
+.timeline .track canvas { position: absolute; inset: 6px 0; width: 100%; height: 14px; border-radius: 3px; }
+.timeline .track input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; background: transparent; -webkit-appearance: none; appearance: none; }
+.timeline .track input::-webkit-slider-runnable-track { height: 100%; background: transparent; }
+.timeline .track input::-webkit-slider-thumb { -webkit-appearance: none; width: 4px; height: 26px; background: var(--text); border-radius: 2px; cursor: ew-resize; }
+dialog#replay .why { margin: 0; padding: 6px 16px 12px; font-size: 12px; color: var(--dim); min-height: 30px; white-space: pre-wrap; }
+dialog#replay .why.bad { color: var(--shell-deep); }
+@media (max-width: 900px) { .replay-body { grid-template-columns: 1fr; grid-template-rows: auto 1fr; } .replay-body .videos { flex-direction: row; } }
+
+.shelf { margin-top: 28px; padding-top: 18px; border-top: 1px solid var(--line); }
+.shelf h2 { margin: 0 0 4px; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--dim); }
+.shelf table.episodes { margin-top: 6px; }
+.shelf .note { margin: 8px 0 0; color: var(--dim); }
+
+.shelf-head { display: flex; align-items: center; gap: 12px; }
+.shelf-head h2 { margin: 0; }
+.shelf-head .count { flex: 1 1 auto; font-size: 12px; color: var(--dim); font-variant-numeric: tabular-nums; }
+.shelf-head .tick-all { font-size: 12px; color: var(--dim); display: inline-flex; align-items: center; gap: 4px; }
+.shelf-head button { flex: 0 0 auto; padding: 3px 10px; font-size: 12px; }
+.shelf-head button:not(:disabled) { background: var(--shell-deep); color: #fff; border-color: var(--shell-deep); }
+table.episodes tr.ticked td { background: var(--claw-soft); }
+table.episodes td.tick { width: 22px; }
+.pager { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-top: 8px; font-size: 12px; color: var(--dim); font-variant-numeric: tabular-nums; }
+.pager[hidden] { display: none; }
+.pager button { flex: 0 0 auto; padding: 2px 10px; font-size: 13px; }
+.pager select { padding: 2px 4px; border: 1px solid var(--line-strong); border-radius: 6px; background: var(--panel); font: inherit; }
+.convert { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--line); }
+.convert h2 { margin: 0 0 8px; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--dim); }
+.convert-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.convert-row input { flex: 1 1 200px; padding: 7px 10px; border: 1px solid var(--line-strong); border-radius: 7px; background: var(--panel); font: inherit; font-size: 13px; }
+.convert-row input#convert-task { flex: 2 1 320px; }
+.convert-row .convert-fps { flex: 0 0 auto; display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--dim); white-space: nowrap; }
+.convert-row input#convert-fps { flex: 0 0 64px; width: 64px; }
+.convert-row select { flex: 0 0 auto; padding: 7px 10px; border: 1px solid var(--line-strong); border-radius: 7px; background: var(--panel); font: inherit; font-size: 13px; }
+.convert-row button { flex: 0 0 auto; padding: 8px 16px; }
+.convert-progress { margin-top: 10px; }
+.convert-progress .bar { height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; }
+.convert-progress .bar > span { display: block; height: 100%; width: 0; background: var(--shell); transition: width .3s; }
+.convert-progress pre { margin: 8px 0 0; font-size: 11px; color: var(--dim); white-space: pre-wrap; max-height: 120px; overflow-y: auto; }
+table.episodes td.path { font-size: 11px; color: var(--dim); }
+/* A correction on the shelf (dagger.py): recorded on the robot, not the hand. */
+.shelf td.name .kind { font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+  color: var(--shell-deep); background: var(--claw-soft); border-radius: 4px; padding: 1px 5px; }

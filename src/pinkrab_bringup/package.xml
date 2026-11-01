@@ -1,0 +1,31 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>pinkrab_bringup</name>
+  <version>0.1.0</version>
+  <description>
+    Launch files for Pinkrab. The single owner of what comes up together, and
+    of which machine it comes up on: robot.launch.py is the rig's side, where the
+    ports and the gate are, and desktop.launch.py is the operator's, where the
+    bridge and RViz are.
+  </description>
+  <maintainer email="woolimi91@naver.com">Woolim Park</maintainer>
+  <license>Apache-2.0</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <exec_depend>pinkrab_core</exec_depend>
+  <exec_depend>pinkrab_description</exec_depend>
+  <exec_depend>pinkrab_bridge</exec_depend>
+  <exec_depend>pinkrab_safety</exec_depend>
+  <exec_depend>pinkrab_driver</exec_depend>
+  <exec_depend>robot_state_publisher</exec_depend>
+  <exec_depend>joint_state_publisher_gui</exec_depend>
+  <exec_depend>rviz2</exec_depend>
+  <!-- What the launch files run RViz and the publishers on. -->
+  <exec_depend>rmw_cyclonedds_cpp</exec_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

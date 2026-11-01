@@ -1,0 +1,26 @@
+# umi - the handheld collection pipeline.
+#
+# Print the marker solids, record the gripper cameras and the top camera, recover
+# where the handheld gripper was against the desk dome. Nothing here touches the
+# arms; this is the slice that collects demonstrations without the robot.
+
+# OpenCV, for ArUco detection and solvePnP. Deliberately NOT
+# opencv-contrib-python: aruco moved out of contrib and into the main objdetect
+# module in OpenCV 4.7, so contrib buys nothing this needs - and installing it
+# beside the opencv-python-headless that arrives with lerobot leaves two packages
+# both owning `cv2`, whichever one wins being whichever was unpacked last.
+opencv-python-headless>=4.7
+
+# Solid geometry, for `pinkrab-umi marker`: the marker solids are cut as manifold
+# booleans and written as STL. Only that command needs it - it is imported inside
+# the function - but a slice that cannot run its own marker command is not whole.
+manifold3d
+
+# The other reader. OpenCV can decode the AprilTag families with its own ArUco
+# pipeline, but that is the bit layout without the detector: on rendered frames
+# of this solid the AprilTag library's own reader found 2.75 faces at 70 cm with
+# a blurred hand against 1.50 the same family read by OpenCV, and its corners
+# land two to five times closer. It is optional - settings.detector picks - so
+# nothing here fails without it.
+pupil-apriltags
+pyobjc-framework-AVFoundation; sys_platform == "darwin"   # which USB socket each camera is in

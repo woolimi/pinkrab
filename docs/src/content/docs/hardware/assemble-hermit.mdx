@@ -1,0 +1,20 @@
+---
+title: Hermit 조립
+description: 출력한 부품과 STS3215 서보, 카메라, 서보 보드로 Hermit 하나를 조립하는 순서. 단계마다 붙이는 부품과 나사.
+---
+
+import Assembly from '../../../components/Assembly.astro';
+import ScrewTotals from '../../../components/ScrewTotals.astro';
+
+Hermit 하나는 출력 부품, **STS3215 7.4 V 서보 하나**, 카메라 하나, Waveshare 서보 보드 하나, UMI 마커와 마커 타일로 조립합니다. 서보, jaw, 카메라가 붙는 자리는 팔의 gripper 와 같습니다. 왼손과 오른손은 서로 거울상이라 순서가 같습니다.
+
+<Assembly kind="hermit" />
+
+- 서보 id 와 jaw 의 calibration 은 조립을 마친 뒤 [준비](../../use/setup/#hermit)에서 합니다.
+- 마커 타일은 흰색과 검은색으로 출력해 UMI 마커의 면에 끼웁니다.
+
+## 나사
+
+단계마다 쓰는 나사를 모두 더한 수입니다.
+
+<ScrewTotals kind="hermit" />

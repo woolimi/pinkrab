@@ -1,0 +1,65 @@
+---
+// The arms' reach on the desk, as the studio's reach switch lays it down.
+import Stage3D from './Stage3D.astro';
+---
+
+<figure class="pk-reach not-content">
+	<Stage3D label="페그보드에 건 두 팔과 책상. 책상 위에 왼팔은 파란색, 오른팔은 분홍색으로 tool 이 집을 수 있는 영역을 칠했습니다." />
+	<ul class="legend">
+		<li><span class="key left" aria-hidden="true"></span>왼팔 <b data-area="left"></b></li>
+		<li><span class="key right" aria-hidden="true"></span>오른팔 <b data-area="right"></b></li>
+	</ul>
+</figure>
+
+<script>
+	import { SOURCES, whenNear } from '../scripts/arm-figure';
+
+	const figure = document.querySelector<HTMLElement>('.pk-reach');
+	if (figure) whenNear(figure, () => import('../scripts/reach.js').then(({ showReach }) => showReach(figure, SOURCES)));
+</script>
+
+<style>
+	.pk-reach {
+		margin: 1.5rem 0;
+	}
+	.legend {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.35rem 1.5rem;
+		margin: 0.6rem 0 0;
+		padding: 0;
+		list-style: none;
+		font-size: 0.85rem;
+		color: var(--pk-dim);
+	}
+	.legend li {
+		display: flex;
+		align-items: center;
+		gap: 0.45rem;
+	}
+	.legend b {
+		font-family: var(--sl-font-mono);
+		color: var(--pk-text);
+	}
+	/* The studio's colours, at the patches' own opacity over the desk. */
+	.key {
+		flex: none;
+		width: 0.9rem;
+		height: 0.9rem;
+		border-radius: 0.2rem;
+	}
+	.key.left {
+		background: color-mix(in srgb, #1668c9 45%, #efe9dd);
+	}
+	.key.right {
+		background: color-mix(in srgb, #e2488e 45%, #efe9dd);
+	}
+
+	/* The areas are read with the picture; where it never comes, the figure goes. */
+	.pk-reach:not(.ready) .legend {
+		visibility: hidden;
+	}
+	.pk-reach.no-robot {
+		display: none;
+	}
+</style>

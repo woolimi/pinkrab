@@ -1,0 +1,14 @@
+# dev - regenerating locks, linting, and checking the description.
+#
+# Not needed to run Pinkrab. Only maintainers install this, and the lock does not
+# cover it.
+pip-tools>=7.4
+ruff>=0.6
+
+# Expanding pinkrab.urdf.xacro outside ROS - scripts/check_description.py needs it.
+#
+# On a machine WITHOUT ROS this is the only way to get xacro. On a ROS machine do
+# NOT install it: the venv is built with --system-site-packages so ROS's own xacro
+# is already importable, and a pip copy would shadow it with a version that never
+# saw this distro's message definitions. package.xml already declares it there.
+xacro>=2.0; sys_platform != "linux"

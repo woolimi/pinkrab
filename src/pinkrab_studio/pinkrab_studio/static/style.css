@@ -1,0 +1,462 @@
+/* A crab, in paper and shell.
+ *
+ * Two colours carry the page: the hot pink of the printed shell and the yellow
+ * inside a claw. Everything else is a warm neutral with a little rose in it,
+ * because the robot in the canvas is that pink too - the panel has to sit
+ * beside it, not compete with it. */
+
+:root {
+  --paper: #f9f1f4;   /* the canvas background, matched exactly so the panel floats */
+  --panel: #fffafc;
+  --line: #ecd9e2;
+  --line-strong: #d6b7c6;
+  --text: #2c1a25;
+  --dim: #8f7283;
+
+  --shell: #e2488e;   /* the robot's own pink, a shade deeper for text and edges */
+  --shell-deep: #b8306f;
+  --claw: #f5b301;    /* yellow */
+  --claw-soft: #fff2cc;
+
+  --place: #1668c9;   /* the blue handle in the canvas */
+  --aim: #f5b301;     /* the yellow one */
+}
+
+* { box-sizing: border-box; }
+/* hidden means hidden, whatever display a rule below gives the element. */
+[hidden] { display: none !important; }
+
+html, body {
+  margin: 0; height: 100%; overflow: hidden;
+  background: var(--paper); color: var(--text);
+  font: 13px/1.5 ui-sans-serif, system-ui, -apple-system, "Helvetica Neue", sans-serif;
+  accent-color: var(--shell);   /* checkboxes, sliders: the page's pink, not the browser's blue */
+}
+
+#view, #hands-view { display: block; width: 100%; height: 100%; }
+
+/* The dashboard. Panes in splits, splits in splits, the bars between them
+ * draggable. A split is a flex box either way round; each half takes its share
+ * as a flex-basis in percent, and the two shares add to a hundred, so a bar
+ * moved is room moved from one half to the other and nothing else changes.
+ *
+ * The panes are not cards. They are the page, cut: no radius, no shadow, a
+ * bar between them the colour of a hairline, yellow while it is held. */
+#dash { position: fixed; inset: 0; display: flex; }
+.split { display: flex; flex: 1 1 auto; min-width: 0; min-height: 0; }
+.split.row { flex-direction: row; }
+.split.column { flex-direction: column; }
+.split > .pane, .split > .split { flex: 0 1 auto; min-width: 0; min-height: 0; }
+.bar {
+  flex: 0 0 6px; background: var(--line); position: relative; z-index: 2;
+  transition: background .12s;
+}
+/* A grip: the short line that says a bar can be taken hold of. */
+.bar::after {
+  content: ""; position: absolute; background: var(--line-strong); border-radius: 2px;
+  transition: background .12s;
+}
+.split.row > .bar { cursor: col-resize; }
+.split.row > .bar::after { width: 2px; height: 28px; left: 2px; top: calc(50% - 14px); }
+.split.column > .bar { cursor: row-resize; }
+.split.column > .bar::after { height: 2px; width: 28px; top: 2px; left: calc(50% - 14px); }
+.bar:hover, body.dragging .bar { background: var(--claw); }
+.bar:hover::after, body.dragging .bar::after { background: var(--shell-deep); }
+body.dragging { user-select: none; }
+
+.pane { position: relative; overflow: hidden; background: var(--paper); display: flex; flex-direction: column; }
+
+/* A pane's head: what it is, the switch for it, and one line of what it last
+ * said. The stripe that runs across the top of the sidebar runs across the top
+ * of a pane too - but only while the process behind it is running. That is the
+ * page's own sign of life, and a pane without it is a pane with nothing in it. */
+.pane-head {
+  flex: 0 0 auto; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px;
+  padding: 7px 12px 7px 12px; border-bottom: 1px solid var(--line);
+  background: var(--panel); position: relative;
+}
+/* Narrow, the head wraps: the switch stays on the first line beside the name,
+ * and what the process last said drops to a line of its own. */
+.pane-head button { margin-left: auto; order: 1; flex: 0 0 auto; }
+.pane-head .pane-line { order: 2; flex-basis: 100%; }
+.pane-head::before {
+  content: ""; position: absolute; left: 0; right: 0; top: 0; height: 3px;
+  background: linear-gradient(90deg, var(--shell) 0%, var(--shell) 55%, var(--claw) 100%);
+  transform: scaleY(0); transform-origin: top; transition: transform .18s;
+}
+.pane.running .pane-head::before { transform: scaleY(1); }
+.pane-head h2 { margin: 0; font-size: 13px; font-weight: 700; color: var(--shell-deep); white-space: nowrap; }
+.pane-head button { padding: 4px 12px; font-size: 12px; white-space: nowrap; }
+.pane-head select {
+  font: inherit; font-size: 12px; padding: 3px 6px; border-radius: 6px;
+  border: 1px solid var(--line-strong); background: var(--panel); color: var(--text);
+}
+.pane-head select:disabled, .pane-head .switch input:disabled ~ .label { color: var(--dim); }
+.pane-head .switch { padding: 3px 9px; }
+.pane-line {
+  min-width: 0; font-size: 11.5px; color: var(--dim);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.pane-line:empty { display: none; }
+/* The camera's numbers, along the foot of its picture: figures that do not
+ * jump as they change, on a strip of paper the picture shows through. */
+.pane-status {
+  position: absolute; left: 0; right: 0; bottom: 0; padding: 6px 12px;
+  font-size: 12px; font-variant-numeric: tabular-nums; white-space: pre; overflow: hidden;
+  color: var(--text); background: color-mix(in srgb, var(--panel) 86%, transparent);
+  border-top: 1px solid var(--line);
+}
+.pane-line.bad { color: var(--shell-deep); white-space: normal; line-height: 1.35; }
+.pane-line code { font: 11px ui-monospace, SFMono-Regular, Menlo, monospace; user-select: all; }
+.pane-body { flex: 1 1 auto; min-height: 0; position: relative; }
+
+/* The dot beside the name: hollow when the process is off, filled shell-red
+ * while it runs, and ringed in red when it stopped by itself. */
+.dot { flex: 0 0 auto; width: 9px; height: 9px; border-radius: 50%; border: 1.5px solid var(--line-strong); background: transparent; transition: background .18s, border-color .18s; }
+.dot.on { background: var(--shell); border-color: var(--shell); }
+.dot.bad { border-color: var(--shell); background: var(--claw-soft); }
+
+#camera-frame { width: 100%; height: 100%; display: block; object-fit: contain; background: var(--paper); }
+.empty {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  padding: 24px; text-align: center; color: var(--dim); font-size: 12.5px; line-height: 1.5;
+  max-width: none;
+}
+.empty p { margin: 0; max-width: 34ch; }
+.empty.bad { color: var(--shell-deep); }
+.empty.bad p { max-width: 60ch; }
+.empty code { display: inline-block; margin-top: 8px; padding: 4px 8px; border-radius: 6px; background: var(--claw-soft); color: var(--text); font: 11px ui-monospace, SFMono-Regular, Menlo, monospace; user-select: all; word-break: break-all; }
+.empty code.said { display: block; text-align: left; white-space: pre-wrap; background: var(--panel); border: 1px solid var(--line); user-select: text; }
+#teleop-log {
+  margin: 0; padding: 10px 12px; overflow: auto;
+  font: 11.5px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--text);
+  white-space: pre-wrap; overflow-wrap: anywhere; background: var(--panel);
+}
+#teleop-log:empty::before { content: "The loop's log appears here once it starts."; color: var(--dim); font: 12.5px/1.5 ui-sans-serif, system-ui, sans-serif; }
+
+svg.claw { width: 18px; height: 18px; vertical-align: -4px; color: var(--shell); margin-right: 2px; }
+.pane-head svg.claw { width: 16px; height: 16px; vertical-align: -3px; }
+
+.row { display: flex; gap: 6px; margin-bottom: 10px; }
+
+/* The robot's head: the tools sit together at the right, the status line
+ * drops under them. Several buttons here, so the one-button rule above does
+ * not apply to each. */
+#pane-robot .pane-head .tools { margin-left: auto; order: 1; display: flex; gap: 6px; align-items: stretch; }
+#pane-robot .pane-head .tools > button { margin-left: 0; flex: 0 0 auto; }
+#pane-robot .pane-head .tools .switch { flex: 0 0 auto; }
+#pane-robot .pane-body { display: block; }
+
+/* The joints, over the picture's top-right corner. No card: the sliders and
+ * their numbers sit on the scene itself, faded so the desk shows through, and
+ * packed two columns wide so fourteen of them take a hand's width. Always
+ * there - a menu to open first is a menu nobody opens while an arm is moving. */
+#joints-overlay {
+  position: absolute; right: 12px; top: 8px; width: min(280px, calc(100% - 24px));
+  opacity: .78; transition: opacity .15s;
+}
+#joints-overlay:hover { opacity: 1; }
+#joints-overlay .fold-note { display: block; margin: 0 0 2px 2px; }
+#joints {
+  display: grid; grid-auto-flow: column; grid-template-rows: repeat(8, auto);
+  column-gap: 10px; row-gap: 0;
+}
+#joints .arm-title { margin: 0 0 3px; font-size: 10px; }
+#joints .joint { margin-bottom: 1px; }
+/* A halo the colour of the paper, not a card: the numbers stay readable where
+ * an arm - or the black pegboard - passes under them. Several layers, because
+ * one thin one vanished against the board. */
+#joints .joint label, #joints .arm-title {
+  text-shadow: 0 0 1px var(--paper), 0 0 2px var(--paper), 0 0 3px var(--paper),
+               0 0 5px var(--paper), 0 0 8px var(--paper), 0 0 12px var(--paper);
+}
+#joints .joint label { font-size: 10px; line-height: 1.25; }
+/* The slider itself is what is small: a thin track and a small thumb. The
+ * browser's own drawing ignores a height, so it is drawn here instead. */
+#joints .joint input {
+  -webkit-appearance: none; appearance: none;
+  margin: 1px 0 0; width: 70%; height: 3px; border-radius: 2px;
+  /* Filled up to the thumb, the way the browser's own slider was; app.js
+   * sets --fill as the value moves. */
+  background: linear-gradient(to right, var(--shell) var(--fill, 0%), var(--line-strong) var(--fill, 0%));
+  outline: none;
+}
+#joints .joint input::-webkit-slider-runnable-track { height: 3px; border-radius: 2px; background: transparent; }
+#joints .joint input::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none;
+  width: 8px; height: 8px; margin-top: -2.5px; border-radius: 50%;
+  background: var(--shell); border: none; cursor: pointer;
+}
+#joints .joint input::-moz-range-track { height: 3px; border-radius: 2px; background: var(--line-strong); }
+#joints .joint input::-moz-range-thumb { width: 8px; height: 8px; border-radius: 50%; background: var(--shell); border: none; }
+
+button {
+  flex: 1; padding: 7px 10px; border-radius: 7px; cursor: pointer;
+  background: var(--panel); color: var(--text); border: 1px solid var(--line-strong);
+  font: inherit;
+}
+button:hover { background: var(--claw-soft); border-color: var(--claw); }
+button:active { background: #ffe8a8; }
+button.primary {
+  background: var(--shell); border-color: var(--shell-deep); color: #fff;
+  font-weight: 600;
+}
+button.primary:hover { background: var(--shell-deep); border-color: var(--shell-deep); }
+
+/* The reach switch: a pill that slides, beside the home button. Yellow when on,
+ * the way a pressed key would be. */
+.switch {
+  flex: 1; display: flex; align-items: center; gap: 8px; padding: 6px 10px;
+  border: 1px solid var(--line-strong); border-radius: 7px; background: var(--panel);
+  cursor: pointer; user-select: none;
+}
+.switch:hover { background: var(--claw-soft); border-color: var(--claw); }
+.switch input { position: absolute; opacity: 0; width: 0; height: 0; }
+.switch .knob {
+  flex: 0 0 auto; width: 30px; height: 16px; border-radius: 999px;
+  background: var(--line-strong); position: relative; transition: background .2s;
+}
+.switch .knob::after {
+  content: ""; position: absolute; top: 2px; left: 2px; width: 12px; height: 12px;
+  border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.25);
+  transition: transform .2s ease;
+}
+.switch input:checked + .knob { background: var(--claw); }
+.switch input:checked + .knob::after { transform: translateX(14px); }
+.switch input:disabled + .knob { opacity: .5; }
+.switch .label { font-weight: 600; }
+
+.fold-note { font-size: 11px; color: var(--dim); }
+/* --- the joints -------------------------------------------------- */
+.arm-title {
+  margin: 12px 0 6px; padding-left: 7px; font-size: 11px; text-transform: uppercase;
+  letter-spacing: .08em; color: var(--shell-deep); font-weight: 600;
+  border-left: 3px solid var(--claw);
+}
+
+.joint { margin-bottom: 7px; }
+.joint label { display: flex; align-items: baseline; gap: 6px; font-size: 11px; }
+/* The name takes the slack, so the angle and where the joint actually got to stay
+   together at the right rather than being pushed to opposite ends. */
+.joint .name { color: var(--dim); margin-right: auto; }
+.joint .value { font-variant-numeric: tabular-nums; font-weight: 600; }
+/* Where the joint got to, when the simulation could not put it where it was asked.
+   Empty - and taking no room - whenever it arrived, which is most of the time. */
+.joint .reached { font-variant-numeric: tabular-nums; color: var(--shell); }
+.joint input { width: 100%; margin-top: 2px; accent-color: var(--shell); }
+/* A title per arm already; the first sits flush. */
+#joints .arm-title:first-child { margin-top: 0; }
+
+/* Which robot this is. Two states, meant to be told apart across the room: the
+   simulation is quiet neutral, the arms on the wall are the shell red the robot
+   itself is. A badge nobody notices is worse than none. */
+#which {
+  flex: 0 0 auto; padding: 2px 7px; border-radius: 999px; font-size: 10px; font-weight: 700;
+  letter-spacing: .09em; text-transform: uppercase; text-decoration: none;
+}
+#which.sim { background: var(--line); color: var(--dim); }
+#which.real { background: var(--shell); color: #fff; }
+#which:hover { outline: 1px solid var(--claw); }
+.pane-head h2 a.claw { text-decoration: none; }
+/* bridge · teleop · pedal, each a dot and a word, under the gate. */
+.sidecars { display: flex; gap: 12px; font-size: 11px; color: var(--dim); }
+.sidecars span::before { content: ''; display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--line-strong); margin-right: 5px; vertical-align: 1px; }
+.sidecars span.on::before { background: #2e9e4f; }
+.sidecars span.bad::before { background: var(--shell); }
+/* The measured angle, marked only when it disagrees with the picture. */
+.joint .measured { font-variant-numeric: tabular-nums; color: var(--dim); }
+.joint .measured.adrift { color: var(--shell); font-weight: 600; }
+
+/* Hover label for the two drag spheres. Dark chip so it reads over the canvas
+   wherever the pointer happens to be, and pointer-events off so it can never sit
+   between the cursor and the handle it is describing. */
+#tip {
+  position: fixed; z-index: 5; pointer-events: none;
+  padding: 4px 9px; border-radius: 6px;
+  background: var(--text); color: #fdf9f0;
+  font-size: 11px; white-space: nowrap;
+  box-shadow: 0 3px 10px rgba(90, 45, 15, .22);
+}
+
+
+
+
+
+/* The robot's row: what the gate says, and the four things that can be asked of
+   it. Nothing in here is coloured by the click that asked - only by the frame
+   that came back. */
+#gate { display: flex; flex-direction: column; gap: 6px; }
+.gate-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 0; }
+.gate-row .gate-reason { flex: 1 1 12ch; min-width: 0; }
+/* The teleop pane: the controls at the top, the explanation under them, in the
+ * flow rather than centred over nothing. */
+#pane-teleop .pane-body { display: flex; flex-direction: column; gap: 12px; padding: 12px; overflow-y: auto; }
+#pane-teleop .empty { position: static; padding: 0; text-align: left; justify-content: flex-start; align-items: flex-start; }
+#pane-teleop .empty p { max-width: 60ch; }
+.chip {
+  padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600;
+  letter-spacing: .04em; text-transform: uppercase; background: var(--line); color: var(--dim);
+}
+.chip.armed { background: var(--shell); color: #fff; }
+.chip.stale { background: var(--claw-soft); color: var(--shell-deep); }
+.chip.quiet { background: transparent; color: var(--dim); text-transform: none; letter-spacing: 0; }
+/* The pedal board: the three drivers drawn as the foot switch on the floor,
+ * left to right in the same order, on one black plate with its L and R marks.
+ * A pedal is a slab of ribbed rubber; the one the gate says is driving sits
+ * pressed, a little lower and lit along its top edge. Lit from the frame,
+ * never from the click. */
+.pedalboard {
+  flex-wrap: nowrap; align-items: flex-end; gap: 0; padding: 14px 18px 12px;
+  background: linear-gradient(180deg, #2a2a2d, #151517);
+  border-radius: 14px 14px 26px 26px / 14px 14px 40px 40px;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.08), 0 2px 6px rgba(0,0,0,.25);
+}
+.plate-mark {
+  flex: 0 0 auto; width: 22px; text-align: center; padding-bottom: 8px;
+  font-size: 15px; font-weight: 700; letter-spacing: .04em; color: #3a3a3e;
+  user-select: none;
+}
+button.pedal {
+  flex: 1 1 0; min-width: 0; padding: 10px 8px 9px; margin: 0;
+  border-radius: 9px; border: 1px solid #0c0c0d;
+  background:
+    radial-gradient(circle at 1.5px 1.5px, rgba(255,255,255,.13) .9px, transparent 1.4px) 0 0 / 7px 7px,
+    linear-gradient(180deg, #46464b, #2c2c30);
+  color: #e6e2d8; font-size: 12px; font-weight: 600; line-height: 1.25;
+  text-align: center; white-space: normal; position: relative;
+  height: 62px; display: flex; flex-direction: column; justify-content: center;
+  box-shadow: 0 5px 0 #0a0a0b, 0 7px 8px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.12);
+  transition: transform .06s, box-shadow .06s;
+}
+/* The middle pedal is mounted a little higher on the floor unit too. */
+.pedalboard .pedal:nth-of-type(2) { margin-bottom: 8px; }
+button.pedal .num {
+  display: block; font-size: 10px; font-weight: 700; letter-spacing: .12em;
+  color: #9e998f; margin-bottom: 2px;
+}
+button.pedal:hover { background-color: transparent; border-color: #0c0c0d; color: #fff; }
+button.pedal:active, button.pedal.on {
+  transform: translateY(4px);
+  box-shadow: 0 1px 0 #0a0a0b, 0 2px 3px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.08);
+}
+button.pedal.on { color: #fff; background-color: transparent; border-color: var(--shell); }
+button.pedal.on::after {
+  content: ''; position: absolute; left: 10px; right: 10px; top: 3px; height: 2px;
+  border-radius: 2px; background: var(--shell); box-shadow: 0 0 6px var(--shell);
+}
+button.pedal.stop.on { border-color: var(--claw); }
+button.pedal.stop.on::after { background: var(--claw); box-shadow: 0 0 6px var(--claw); }
+/* The foot on the floor: a flash of yellow the moment the press is heard. */
+button.pedal.pressed {
+  animation: pedal-press .35s ease-out;
+}
+@keyframes pedal-press {
+  0%   { transform: translateY(5px); box-shadow: 0 0 0 #0a0a0b, 0 0 14px 4px var(--claw), inset 0 0 0 2px var(--claw); }
+  100% { box-shadow: 0 5px 0 #0a0a0b, 0 7px 8px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.12); }
+}
+button.pedal:disabled {
+  opacity: .45; cursor: not-allowed; transform: none;
+}
+.gate-reason { font-size: 11px; color: var(--dim); line-height: 1.35; }
+.gate-reason:empty { display: none; }
+
+#gate-more { margin-top: 2px; }
+#gate-more summary { font-size: 11px; color: var(--dim); cursor: pointer; }
+#gate-more button { margin: 6px 0 4px; }
+.chip.driving { background: var(--shell); color: #fff; }
+
+/* The driver that has the arms. Lit from the frame, never from the click. */
+button.on:not(.pedal) { background: var(--shell); color: #fff; border-color: var(--shell); }
+button.on:not(.pedal):hover { background: var(--shell); }
+
+/* A small button inside a status line. */
+button.inline { flex: 0 0 auto; padding: 1px 8px; font-size: 11px; margin-left: 6px; }
+
+/* Back to the front page, at the head of every page that is not it. */
+a.back {
+  flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center;
+  width: 24px; height: 24px; border-radius: 7px; border: 1px solid var(--line-strong);
+  background: var(--panel); color: var(--dim); text-decoration: none; font-size: 14px; line-height: 1;
+}
+a.back:hover { background: var(--claw-soft); border-color: var(--claw); color: var(--text); }
+
+/* A group of buttons that do one kind of thing - walk to a pose, act on one
+ * source - drawn as one control with a label, so a row of actions reads as
+ * groups rather than as a fence of equal boxes. The one action a page is for
+ * stays outside any group, as its only primary button. */
+.segmented {
+  flex: 0 0 auto; display: inline-flex; align-items: stretch; border: 1px solid var(--line-strong);
+  border-radius: 7px; overflow: hidden; background: var(--panel);
+}
+.segmented > .label {
+  display: inline-flex; align-items: center; padding: 0 9px; font-size: 10px; font-weight: 700;
+  letter-spacing: .08em; text-transform: uppercase; color: var(--dim); background: var(--paper);
+  border-right: 1px solid var(--line-strong);
+}
+.segmented > button, .bar .segmented > button, .pane-head .segmented > button {
+  flex: 0 0 auto; margin: 0; border: 0; border-radius: 0; background: none; padding: 5px 12px; font-size: 12px;
+}
+.bar .segmented > button { padding: 7px 14px; font-size: 13px; }
+.segmented > button + button { border-left: 1px solid var(--line); }
+.segmented > button:hover:not(:disabled) { background: var(--claw-soft); }
+.segmented > button:disabled { color: var(--dim); cursor: default; opacity: .55; }
+
+/* A pedal that cannot be pressed now - while the arms walk to a pose. */
+button.pedal:disabled { opacity: .38; cursor: not-allowed; transform: none; }
+button.pedal:disabled:hover { color: #e6e2d8; }
+.chip.moving { background: var(--claw); color: #fff; }
+#joints input[type=range]:disabled { opacity: .35; cursor: not-allowed; }
+#pane-robot .pane-head .sidecars { order: 0; align-self: center; }
+.gate-row .switch { flex: 0 0 auto; margin-left: auto; padding: 3px 9px; }
+.gate-row .switch:has(input:disabled) { cursor: not-allowed; opacity: .6; }
+/* The joint panel keeps its shape as the numbers change: two columns of a fixed
+ * share each, one line per label, and the angles in boxes as wide as their
+ * widest value ("-143°"), so a digit gained or lost moves nothing. Where the
+ * joint got to shows only when it differs, and then the name gives way. */
+#joints-overlay { width: min(320px, calc(100% - 24px)); }
+#joints { grid-auto-columns: minmax(0, 1fr); }
+#joints .joint label { white-space: nowrap; }
+#joints .joint .name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+#joints .joint .value, #joints .joint .measured { display: inline-block; min-width: 4.6ch; text-align: right; }
+#joints .joint .reached:empty { display: none; }
+
+/* The top camera's light (toplight.js): two sliders and what the camera holds,
+   in one row over the picture's top edge. */
+.top-light {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px;
+  padding: 6px 12px; font-size: 12px; font-variant-numeric: tabular-nums;
+  color: var(--text); background: color-mix(in srgb, var(--panel) 90%, transparent);
+  border-bottom: 1px solid var(--line);
+}
+.top-light label { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+.top-light input[type=range] { width: 110px; }
+.top-light output { min-width: 4.2em; color: var(--text); }
+.top-light .held { color: var(--dim); white-space: nowrap; }
+.top-light .held.full { color: var(--shell-deep); }
+#camera-light { position: absolute; top: 0; left: 0; right: 0; z-index: 2; }
+#cam-head .light { border-top: 1px solid var(--line); border-bottom: 0; }
+
+/* A page laid out as numbered steps (Curate, Policy): each says what it is
+ * for and where it stands. */
+.step-head { display: flex; align-items: center; gap: 10px; }
+.step-no {
+  flex: 0 0 auto; width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center;
+  font-size: 12px; font-weight: 800; color: #fff; background: var(--shell);
+}
+.step-section .step-head h2 { margin: 0; font-size: 15px; letter-spacing: 0; text-transform: none; color: var(--text); }
+.step-head .step-state { flex: 1 1 auto; min-width: 0; font-size: 12px; color: var(--dim); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.step-why { margin: 4px 0 0 32px; font-size: 12.5px; color: var(--dim); line-height: 1.5; word-break: keep-all; }
+
+/* A training source's form (source-form.js): the Train page's Sources and the
+   Curate page's SAM 3 on. */
+.source-form { display: grid; gap: 8px; margin-top: 8px; }
+.source-form label { display: grid; gap: 3px; font-size: 11px; letter-spacing: .04em; text-transform: uppercase; color: var(--dim); }
+.source-form input, .source-form textarea {
+  font: 13px ui-monospace, SFMono-Regular, Menlo, monospace; text-transform: none; letter-spacing: 0;
+  color: var(--text); background: var(--paper); border: 1px solid var(--line-strong); border-radius: 6px; padding: 6px 8px;
+}
+.source-form .hint { margin: 0; font-size: 11px; color: var(--dim); }
+.source-form .error { margin: 0; font-size: 12px; color: var(--shell-deep); }
+.source-form .error:empty { display: none; }
+.source-form .choice { display: flex; gap: 8px; justify-content: flex-end; margin-top: 4px; }
+.source-form .choice button { padding: 7px 14px; }

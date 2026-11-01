@@ -1,0 +1,12 @@
+Port detection
+  Plug order is the only thing that tells the identical boards apart.
+  You will unplug these boards, then plug them in one at a time:
+    left -> right
+
+[1] Unplug the USB cables of the left and right boards (others may stay), then press ENTER...
+[2] Plug in the left board, then press ENTER...
+[3] Plug in the right board, then press ENTER...
+
+[32m/[0m Saved to ~/pinkrab/ports.json
+    left     tty.usbmodem5B7B0139551
+    right    tty.usbmodem5B790834521

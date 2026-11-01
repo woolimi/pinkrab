@@ -1,0 +1,5 @@
+  follower_left: rms 0.697 px over 30 views (worst 0.94 px), seen out to 75 deg off axis
+    f 538.0 / 539.6 px/rad, centre (947.5, 578.9), k -0.0481, +0.0121, -0.0138, +0.0038
+    image circle 1473 px across, centre (928, 592)
+    against left: lens axis -13.9, -26.5 px, f -0.8 px/rad (-0.1 %)
+  written: ~/pinkrab/lens.yaml

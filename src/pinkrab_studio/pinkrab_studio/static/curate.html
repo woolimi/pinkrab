@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pinkrab curate</title>
+  <link rel="icon" href="/static/claw.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/style.css">
+  <link rel="stylesheet" href="/static/home.css">
+  <link rel="stylesheet" href="/static/handheld.css">
+  <link rel="stylesheet" href="/static/curate.css">
+</head>
+<body class="home curate">
+  <!-- From the shelf's takes to a dataset: the takes worth training on,
+       each one's keep labels (what of its gripper pictures is kept when the
+       background is randomised: the grippers and the task's things), looked
+       over, then converted with randomised backgrounds. -->
+  <main class="home">
+    <header class="bar">
+      <a class="back" href="/" title="back to the front page">&larr;</a>
+      <h1><svg class="claw" viewBox="0 0 64 64" aria-hidden="true"><use href="/static/claw.svg#claw"/></svg><span>Curate</span></h1>
+    </header>
+
+    <!-- The task's things named on a picture: a frame of a take, the
+         grippers drawn into it (always kept), and each thing named looked for
+         in it by SAM 3 as the labels will find it there. Make labels then
+         follows every thing through both gripper videos of every take. -->
+    <!-- Three steps in order, each saying what it leaves for the next: the
+         labels say what a randomised background keeps, the review checks
+         them, and Convert paints the backgrounds from them. -->
+    <section class="shelf labeler step-section" id="labels">
+      <div class="step-head">
+        <span class="step-no" aria-hidden="true">1</span>
+        <h2>Keep labels</h2>
+        <span class="step-state" id="labels-state"></span>
+      </div>
+      <p class="step-why">What stays in each gripper picture when step 3 randomises the background: the grippers are drawn, the task's things are named here.</p>
+      <div class="labeler-grid">
+        <figure class="look">
+          <div class="look-frame" id="look-box" aria-busy="false">
+            <canvas id="look-canvas" aria-label="the frame, with what is kept outlined"></canvas>
+            <p class="look-wait" id="look-wait" hidden></p>
+          </div>
+          <figcaption class="look-controls">
+            <select id="look-take" aria-label="take"></select>
+            <span class="segmented" role="group" aria-label="gripper camera">
+              <button id="look-left" aria-pressed="true" class="on">Left</button>
+              <button id="look-right" aria-pressed="false">Right</button>
+            </span>
+            <input type="range" id="look-frame" min="0" max="0" value="0" step="1" aria-label="frame">
+            <span class="frame-at" id="look-at"></span>
+          </figcaption>
+        </figure>
+        <div class="things-panel">
+          <!-- SAM 3 here or on a training source's GPU: the takes stay here,
+               their gripper videos go there and the labels come back. -->
+          <div class="sam-on">
+            <label for="sam-machine">SAM 3 on</label>
+            <select id="sam-machine"></select>
+            <button id="sam-add" title="add a machine over ssh - a training source, listed on the Train page too">Add</button>
+            <button id="sam-retry" hidden>Try again</button>
+          </div>
+          <p class="sam-state" id="sam-state"></p>
+          <h3>Things to keep</h3>
+          <ul class="things" id="things-list"></ul>
+          <form class="thing-add" id="thing-add">
+            <input id="thing-input" autocomplete="off" placeholder="add a thing in English, e.g. black cube">
+            <button type="submit" id="thing-add-go">Add</button>
+          </form>
+          <p class="hint">The grippers, drawn dashed, are always kept, and so is the black outside the lens circle. A thing found in any frame is followed through the whole take.</p>
+          <p class="note" id="labels-note"></p>
+          <div class="labels-actions">
+            <button id="labels-go" class="primary" disabled>Make labels</button>
+            <button id="labels-stop" hidden>Stop</button>
+          </div>
+        </div>
+      </div>
+      <div class="convert-progress" id="labels-progress" hidden>
+        <div class="bar"><span></span></div>
+        <pre id="labels-lines"></pre>
+      </div>
+    </section>
+
+    <section class="shelf step-section">
+      <div class="step-head">
+        <span class="step-no" aria-hidden="true">2</span>
+        <h2>Review</h2>
+        <span class="step-state" id="takes-count"></span>
+      </div>
+      <p class="step-why">Each take's labels over its videos, and the spans where a thing was lost. Only the takes that pass are here; the rest stay on the Collect page.</p>
+      <!-- Hundreds of takes are mostly fine: those worth a look come first,
+           and the list goes a page at a time. -->
+      <div class="review-filter">
+        <span class="segmented" role="group" aria-label="which takes">
+          <button id="show-look" aria-pressed="true" class="on">To look at</button>
+          <button id="show-all" aria-pressed="false">All</button>
+        </span>
+      </div>
+      <table class="episodes" id="takes">
+        <thead><tr><th>episode</th><th>seconds</th><th>keep labels</th><th>flags</th><th></th></tr></thead>
+        <tbody></tbody>
+      </table>
+      <p class="note" id="takes-empty"></p>
+      <div class="pager" id="takes-pager" hidden>
+        <button id="takes-prev" aria-label="newer takes">‹</button>
+        <span id="takes-where"></span>
+        <button id="takes-next" aria-label="older takes">›</button>
+      </div>
+    </section>
+
+    <section class="shelf convert step-section" id="convert">
+      <div class="step-head">
+        <span class="step-no" aria-hidden="true">3</span>
+        <h2>Convert</h2>
+        <span class="step-state" id="convert-state"></span>
+      </div>
+      <p class="step-why">The takes that pass into a dataset for training, their backgrounds randomised outside step 1's labels.</p>
+      <div class="convert-row">
+        <input id="convert-out" placeholder="dataset name, e.g. blocks-pilot">
+        <input id="convert-task" placeholder="the task in words, e.g. pick and place the block">
+        <button id="convert-go" class="primary" disabled>Convert</button>
+      </div>
+      <p class="bg-note" id="bg-note"></p>
+      <div class="convert-progress" id="convert-progress" hidden>
+        <div class="bar"><span></span></div>
+        <pre id="convert-lines"></pre>
+        <button id="convert-view" class="primary" hidden>View the dataset</button>
+      </div>
+      <p class="note" id="convert-note"></p>
+    </section>
+
+    <section class="shelf">
+      <div class="shelf-head"><h2>Datasets</h2><span class="count" id="datasets-count"></span></div>
+      <table class="episodes" id="datasets">
+        <thead><tr><th>dataset</th><th>episodes</th><th>frames</th><th>background</th><th>task</th><th>size</th><th>path</th><th></th></tr></thead>
+        <tbody></tbody>
+      </table>
+      <p class="note" id="datasets-empty"></p>
+      <p class="note" id="datasets-note"></p>
+    </section>
+  </main>
+
+  <!-- A take's two gripper videos as their labels leave them, in step: what
+       is kept ringed and the rest darkened; under them the spans worth a
+       look, a click away. -->
+  <dialog id="review">
+    <header>
+      <h2 id="review-title"></h2>
+      <span class="note" id="review-note"></span>
+      <button id="review-close">Close</button>
+    </header>
+    <div class="review-videos">
+      <figure><div class="media"><video id="review-left" muted playsinline preload="auto"></video><p class="media-wait" hidden></p></div><figcaption>left gripper</figcaption></figure>
+      <figure><div class="media"><video id="review-right" muted playsinline preload="auto"></video><p class="media-wait" hidden></p></div><figcaption>right gripper</figcaption></figure>
+    </div>
+    <div class="timeline">
+      <button id="review-play">Play</button>
+      <span class="frame" id="review-frame"></span>
+      <div class="track">
+        <canvas id="review-flags"></canvas>
+        <input id="review-scrub" type="range" min="0" max="0" value="0" step="1">
+      </div>
+    </div>
+    <ul class="flag-list" id="review-list"></ul>
+  </dialog>
+  <!-- A dataset as it was made: its episodes, each with the take it came
+       from, and the two gripper videos played from the dataset's own files -
+       what training reads. -->
+  <dialog id="dataset-view">
+    <header>
+      <h2 id="dv-title"></h2>
+      <span class="note" id="dv-note"></span>
+      <button id="dv-close">Close</button>
+    </header>
+    <div class="dv-body">
+      <ol class="dv-episodes" id="dv-episodes"></ol>
+      <div class="dv-main">
+        <div class="review-videos">
+          <figure><div class="media"><video id="dv-left" muted playsinline preload="auto"></video><p class="media-wait" hidden></p></div><figcaption>left gripper</figcaption></figure>
+          <figure><div class="media"><video id="dv-right" muted playsinline preload="auto"></video><p class="media-wait" hidden></p></div><figcaption>right gripper</figcaption></figure>
+        </div>
+        <div class="timeline">
+          <button id="dv-play">Play</button>
+          <span class="frame" id="dv-frame"></span>
+          <div class="track"><input id="dv-scrub" type="range" min="0" max="0" value="0" step="1" aria-label="frame"></div>
+        </div>
+      </div>
+    </div>
+  </dialog>
+  <!-- A machine for SAM 3 to run on, added as a training source: the Train
+       page lists it too, and SAM 3 is set up under its runs' directory. -->
+  <dialog id="sam-source">
+    <header><h2>New machine for SAM 3</h2><button id="sam-source-close">Close</button></header>
+    <form id="sam-source-form"></form>
+  </dialog>
+  <script type="module" src="/static/curate.js"></script>
+</body>
+</html>

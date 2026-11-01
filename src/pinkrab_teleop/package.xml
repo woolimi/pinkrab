@@ -1,0 +1,35 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>pinkrab_teleop</name>
+  <version>0.1.0</version>
+  <description>
+    The handheld, driving an arm. It reads the marker solid's pose off the top
+    camera's live server, turns how far the hand has moved into where the tool
+    should be, solves the arm for it, and publishes /joint_commands.
+
+    Which arm follows is not asked. The solid on the left handheld carries marker
+    ids 0-15 and the right one 16-31, so the handheld that is in frame says which
+    arm it drives, and picking up the other one moves the other arm.
+
+    Its own package because it belongs on the operator's side of the rig and
+    drags the camera, the marker solver and the kinematics in with it - none of
+    which the driver holding the servo bus should have to install.
+  </description>
+  <maintainer email="woolimi91@naver.com">Woolim Park</maintainer>
+  <license>Apache-2.0</license>
+
+  <exec_depend>rclpy</exec_depend>
+  <!-- The middleware pinkrab_core's config pins, loaded by rclpy.init. -->
+  <exec_depend>rmw_cyclonedds_cpp</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
+  <exec_depend>std_msgs</exec_depend>
+  <exec_depend>std_srvs</exec_depend>
+  <exec_depend>pinkrab_interfaces</exec_depend>
+  <exec_depend>pinkrab_core</exec_depend>
+  <exec_depend>pinkrab_umi</exec_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

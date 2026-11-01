@@ -1,0 +1,245 @@
+/* Pinkrab's colours, from the studio (static/style.css): the hot pink of the
+ * printed shell and the yellow of the handles. The text sits on white paper,
+ * framed by a pink-tinted header and sidebar. The site has one theme, light
+ * (ThemeProvider.astro). */
+
+:root,
+:root[data-theme='light'] {
+	--sl-font: 'IBM Plex Sans', 'IBM Plex Sans KR', system-ui, sans-serif;
+	--sl-font-mono: 'JetBrains Mono', ui-monospace, monospace;
+	/* Titles and headings: Pretendard, whose Hangul has no stroke contrast. */
+	--pk-font-heading: 'Pretendard Variable', Pretendard, 'Noto Sans KR', system-ui, sans-serif;
+
+	--sl-color-accent-low: #fbdbe9;
+	--sl-color-accent: #b8306f;
+	--sl-color-accent-high: #5e1638;
+	--sl-color-white: #2c1a25;
+	--sl-color-gray-1: #3b2531;
+	--sl-color-gray-2: #57404c;
+	--sl-color-gray-3: #765c6a;
+	--sl-color-gray-4: #a8909c;
+	--sl-color-gray-5: #ecd9e2;
+	--sl-color-gray-6: #fbeff4;
+	--sl-color-gray-7: #fdf6f9;
+	--sl-color-black: #ffffff;
+	--sl-color-bg-nav: var(--pk-chrome);
+	--sl-color-bg-sidebar: var(--pk-chrome);
+
+	--pk-shell: #e2488e;
+	--pk-shell-deep: #b8306f;
+	--pk-claw: #f5b301;
+	--pk-chrome: #f9f1f4;
+	--pk-panel: #fffafc;
+	--pk-line: #ecd9e2;
+	--pk-text: #2c1a25;
+	--pk-dim: #6f5664;
+	--pk-wm-pin: #ff6fae;
+	--pk-wm-crab: #d6337d;
+}
+
+h1,
+.sl-markdown-content :is(h2, h3, h4, h5, h6) {
+	font-family: var(--pk-font-heading);
+}
+
+/* The front page draws its own title, so its title panel is empty: no rule under it. */
+.content-panel:has(> .sl-container:empty) {
+	display: none;
+}
+
+/* The header: frosted pink over the page, a hairline and a soft shadow
+ * under it, and a stripe of the shell's pink running into the handles'
+ * yellow along its top edge. */
+header.header {
+	background: rgb(249 241 244 / 0.82);
+	-webkit-backdrop-filter: saturate(1.4) blur(12px);
+	backdrop-filter: saturate(1.4) blur(12px);
+	border-bottom: 1px solid var(--pk-line);
+	box-shadow: 0 8px 24px -20px rgb(94 22 56 / 0.45);
+}
+header.header::before {
+	content: '';
+	position: absolute;
+	inset: 0 0 auto;
+	height: 3px;
+	background: linear-gradient(90deg, var(--pk-shell), var(--pk-wm-pin) 65%, var(--pk-claw));
+}
+
+/* The search: a white pill that lifts a little under the pointer. */
+@media (min-width: 50rem) {
+	header.header button[data-open-modal] {
+		height: 2.5rem;
+		padding-inline: 1rem 0.5rem;
+		border: 1px solid var(--pk-line);
+		border-radius: 999px;
+		background: #fff;
+		color: var(--pk-dim);
+		box-shadow: 0 1px 2px rgb(94 22 56 / 0.06);
+		transition: border-color 0.15s ease, box-shadow 0.15s ease, color 0.15s ease;
+	}
+	header.header button[data-open-modal]:hover {
+		border-color: #e3b6ca;
+		color: var(--pk-text);
+		box-shadow: 0 0 0 4px var(--sl-color-accent-low);
+	}
+	header.header button[data-open-modal] > kbd {
+		padding: 0.15rem 0.45rem;
+		border: 1px solid var(--pk-line);
+		border-radius: 999px;
+		background: var(--sl-color-gray-6);
+		color: var(--pk-dim);
+	}
+}
+header.header button[data-open-modal]:focus-visible {
+	outline: 2px solid var(--pk-shell);
+	outline-offset: 2px;
+}
+
+/* With no theme picker after them, the social links need no divider. */
+.social-icons::after {
+	display: none;
+}
+
+/* The GitHub link: a round button in the text's colour, pink under the pointer. */
+.social-icons a,
+.pk-social a {
+	display: grid;
+	place-items: center;
+	width: 2.5rem;
+	height: 2.5rem;
+	margin: 0;
+	padding: 0;
+	border-radius: 999px;
+	color: var(--pk-text);
+	transition: background-color 0.15s ease, color 0.15s ease;
+}
+.social-icons a:hover,
+.pk-social a:hover {
+	background: var(--sl-color-accent-low);
+	color: var(--pk-shell-deep);
+}
+.social-icons a:focus-visible,
+.pk-social a:focus-visible {
+	outline: 2px solid var(--pk-shell);
+	outline-offset: 2px;
+}
+.social-icons a svg,
+.pk-social a svg {
+	width: 1.5rem;
+	height: 1.5rem;
+}
+
+/* A terminal's title bar has the window buttons: red, yellow, green. The
+ * dots are a mask over the bar's left end; the colours paint through it. */
+:root .expressive-code .frame.is-terminal .header::before {
+	background: linear-gradient(to right, #ff5f57 0 33%, #febc2e 33% 66%, #28c840 66%);
+}
+
+/* Korean breaks between words, not inside them. */
+:root {
+	word-break: keep-all;
+	overflow-wrap: break-word;
+}
+
+/* Inline code: a pink-tinted chip, darker than the paper it sits on, kept
+ * on one line - a command or a path broken across lines reads as two. */
+:root .sl-markdown-content :not(pre) > code {
+	white-space: nowrap;
+	padding: 0.12em 0.4em;
+	border: 1px solid #e3b6ca;
+	border-radius: 0.35rem;
+	background: #f4d9e5;
+	color: #8a2453;
+	font-size: 0.875em;
+}
+
+/* A table's first column names the row; it stays on one line. */
+.sl-markdown-content td:first-child {
+	white-space: nowrap;
+}
+
+/* Tables as wide as the text. Starlight makes a table a scrolling block, which
+ * leaves it only as wide as its cells; that scrolling is kept for phones, where
+ * a table can be wider than the screen. */
+@media (min-width: 50rem) {
+	.sl-markdown-content table:not(:where(.not-content *)) {
+		display: table;
+		width: 100%;
+	}
+}
+
+/* Diagrams drawn in the page (components/policies): boxes on white, wires in
+ * the grey of the text, and the shell's pink for what the figure is about. */
+.pk-fig {
+	margin-block: 1.75rem;
+}
+.pk-fig svg {
+	display: block;
+	width: 100%;
+	height: auto;
+}
+.pk-fig text {
+	font-family: var(--sl-font);
+	font-size: 13px;
+	fill: var(--pk-text);
+}
+.pk-fig text.dim {
+	font-size: 12px;
+	fill: var(--pk-dim);
+}
+.pk-fig text.hot {
+	fill: var(--pk-shell-deep);
+}
+.pk-fig text.head {
+	font-size: 13px;
+	font-weight: 600;
+}
+.pk-fig text.mono {
+	font-family: var(--sl-font-mono);
+	font-size: 12px;
+}
+.pk-fig .box {
+	fill: #fff;
+	stroke: #c9b3bf;
+}
+.pk-fig .box-hot {
+	fill: var(--sl-color-accent-low);
+	stroke: var(--pk-shell);
+}
+.pk-fig .zone {
+	fill: none;
+	stroke: var(--pk-dim);
+	stroke-dasharray: 5 4;
+}
+.pk-fig .wire {
+	fill: none;
+	stroke: #8d7482;
+	stroke-width: 1.3;
+}
+.pk-fig .wire.hot-wire {
+	stroke: var(--pk-shell);
+}
+.pk-fig .wire.dash {
+	stroke-dasharray: 5 4;
+}
+.pk-fig .fill-dim {
+	fill: #8d7482;
+}
+.pk-fig .fill-hot {
+	fill: var(--pk-shell);
+}
+.pk-fig .dot circle {
+	fill: var(--pk-shell-deep);
+}
+.pk-fig .area {
+	fill: var(--sl-color-gray-6);
+	stroke: #8d7482;
+	stroke-width: 1.3;
+}
+.pk-fig figcaption {
+	margin-top: 0.6rem;
+	font-size: var(--sl-text-sm);
+	line-height: 1.55;
+	color: var(--pk-dim);
+	word-break: keep-all;
+}

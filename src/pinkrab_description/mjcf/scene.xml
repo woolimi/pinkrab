@@ -1,0 +1,53 @@
+<mujoco model="pinkrab_scene">
+  <!--
+    Pinkrab on its desk, for MuJoCo. Maintained by hand; pinkrab.xml, which this
+    includes, is generated from the arm description.
+
+    Frames follow config/mount.yaml, so the simulation and the real rig agree:
+
+      world x  out of the board   (x = 0 is the BACK of the board)
+      world y  across, toward the left arm
+      world z  up from the desk   (z = 0 is the desk surface)
+
+    Only the board's thickness is measured. Its width and height here are drawn to
+    contain the arms, not to match any particular board - a real one is whatever
+    SKADIS panel is on the wall.
+  -->
+
+  <include file="pinkrab.xml"/>
+
+  <statistic center="0.15 0 0.35" extent="0.9"/>
+
+  <visual>
+    <headlight diffuse="0.55 0.55 0.55" ambient="0.32 0.32 0.32" specular="0 0 0"/>
+    <rgba haze="0.15 0.19 0.22 1"/>
+    <global azimuth="150" elevation="-18" offwidth="1280" offheight="960"/>
+  </visual>
+
+  <asset>
+    <texture type="skybox" builtin="gradient" rgb1="0.24 0.28 0.33" rgb2="0.05 0.06 0.08"
+             width="512" height="3072"/>
+    <texture name="desk" type="2d" builtin="checker" rgb1="0.32 0.30 0.28" rgb2="0.27 0.25 0.23"
+             width="300" height="300"/>
+    <material name="desk" texture="desk" texrepeat="6 6" reflectance="0.05"/>
+    <material name="board" rgba="0.80 0.72 0.58 1" reflectance="0.02"/>
+  </asset>
+
+  <worldbody>
+    <light pos="0.6 0 1.4" dir="-0.4 0 -1" directional="true"/>
+
+    <!-- The desk. The arms hang above it, so it is the floor of the workspace. -->
+    <geom name="desk" type="plane" size="1.2 1.2 0.02" material="desk" pos="0 0 0"/>
+
+    <!--
+      The pegboard. 18 mm thick (config/mount.yaml wall.thickness), its FACE at
+      x = 0.018 - which is the plane the base plates bolt to.
+    -->
+    <geom name="pegboard" type="box" size="0.009 0.34 0.275" pos="0.009 0 0.275"
+          material="board"/>
+
+    <camera name="front" pos="0.95 0 0.42" xyaxes="0 1 0 -0.35 0 0.94"/>
+    <camera name="side" pos="0.42 -0.95 0.45" xyaxes="1 0 0 0 0.4 0.92"/>
+    <camera name="top" pos="0.35 0 1.15" xyaxes="0 1 0 -1 0 0"/>
+  </worldbody>
+</mujoco>

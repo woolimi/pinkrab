@@ -1,0 +1,56 @@
+# A single environment that holds both halves of this robot.
+#
+# ROS and LeRobot normally live apart: ROS ships an interpreter its C extensions are
+# built against, and everything else goes in a venv beside it. RoboStack removes the
+# split by shipping ROS as conda packages, so one interpreter can import `rclpy` and
+# drive the servos - which means `colcon build` and `pinkrab` finally agree on what
+# python is.
+#
+#     mamba env create -f requirements/environment.yml
+#     mamba activate pinkrab
+#     pip install -e src/pinkrab_core -e src/pinkrab_cli -e src/pinkrab_mujoco \
+#         -e src/pinkrab_studio -e src/pinkrab_umi -e src/pinkrab_policy -e lerobot-plugin
+#
+# On a machine with an apt ROS, use scripts/setup.sh instead: there the interpreter
+# is not ours to choose.
+
+name: pinkrab
+
+channels:
+  - robostack-jazzy
+  - conda-forge
+
+dependencies:
+  - python =3.12          # LeRobot's floor, and what RoboStack jazzy is built for
+
+  # ROS, listed by what actually gets used rather than pulling `desktop` whole.
+  - ros-jazzy-ros-base
+  - ros-jazzy-robot-state-publisher    # display.launch.py
+  - ros-jazzy-joint-state-publisher-gui
+  - ros-jazzy-rviz2
+  - ros-jazzy-xacro                    # the description is xacro, not urdf
+  - ros-jazzy-urdf
+  - ros-jazzy-rmw-cyclonedds-cpp       # the middleware every node runs on (pinkrab_core config)
+
+  # colcon and what it needs to build the ament_cmake packages.
+  - colcon-common-extensions
+  - cmake
+  - ninja
+  - pkg-config
+  - compilers
+
+  - pip
+  - pip:
+      # The same pins requirements/arm.in carries, and for the same reasons - see
+      # that file. Kept here rather than `-r arm.in` so this one file describes the
+      # whole environment.
+      - lerobot[feetech,placo-dep]==0.6.1
+      - mujoco
+      - setuptools<80      # `colcon build --symlink-install` passes --editable
+
+# For `ros2` typed in this environment's shell - a service call from another
+# middleware reaches the robot's nodes with its fields zeroed. The nodes and
+# launch files set it themselves from pinkrab_core's `ros_middleware`; this is
+# the same value, and `pinkrab doctor` says when the two differ.
+variables:
+  RMW_IMPLEMENTATION: rmw_cyclonedds_cpp

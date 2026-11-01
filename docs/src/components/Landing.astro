@@ -1,0 +1,201 @@
+---
+import { Icon } from '@astrojs/starlight/components';
+
+// The front page: the name, and the robot reaching for the pointer. Both
+// are the studio's own front page (pinkrab_studio/static: home.html,
+// hero.js, wordmark.js), drawn here from the files `pinkrab-studio --export`
+// writes.
+const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+const link = (path: string) => `${base}/${path}`;
+// The pegboard at the IKEA of the page's language: Korea for Korean, the US otherwise.
+const SKADIS: Record<string, string> = {
+	ko: 'https://www.ikea.com/kr/ko/p/skadis-pegboard-black-30534379/',
+	en: 'https://www.ikea.com/us/en/p/skadis-pegboard-black-50534378/',
+};
+const skadis = SKADIS[Astro.locals.starlightRoute.lang] ?? SKADIS.en;
+---
+
+<div class="pk-landing not-content">
+	<section class="pk-hero">
+		<div class="pk-hero-text">
+			<h1 class="wordmark">
+				<span class="sr">Pinkrab</span>
+				<span class="tilt" id="wordmark" aria-hidden="true">
+					<svg class="layer-pin" viewBox="0 0 466 102">
+						<g fill="none" stroke="currentColor" stroke-width="20" stroke-linecap="round" stroke-linejoin="round">
+							<path d="M11 89V11H38A21.5 21.5 0 0 1 38 54H11"></path>
+							<path d="M91.5 89V44"></path>
+							<path d="M123.5 89V44M123.5 65A21 21 0 0 1 165.5 65V89"></path>
+							<path d="M197.5 89V11"></path>
+							<path d="M203 66L239 44M203 66L241 89"></path>
+						</g>
+						<circle fill="currentColor" cx="91.5" cy="12" r="10.5"></circle>
+					</svg>
+					<svg class="layer-crab" viewBox="0 0 466 102">
+						<g fill="none" stroke="currentColor" stroke-width="20" stroke-linecap="round" stroke-linejoin="round">
+							<path d="M276 89V44M276 66A22 22 0 0 1 298 44H302"></path>
+							<circle cx="354.5" cy="66.5" r="22.5"></circle><path d="M377 44V89"></path>
+							<path d="M409 89V11"></path><circle cx="431.5" cy="66.5" r="22.5"></circle>
+						</g>
+						<path fill="none" stroke="currentColor" stroke-width="27.0" stroke-linecap="round" d="M203.0 66.0L242.4 41.9M203.0 66.0L244.4 91.1"></path>
+						<path fill="currentColor" d="M232.8 32.0Q251.0 21.4 263.9 46.4Q250.8 40.3 247.1 49.6ZM234.9 101.1Q253.1 111.5 265.9 86.5Q252.8 92.6 249.1 83.4Z"></path>
+						<circle fill="currentColor" cx="203.0" cy="66.0" r="14.0"></circle>
+					</svg>
+				</span>
+			</h1>
+			<p class="lede">벽에 부착하는 6-DOF 양팔 로봇과 UMI 그리퍼 Hermit</p>
+			<div class="actions">
+				<a class="go primary" href={link('start/introduction/')}><b>Introduction</b><span>Pinkrab 문서 보러가기</span></a>
+				<a class="go with-icon" href="https://github.com/woolimi/pinkrab"><Icon name="github" size="1.6rem" /><b>GitHub</b><span>하드웨어와 소프트웨어</span></a>
+			</div>
+		</div>
+		<figure class="scene">
+			<canvas id="hero-robot" aria-label="페그보드에 걸린 팔 두 개와 그 앞 책상 위의 Hermit. 팔이 포인터를 따라 손을 뻗습니다."></canvas>
+			<svg class="leaders" aria-hidden="true"></svg>
+			<ul class="callouts">
+				<li data-at="board" data-dx="0.12" data-dy="-0.12" hidden><b><a href={skadis}>IKEA SKÅDIS 페그보드</a></b><span>팔을 거는 벽</span></li>
+				<li data-at="joints" data-dx="0.045" data-dy="-0.15" hidden><b>6-DoF 팔</b><span>5-DoF SO&#8209;ARM&nbsp;101 + wrist yaw</span></li>
+				<li data-at="pink" data-dx="-0.13" data-dy="-0.024" hidden><b>HotPink</b><span>Pinkrab 의 Pink</span></li>
+				<li data-at="claw" data-dx="-0.005" data-dy="0.233" hidden><b>Claw 그리퍼</b><span>Pinkrab 의 krab, 게의 집게</span></li>
+				<li data-at="hermit" data-dx="-0.01" data-dy="0.15" hidden><b>Hermit</b><span>UMI Handheld 그리퍼</span></li>
+			</ul>
+		</figure>
+	</section>
+
+</div>
+
+<script>
+	import { extrude, tilt } from '../../../src/pinkrab_studio/pinkrab_studio/static/wordmark.js';
+
+	const wordmark = document.getElementById('wordmark');
+	if (wordmark) {
+		extrude(wordmark);
+		tilt(wordmark);
+	}
+
+	const robot = `${import.meta.env.BASE_URL.replace(/\/$/, '')}/robot`;
+	const canvas = document.getElementById('hero-robot') as HTMLCanvasElement | null;
+	// A page whose robot does not load shows the words without an empty frame.
+	if (canvas) {
+		import('../../../src/pinkrab_studio/pinkrab_studio/static/hero.js')
+			.then(({ showRobot }) =>
+				showRobot(canvas, {
+					physics: `${robot}/physics.json`,
+					model: `${robot}/model.urdf`,
+					ready: `${robot}/ready.json`,
+					hermit: `${robot}/hermit.json`,
+					meshes: `${robot}/meshes`,
+					hermitMeshes: `${robot}/hermit/meshes`,
+				}),
+			)
+			.catch(() => {
+				document.querySelector('.pk-hero .scene')?.remove();
+				document.querySelector('.pk-hero')?.classList.add('no-robot');
+			});
+	}
+</script>
+
+<style is:global>
+	/* From the studio's home.css, in this site's colours. */
+	.pk-landing {
+		--paper: var(--sl-color-black);
+		--text: var(--pk-text);
+		--dim: var(--pk-dim);
+	}
+	.pk-hero {
+		display: grid;
+		grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+		align-items: center;
+		gap: 8px;
+		min-height: min(640px, 76vh);
+		margin: 0 0 2rem;
+	}
+	.pk-hero.no-robot { grid-template-columns: minmax(0, 1fr); min-height: 0; padding: 3rem 0; }
+	.pk-hero-text { position: relative; z-index: 2; pointer-events: none; }
+	.pk-hero-text .actions { pointer-events: auto; }
+
+	.pk-hero h1.wordmark {
+		width: fit-content;
+		margin: 0 0 1.5rem -4px;
+		line-height: 0;
+		--wm-pin: var(--pk-wm-pin);
+		--wm-crab: var(--pk-wm-crab);
+		--vp: 72% 320%;
+		perspective: var(--perspective, 1400px);
+		perspective-origin: var(--vp);
+	}
+	.wordmark .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+	.wordmark .tilt {
+		position: relative;
+		display: block;
+		width: clamp(300px, 40vw, 560px);
+		transform-style: preserve-3d;
+		transform: rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg));
+	}
+	.wordmark svg { display: block; width: 100%; height: auto; overflow: visible; transform-origin: var(--vp); }
+	.wordmark svg.layer-crab, .wordmark svg.side { position: absolute; inset: 0; }
+	.wordmark svg.layer-pin { color: var(--wm-pin); }
+	.wordmark svg.layer-crab { color: var(--wm-crab); transform: translateZ(var(--depth, 0px)) scale(var(--undo, 1)); }
+
+	.pk-hero .lede { margin: 0 0 1.75rem; max-width: 17em; font-size: 1.375rem; line-height: 1.4; color: var(--pk-text); }
+	.pk-hero .actions { display: flex; gap: 12px; flex-wrap: wrap; }
+	.pk-landing a.go {
+		display: grid;
+		gap: 2px;
+		padding: 13px 22px 14px;
+		border-radius: 14px;
+		border: 1.5px solid var(--pk-line);
+		background: var(--pk-panel);
+		color: var(--pk-text);
+		text-decoration: none;
+		transition: border-color 0.15s, background-color 0.15s, transform 0.15s;
+	}
+	.pk-landing a.go b { font-size: 1rem; font-weight: 700; }
+	/* A button with a mark: the mark beside both lines of words. */
+	.pk-landing a.go.with-icon { grid-template-columns: auto minmax(0, 1fr); column-gap: 12px; align-items: center; }
+	.pk-landing a.go.with-icon svg { grid-row: 1 / span 2; }
+	.pk-landing a.go span { font-size: 0.8rem; color: var(--pk-dim); }
+	.pk-landing a.go:hover { border-color: var(--pk-shell); transform: translateY(-1px); }
+	.pk-landing a.go.primary { background: var(--pk-shell); border-color: var(--pk-shell); color: #fff; box-shadow: 0 10px 24px -12px var(--pk-shell-deep); }
+	.pk-landing a.go.primary span { color: rgba(255, 255, 255, 0.86); }
+	.pk-landing a.go.primary:hover { background: var(--pk-shell-deep); border-color: var(--pk-shell-deep); }
+	.pk-landing a.go:focus-visible { outline: 2px solid var(--pk-shell); outline-offset: 3px; }
+
+	.pk-landing .scene { position: relative; z-index: 1; margin: 0; }
+	#hero-robot { display: block; width: 100%; height: min(640px, 72vh); touch-action: pan-y; }
+	.scene svg.leaders { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
+	.leaders path { fill: none; stroke: var(--pk-text); stroke-width: 1; }
+	.leaders path.halo { stroke: var(--sl-color-black); stroke-width: 3; opacity: 0.8; }
+	.leaders circle { fill: var(--sl-color-black); stroke: var(--pk-text); stroke-width: 1.5; }
+	.pk-landing .callouts { list-style: none; margin: 0; padding: 0; }
+	/* A halo of the page's paper, so a label stays readable where it crosses the black board. */
+	.pk-landing .callouts li { text-shadow: 0 0 2px var(--sl-color-black), 0 0 4px var(--sl-color-black), 0 0 6px var(--sl-color-black); }
+	.pk-landing .callouts li { position: absolute; display: grid; gap: 1px; width: max-content; max-width: 200px; margin: 0; transform: translateY(-50%); pointer-events: none; }
+	.pk-landing .callouts li.west { transform: translate(-100%, -50%); text-align: right; }
+	.pk-landing .callouts b { font-size: 0.8rem; font-weight: 700; color: var(--pk-text); }
+	.pk-landing .callouts span { font-size: 0.75rem; line-height: 1.35; color: var(--pk-dim); }
+	/* A callout that names a product links to it; only the link takes the pointer. */
+	.pk-landing .callouts a { color: inherit; text-decoration: underline; text-decoration-color: var(--pk-shell); text-underline-offset: 3px; pointer-events: auto; }
+	.pk-landing .callouts a:hover { color: var(--pk-shell-deep); }
+
+
+	@media (max-width: 860px) {
+		.pk-hero { grid-template-columns: minmax(0, 1fr); min-height: 0; gap: 0; margin-bottom: 1.25rem; }
+		.wordmark .tilt { width: 100%; }
+		.pk-landing .callouts span { display: none; }
+	}
+	/* A phone: the words, then the robot across the whole width, wider than
+	 * tall so the camera stands close. */
+	@media (max-width: 560px) {
+		.pk-hero h1.wordmark { margin: 0.5rem 0 1rem -2px; }
+		.pk-hero .lede { margin-bottom: 1.25rem; font-size: 1.2rem; max-width: none; }
+		.pk-hero .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+		.pk-landing a.go { padding: 12px 16px 13px; border-radius: 12px; }
+		.pk-landing .scene { margin: 0.75rem calc(-1 * var(--sl-content-pad-x, 1rem)) 0; }
+		#hero-robot { height: 330px; }
+		.pk-landing .scene .leaders, .pk-landing .scene .callouts { display: none; }
+	}
+	@media (prefers-reduced-motion: reduce) {
+		.pk-landing a.go { transition: none; }
+	}
+</style>

@@ -1,0 +1,363 @@
+<!--
+  Pinkrab for MuJoCo. Generated from the arm description - edits are
+  overwritten. The scene that puts it on a desk is scene.xml, which
+  includes this file and is maintained by hand.
+-->
+<mujoco model="pinkrab">
+  <compiler angle="radian" meshdir="../meshes" />
+  <option integrator="implicitfast" timestep="0.002" />
+  <asset>
+    <mesh name="base_servo_mount_left" content_type="model/stl" file="base_servo_mount_left.stl" />
+    <mesh name="base_left" content_type="model/stl" file="base_left.stl" />
+    <mesh name="driver_mount_left" content_type="model/stl" file="driver_mount_left.stl" />
+    <mesh name="servo" content_type="model/stl" file="servo.stl" />
+    <mesh name="shoulder_servo_mount_left" content_type="model/stl" file="shoulder_servo_mount_left.stl" />
+    <mesh name="shoulder_left" content_type="model/stl" file="shoulder_left.stl" />
+    <mesh name="upper_arm_left" content_type="model/stl" file="upper_arm_left.stl" />
+    <mesh name="wrist_yaw_bracket_left" content_type="model/stl" file="wrist_yaw_bracket_left.stl" />
+    <mesh name="wrist_left" content_type="model/stl" file="wrist_left.stl" />
+    <mesh name="servo_no_horn" content_type="model/stl" file="servo_no_horn.stl" />
+    <mesh name="claw_left" content_type="model/stl" file="claw_left.stl" />
+    <mesh name="camera_bracket_left" content_type="model/stl" file="camera_bracket_left.stl" />
+    <mesh name="jaw_left" content_type="model/stl" file="jaw_left.stl" />
+    <mesh name="base_servo_mount_right" content_type="model/stl" file="base_servo_mount_right.stl" />
+    <mesh name="base_right" content_type="model/stl" file="base_right.stl" />
+    <mesh name="driver_mount_right" content_type="model/stl" file="driver_mount_right.stl" />
+    <mesh name="shoulder_servo_mount_right" content_type="model/stl" file="shoulder_servo_mount_right.stl" />
+    <mesh name="shoulder_right" content_type="model/stl" file="shoulder_right.stl" />
+    <mesh name="upper_arm_right" content_type="model/stl" file="upper_arm_right.stl" />
+    <mesh name="wrist_yaw_bracket_right" content_type="model/stl" file="wrist_yaw_bracket_right.stl" />
+    <mesh name="wrist_right" content_type="model/stl" file="wrist_right.stl" />
+    <mesh name="claw_right" content_type="model/stl" file="claw_right.stl" />
+    <mesh name="camera_bracket_right" content_type="model/stl" file="camera_bracket_right.stl" />
+    <mesh name="jaw_right" content_type="model/stl" file="jaw_right.stl" />
+    <mesh name="claw_left_c00" file="../mjcf/collision/claw_left_c00.stl" />
+    <mesh name="claw_left_c01" file="../mjcf/collision/claw_left_c01.stl" />
+    <mesh name="claw_left_c02" file="../mjcf/collision/claw_left_c02.stl" />
+    <mesh name="claw_left_c03" file="../mjcf/collision/claw_left_c03.stl" />
+    <mesh name="claw_left_c04" file="../mjcf/collision/claw_left_c04.stl" />
+    <mesh name="claw_left_c05" file="../mjcf/collision/claw_left_c05.stl" />
+    <mesh name="claw_left_c06" file="../mjcf/collision/claw_left_c06.stl" />
+    <mesh name="claw_left_c07" file="../mjcf/collision/claw_left_c07.stl" />
+    <mesh name="claw_left_c08" file="../mjcf/collision/claw_left_c08.stl" />
+    <mesh name="claw_left_c09" file="../mjcf/collision/claw_left_c09.stl" />
+    <mesh name="claw_left_c10" file="../mjcf/collision/claw_left_c10.stl" />
+    <mesh name="claw_left_c11" file="../mjcf/collision/claw_left_c11.stl" />
+    <mesh name="claw_left_c12" file="../mjcf/collision/claw_left_c12.stl" />
+    <mesh name="camera_bracket_left_c00" file="../mjcf/collision/camera_bracket_left_c00.stl" />
+    <mesh name="camera_bracket_left_c01" file="../mjcf/collision/camera_bracket_left_c01.stl" />
+    <mesh name="camera_bracket_left_c02" file="../mjcf/collision/camera_bracket_left_c02.stl" />
+    <mesh name="camera_bracket_left_c03" file="../mjcf/collision/camera_bracket_left_c03.stl" />
+    <mesh name="camera_bracket_left_c04" file="../mjcf/collision/camera_bracket_left_c04.stl" />
+    <mesh name="camera_bracket_left_c05" file="../mjcf/collision/camera_bracket_left_c05.stl" />
+    <mesh name="camera_bracket_left_c06" file="../mjcf/collision/camera_bracket_left_c06.stl" />
+    <mesh name="camera_bracket_left_c07" file="../mjcf/collision/camera_bracket_left_c07.stl" />
+    <mesh name="camera_bracket_left_c08" file="../mjcf/collision/camera_bracket_left_c08.stl" />
+    <mesh name="camera_bracket_left_c09" file="../mjcf/collision/camera_bracket_left_c09.stl" />
+    <mesh name="camera_bracket_left_c10" file="../mjcf/collision/camera_bracket_left_c10.stl" />
+    <mesh name="camera_bracket_left_c11" file="../mjcf/collision/camera_bracket_left_c11.stl" />
+    <mesh name="camera_bracket_left_c12" file="../mjcf/collision/camera_bracket_left_c12.stl" />
+    <mesh name="camera_bracket_left_c13" file="../mjcf/collision/camera_bracket_left_c13.stl" />
+    <mesh name="camera_bracket_left_c14" file="../mjcf/collision/camera_bracket_left_c14.stl" />
+    <mesh name="camera_bracket_left_c15" file="../mjcf/collision/camera_bracket_left_c15.stl" />
+    <mesh name="camera_bracket_left_c16" file="../mjcf/collision/camera_bracket_left_c16.stl" />
+    <mesh name="camera_bracket_left_c17" file="../mjcf/collision/camera_bracket_left_c17.stl" />
+    <mesh name="camera_bracket_left_c18" file="../mjcf/collision/camera_bracket_left_c18.stl" />
+    <mesh name="camera_bracket_left_c19" file="../mjcf/collision/camera_bracket_left_c19.stl" />
+    <mesh name="camera_bracket_left_c20" file="../mjcf/collision/camera_bracket_left_c20.stl" />
+    <mesh name="jaw_left_c00" file="../mjcf/collision/jaw_left_c00.stl" />
+    <mesh name="jaw_left_c01" file="../mjcf/collision/jaw_left_c01.stl" />
+    <mesh name="jaw_left_c02" file="../mjcf/collision/jaw_left_c02.stl" />
+    <mesh name="jaw_left_c03" file="../mjcf/collision/jaw_left_c03.stl" />
+    <mesh name="jaw_left_c04" file="../mjcf/collision/jaw_left_c04.stl" />
+    <mesh name="jaw_left_c05" file="../mjcf/collision/jaw_left_c05.stl" />
+    <mesh name="jaw_left_c06" file="../mjcf/collision/jaw_left_c06.stl" />
+    <mesh name="jaw_left_c07" file="../mjcf/collision/jaw_left_c07.stl" />
+    <mesh name="jaw_left_c08" file="../mjcf/collision/jaw_left_c08.stl" />
+    <mesh name="jaw_left_c09" file="../mjcf/collision/jaw_left_c09.stl" />
+    <mesh name="jaw_left_c10" file="../mjcf/collision/jaw_left_c10.stl" />
+    <mesh name="claw_right_c00" file="../mjcf/collision/claw_right_c00.stl" />
+    <mesh name="claw_right_c01" file="../mjcf/collision/claw_right_c01.stl" />
+    <mesh name="claw_right_c02" file="../mjcf/collision/claw_right_c02.stl" />
+    <mesh name="claw_right_c03" file="../mjcf/collision/claw_right_c03.stl" />
+    <mesh name="claw_right_c04" file="../mjcf/collision/claw_right_c04.stl" />
+    <mesh name="claw_right_c05" file="../mjcf/collision/claw_right_c05.stl" />
+    <mesh name="claw_right_c06" file="../mjcf/collision/claw_right_c06.stl" />
+    <mesh name="claw_right_c07" file="../mjcf/collision/claw_right_c07.stl" />
+    <mesh name="claw_right_c08" file="../mjcf/collision/claw_right_c08.stl" />
+    <mesh name="claw_right_c09" file="../mjcf/collision/claw_right_c09.stl" />
+    <mesh name="claw_right_c10" file="../mjcf/collision/claw_right_c10.stl" />
+    <mesh name="claw_right_c11" file="../mjcf/collision/claw_right_c11.stl" />
+    <mesh name="claw_right_c12" file="../mjcf/collision/claw_right_c12.stl" />
+    <mesh name="camera_bracket_right_c00" file="../mjcf/collision/camera_bracket_right_c00.stl" />
+    <mesh name="camera_bracket_right_c01" file="../mjcf/collision/camera_bracket_right_c01.stl" />
+    <mesh name="camera_bracket_right_c02" file="../mjcf/collision/camera_bracket_right_c02.stl" />
+    <mesh name="camera_bracket_right_c03" file="../mjcf/collision/camera_bracket_right_c03.stl" />
+    <mesh name="camera_bracket_right_c04" file="../mjcf/collision/camera_bracket_right_c04.stl" />
+    <mesh name="camera_bracket_right_c05" file="../mjcf/collision/camera_bracket_right_c05.stl" />
+    <mesh name="camera_bracket_right_c06" file="../mjcf/collision/camera_bracket_right_c06.stl" />
+    <mesh name="camera_bracket_right_c07" file="../mjcf/collision/camera_bracket_right_c07.stl" />
+    <mesh name="camera_bracket_right_c08" file="../mjcf/collision/camera_bracket_right_c08.stl" />
+    <mesh name="camera_bracket_right_c09" file="../mjcf/collision/camera_bracket_right_c09.stl" />
+    <mesh name="camera_bracket_right_c10" file="../mjcf/collision/camera_bracket_right_c10.stl" />
+    <mesh name="camera_bracket_right_c11" file="../mjcf/collision/camera_bracket_right_c11.stl" />
+    <mesh name="camera_bracket_right_c12" file="../mjcf/collision/camera_bracket_right_c12.stl" />
+    <mesh name="camera_bracket_right_c13" file="../mjcf/collision/camera_bracket_right_c13.stl" />
+    <mesh name="camera_bracket_right_c14" file="../mjcf/collision/camera_bracket_right_c14.stl" />
+    <mesh name="camera_bracket_right_c15" file="../mjcf/collision/camera_bracket_right_c15.stl" />
+    <mesh name="camera_bracket_right_c16" file="../mjcf/collision/camera_bracket_right_c16.stl" />
+    <mesh name="camera_bracket_right_c17" file="../mjcf/collision/camera_bracket_right_c17.stl" />
+    <mesh name="camera_bracket_right_c18" file="../mjcf/collision/camera_bracket_right_c18.stl" />
+    <mesh name="camera_bracket_right_c19" file="../mjcf/collision/camera_bracket_right_c19.stl" />
+    <mesh name="camera_bracket_right_c20" file="../mjcf/collision/camera_bracket_right_c20.stl" />
+    <mesh name="jaw_right_c00" file="../mjcf/collision/jaw_right_c00.stl" />
+    <mesh name="jaw_right_c01" file="../mjcf/collision/jaw_right_c01.stl" />
+    <mesh name="jaw_right_c02" file="../mjcf/collision/jaw_right_c02.stl" />
+    <mesh name="jaw_right_c03" file="../mjcf/collision/jaw_right_c03.stl" />
+    <mesh name="jaw_right_c04" file="../mjcf/collision/jaw_right_c04.stl" />
+    <mesh name="jaw_right_c05" file="../mjcf/collision/jaw_right_c05.stl" />
+    <mesh name="jaw_right_c06" file="../mjcf/collision/jaw_right_c06.stl" />
+    <mesh name="jaw_right_c07" file="../mjcf/collision/jaw_right_c07.stl" />
+    <mesh name="jaw_right_c08" file="../mjcf/collision/jaw_right_c08.stl" />
+    <mesh name="jaw_right_c09" file="../mjcf/collision/jaw_right_c09.stl" />
+  </asset>
+  <worldbody>
+    <geom pos="0.0783 0.240099 0.108" quat="0.5 -0.5 0.5 -0.5" type="mesh" contype="0" conaffinity="0" group="2" rgba="0.8784 0.2941 0.5569 1" density="0" mesh="base_servo_mount_left" name="base_servo_mount_left" />
+    <geom pos="0.0783 0.240099 0.108" quat="0.5 -0.5 0.5 -0.5" type="mesh" rgba="0.35 0.62 0.85 0.4" mesh="base_servo_mount_left" group="3" name="base_servo_mount_left_2" />
+    <geom pos="0.0783 0.24 0.108" quat="0.5 -0.5 0.5 -0.5" type="mesh" contype="0" conaffinity="0" group="2" rgba="0.8784 0.2941 0.5569 1" density="0" mesh="base_left" name="base_left" />
+    <geom pos="0.0783 0.24 0.108" quat="0.5 -0.5 0.5 -0.5" type="mesh" rgba="0.35 0.62 0.85 0.4" mesh="base_left" group="3" name="base_left_2" />
+    <geom pos="0.0783 0.240099 0.108" quat="0.5 -0.5 0.5 -0.5" type="mesh" contype="0" conaffinity="0" group="2" rgba="0.8784 0.2941 0.5569 1" density="0" mesh="driver_mount_left" name="driver_mount_left" />
+    <geom pos="0.0783 0.240099 0.108" quat="0.5 -0.5 0.5 -0.5" type="mesh" rgba="0.35 0.62 0.85 0.4" mesh="driver_mount_left" group="3" name="driver_mount_left_2" />
+    <geom pos="0.111 0.24 0.1541" quat="1 0 0 0" type="mesh" contype="0" conaffinity="0" group="2" rgba="0.1 0.1 0.1 1" density="0" mesh="servo" name="servo" />
+    <geom pos="0.111 0.24 0.1541" quat="1 0 0 0" type="mesh" rgba="0.35 0.62 0.85 0.4" mesh="servo" group="3" name="servo_2" />
+    <geom pos="0.0783 -0.240099 0.108" quat="0.5 0.5 0.5 0.5" type="mesh" contype="0" conaffinity="0" group="2" rgba="0.8784 0.2941 0.5569 1" density="0" mesh="base_servo_mount_right" name="base_servo_mount_right" />
+    <geom pos="0.0783 -0.240099 0.108" quat="0.5 0.5 0.5 0.5" type="mesh" rgba="0.35 0.62 0.85 0.4" mesh="base_servo_mount_right" group="3" name="base_servo_mount_right_2" />
+    <geom pos="0.0783 -0.24 0.108" quat="0.5 0.5 0.5 0.5" type="mesh" contype="0" conaffinity="0" group="2" rgba="0.8784 0.2941 0.5569 1" density="0" mesh="base_right" name="base_right" />
+    <geom pos="0.0783 -0.24 0.108" quat="0.5 0.5 0.5 0.5" type="mesh" rgba="0.35 0.62 0.85 0.4" mesh="base_right" group="3" name="base_right_2" />
+    <geom pos="0.0783 -0.240099 0.108" quat="0.5 0.5 0.5 0.5" type="mesh" contype="0" conaffinity="0" group="2" rgba="0.8784 0.2941 0.5569 1" density="0" mesh="driver_mount_right" name="driver_mount_right" />
+    <geom pos="0.0783 -0.240099 0.108" quat="0.5 0.5 0.5 0.5" type="mesh" rgba="0.35 0.62 0.85 0.4" mesh="driver_mount_right" group="3" name="driver_mount_right_2" />
+    <geom pos="0.111 -0.24 0.1541" quat="1 0 0 0" type="mesh" contype="0" conaffinity="0" group="2" rgba="0.1 0.1 0.1 1" density="0" mesh="servo" name="servo_3" />
+    <geom pos="0.111 -0.24 0.1541" quat="1 0 0 0" type="mesh" rgba="0.35 0.62 0.85 0.4" mesh="servo" group="3" name="servo_4" />
+    <body name="left_shoulder_link" pos="0.1235 0.24 0.1728" quat="-8.09306e-09 -0.00610994 -0.999981 1.32687e-06">
+      <inertial pos="-0.030651 -8.0677e-05 -0.0305742" quat="0.999955 -0.00195812 0.00655481 -0.00656545" mass="0.143483" diaginertia="0.000104293 9.90805e-05 3.02718e-05" />
+      <joint name="left_shoulder_pan" range="-2.07694 2.00713" actuatorfrcrange="-10 10" damping="0.6" frictionloss="0.0383" armature="0.0711" />
+      <geom pos="-0.0675992 0.000177759 0.0158499" quat="0.499998 -0.5 -0.5 -0.500002" type="mesh" contype="0" conaffinity="0" group="2" rgba="0.8784 0.2941 0.5569 1" density="0" mesh="shoulder_servo_mount_left" name="shoulder_servo_mount_left" />
+      <geom pos="0.0122008 -2.22413e-05 0.0464" quat="0.707105 0.707108 0 0" type="mesh" contype="0" conaffinity="0" group="2" rgba="0.8784 0.2941 0.5569 1" density="0" mesh="shoulder_left" name="shoulder_left" />
+      <geom pos="-0.0675992 0.000177759 0.0158499" quat="0.499998 -0.5 -0.5 -0.500002" type="mesh" rgba="0.35 0.62 0.85 0.4" mesh="shoulder_servo_mount_left" group="3" name="shoulder_servo_mount_left_2" />
+      <geom pos="0.0122008 -2.22413e-05 0.0464" quat="0.707105 0.707108 0 0" type="mesh" rgba="0.35 0.62 0.85 0.4" mesh="shoulder_left" group="3" name="shoulder_left_2" />
+      <geom pos="-0.0303992 -0.000422241 -0.0417" quat="0.499998 -0.5 0.5 0.500002" type="mesh" mesh="servo" group="3" rgba="0.35 0.62 0.85 0.4" name="servo_5" />
+      <geom pos="-0.0303992 -0.000422241 -0.0417" quat="0.499998 -0.5 0.5 0.500002" type="mesh" contype="0" conaffinity="0" group="2" rgba="0.1 0.1 0.1 1" density="0" mesh="servo" name="servo_6" />
+      <body name="left_upper_arm_link" pos="-0.0303992 0.0182778 -0.0542" quat="0.093522 0.0935194 0.700895 -0.700895">
+        <inertial pos="-0.0965917 0.0108131 0.0184604" quat="0.547998 0.550405 0.444265 0.446521" mass="0.146477" diaginertia="0.00017478 0.000169078 4.87124e-05" />
+        <joint name="left_shoulder_lift" range="-3.66519 0" actuatorfrcrange="-10 10" damping="0.6" frictionloss="0.0383" armature="0.0711" />
+        <geom pos="-0.065085 -0.012 0.0182" quat="1.32679e-06 -1 0 0" type="mesh" contype="0" conaffinity="0" group="2" rgba="0.8784 0.2941 0.5569 1" density="0" mesh="upper_arm_left" name="upper_arm_left" />
+        <geom pos="-0.065085 -0.012 0.0182" quat="1.32679e-06 -1 0 0" type="mesh" rgba="0.35 0.62 0.85 0.4" mesh="upper_arm_left" group="3" name="upper_arm_left_2" />
+        <geom pos="-0.11257 0.0155 0.0187" quat="9.38184e-07 0.707105 0.707108 9.38187e-07" type="mesh" mesh="servo" group="3" rgba="0.35 0.62 0.85 0.4" name="servo_7" />
+        <geom pos="-0.11257 0.0155 0.0187" quat="9.38184e-07 0.707105 0.707108 9.38187e-07" type="mesh" contype="0" conaffinity="0" group="2" rgba="0.1 0.1 0.1 1" density="0" mesh="servo" name="servo_8" />
+        <body name="left_lower_arm_link" pos="-0.11257 0.028 0" quat="0.076719 0 0 -0.997053">
+          <inertial pos="-0.0310011 0.0227103 0.0169449" quat="-0.226057 0.674162 0.224582 0.666309" mass="0.122477" diaginertia="0.00016521 0.00014856 4.04702e-05" />
+          <joint name="left_elbow_flex" range="0 3.42085" actuatorfrcrange="-10 10" damping="0.6" frictionloss="0.0383" armature="0.0711" />
+          <geom pos="-0.014555 0.000707 0.0167" quat="1.26918e-09 0.707107 -1.26918e-09 0.707107" type="mesh" contype="0" conaffinity="0" group="2" rgba="0.8784 0.2941 0.5569 1" density="0" mesh="wrist_yaw_bracket_left" name="wrist_yaw_bracket_left" />
+          <geom pos="-0.014555 0.000707 0.0167" quat="1.26918e-09 0.707107 -1.26918e-09 0.707107" type="mesh" rgba="0.35 0.62 0.85 0.4" mesh="wrist_yaw_bracket_left" group="3" name="wrist_yaw_bracket_left_2" />
+          <geom pos="-0.064455 0.000497 0.01739" quat="1.26918e-09 -1.26918e-09 0.707107 -0.707107" type="mesh" contype="0" conaffinity="0" group="2" rgba="0.1 0.1 0.1 1" density="0" mesh="servo" name="servo_9" />
+          <geom pos="-0.064455 0.000497 0.01739" quat="1.26918e-09 -1.26918e-09 0.707107 -0.707107" type="mesh" rgba="0.35 0.62 0.85 0.4" mesh="servo" group="3" name="servo_10" />
+          <body name="left_wrist_yaw_link" pos="-0.076955 -0.018203 0.01739" quat="0.707094 -0.707094 0.00432167 0.00432168">
+            <inertial pos="-0.0310011 0.0227103 0.0169449" quat="-0.226057 0.674162 0.224582 0.666309" mass="0.122477" diaginertia="0.00016521 0.00014856 4.04702e-05" />
+            <joint name="left_wrist_flex" range="-1.98968 1.98968" actuatorfrcrange="-10 10" damping="0.6" frictionloss="0.0383" armature="0.0711" />
+            <geom pos="-0.014555 0.000707 0.0167" quat="1.26918e-09 0.707107 -1.26918e-09 0.707107" type="mesh" contype="0" conaffinity="0" group="2" rgba="0.8784 0.2941 0.5569 1" density="0" mesh="wrist_yaw_bracket_left" name="wrist_yaw_bracket_left_3" />
+            <geom pos="-0.014555 0.000707 0.0167" quat="1.26918e-09 0.707107 -1.26918e-09 0.707107" type="mesh" rgba="0.35 0.62 0.85 0.4" mesh="wrist_yaw_bracket_left" group="3" name="wrist_yaw_bracket_left_4" />
+            <geom pos="-0.064455 0.000497 0.01739" quat="1.26918e-09 -1.26918e-09 0.707107 -0.707107" type="mesh" contype="0" conaffinity="0" group="2" rgba="0.1 0.1 0.1 1" density="0" mesh="servo" name="servo_11" />
+            <geom pos="-0.064455 0.000497 0.01739" quat="1.26918e-09 -1.26918e-09 0.707107 -0.707107" type="mesh" rgba="0.35 0.62 0.85 0.4" mesh="servo" group="3" name="servo_12" />
+            <body name="left_wrist_link" pos="-0.076955 -0.018203 0.01739" quat="0.0308436 -0.0308436 -0.706434 -0.706434">
+              <inertial pos="-6.87025e-05 0.040282 0.0288797" quat="0.979625 -0.20083 0.00143869 -0.000527885" mass="0.118799" diaginertia="4.77705e-05 3.52533e-05 2.57643e-05" />
+              <joint name="left_wrist_yaw" range="-3.29867 0" actuatorfrcrange="-10 10" damping="0.6" frictionloss="0.0383" armature="0.0711" />
+              <geom pos="0 0.028 0.0181" quat="0.499998 0.5 -0.5 0.500002" type="mesh" contype="0" conaffinity="0" group="2" rgba="0.8784 0.2941 0.5569 1" density="0" mesh="wrist_left" name="wrist_left" />
+              <geom pos="0 0.028 0.0181" quat="0.499998 0.5 -0.5 0.500002" type="mesh" rgba="0.35 0.62 0.85 0.4" mesh="wrist_left" group="3" name="wrist_left_2" />
+              <geom pos="0 0.0424 0.0306" quat="0.499998 -0.5 0.5 0.500002" type="mesh" mesh="servo_no_horn" group="3" rgba="0.35 0.62 0.85 0.4" name="servo_no_horn" />
+              <geom pos="0 0.0424 0.0306" quat="0.499998 -0.5 0.5 0.500002" type="mesh" contype="0" conaffinity="0" group="2" rgba="0.1 0.1 0.1 1" density="0" mesh="servo_no_horn" name="servo_no_horn_2" />
+              <body name="left_gripper_link" pos="0 0.0611 0.0181" quat="-0.486787 -0.48679 0.512871 -0.512871">
+                <inertial pos="0.000809351 -0.0117275 -0.0228785" quat="0.501246 0.315918 -0.578645 0.560462" mass="0.163212" diaginertia="0.000154108 0.000132458 5.86845e-05" />
+                <joint name="left_wrist_roll" range="-3.05433 3.05433" actuatorfrcrange="-10 10" damping="0.6" frictionloss="0.0383" armature="0.0711" />
+                <geom pos="0 0.000218214 0.000949706" quat="1.32679e-06 1 0 0" type="mesh" contype="0" conaffinity="0" group="2" rgba="0.8784 0.2941 0.5569 1" density="0" mesh="claw_left" name="claw_left" />
+                <geom pos="0.0077 -0.0001 -0.0234" quat="0.707105 0.707108 0 0" type="mesh" mesh="servo" group="3" rgba="0.35 0.62 0.85 0.4" name="servo_13" />
+                <geom pos="0.0077 -0.0001 -0.0234" quat="0.707105 0.707108 0 0" type="mesh" contype="0" conaffinity="0" group="2" rgba="0.1 0.1 0.1 1" density="0" mesh="servo" name="servo_14" />
+                <geom pos="0 0.000218214 0.000949706" quat="1.32679e-06 1 0 0" type="mesh" contype="0" conaffinity="0" group="2" rgba="0.8784 0.2941 0.5569 1" density="0" mesh="camera_bracket_left" name="camera_bracket_left" />
+                <body name="left_jaw_link" pos="0.0202 -0.0188 -0.0234" quat="0.707105 -0.707108 -1.85362e-08 -1.85363e-08">
+                  <inertial pos="-0.00157495 0.0300244 0.0192755" quat="0.717965 0.695265 0.0230097 0.0245618" mass="0.012" diaginertia="6.63582e-06 5.29092e-06 1.86523e-06" />
+                  <joint name="left_gripper" range="-1.39626 0.174533" actuatorfrcrange="-10 10" damping="0.6" frictionloss="0.0383" armature="0.0711" />
+                  <geom pos="0 0 0.0189" quat="1 0 0 0" type="mesh" contype="0" conaffinity="0" group="2" rgba="0.8784 0.2941 0.5569 1" density="0" mesh="jaw_left" name="jaw_left" />
+                  <geom pos="0 0 0.0189" quat="1 0 0 0" type="mesh" rgba="0.35 0.62 0.85 0.4" mesh="jaw_left_c00" name="jaw_left_c00" group="3" />
+                  <geom pos="0 0 0.0189" quat="1 0 0 0" type="mesh" rgba="0.35 0.62 0.85 0.4" mesh="jaw_left_c01" name="jaw_left_c01" group="3" />
+                  <geom pos="0 0 0.0189" quat="1 0 0 0" type="mesh" rgba="0.35 0.62 0.85 0.4" mesh="jaw_left_c02" name="jaw_left_c02" group="3" />
+                  <geom pos="0 0 0.0189" quat="1 0 0 0" type="mesh" rgba="0.35 0.62 0.85 0.4" mesh="jaw_left_c03" name="jaw_left_c03" group="3" />
+                  <geom pos="0 0 0.0189" quat="1 0 0 0" type="mesh" rgba="0.35 0.62 0.85 0.4" mesh="jaw_left_c04" name="jaw_left_c04" group="3" />
+                  <geom pos="0 0 0.0189" quat="1 0 0 0" type="mesh" rgba="0.35 0.62 0.85 0.4" mesh="jaw_left_c05" name="jaw_left_c05" group="3" />
+                  <geom pos="0 0 0.0189" quat="1 0 0 0" type="mesh" rgba="0.35 0.62 0.85 0.4" mesh="jaw_left_c06" name="jaw_left_c06" group="3" />
+                  <geom pos="0 0 0.0189" quat="1 0 0 0" type="mesh" rgba="0.35 0.62 0.85 0.4" mesh="jaw_left_c07" name="jaw_left_c07" group="3" />
+                  <geom pos="0 0 0.0189" quat="1 0 0 0" type="mesh" rgba="0.35 0.62 0.85 0.4" mesh="jaw_left_c08" name="jaw_left_c08" group="3" />
+                  <geom pos="0 0 0.0189" quat="1 0 0 0" type="mesh" rgba="0.35 0.62 0.85 0.4" mesh="jaw_left_c09" name="jaw_left_c09" group="3" />
+                  <geom pos="0 0 0.0189" quat="1 0 0 0" type="mesh" rgba="0.35 0.62 0.85 0.4" mesh="jaw_left_c10" name="jaw_left_c10" group="3" />
+                </body>
+                <site name="left_tcp" pos="-0.0079 0.000218121 -0.1081274" quat="1.3267949e-06 0 1 0" size="0.004" rgba="0.9 0.3 0.2 1" group="4" />
+                <geom pos="0 0.000218214 0.000949706" quat="1.32679e-06 1 0 0" type="mesh" rgba="0.35 0.62 0.85 0.4" mesh="claw_left_c00" name="claw_left_c00" group="3" />
+                <geom pos="0 0.000218214 0.000949706" quat="1.32679e-06 1 0 0" type="mesh" rgba="0.35 0.62 0.85 0.4" mesh="claw_left_c01" name="claw_left_c01" group="3" />
+                <geom pos="0 0.000218214 0.000949706" quat="1.32679e-06 1 0 0" type="mesh" rgba="0.35 0.62 0.85 0.4" mesh="claw_left_c02" name="claw_left_c02" group="3" />
+                <geom pos="0 0.000218214 0.000949706" quat="1.32679e-06 1 0 0" type="mesh" rgba="0.35 0.62 0.85 0.4" mesh="claw_left_c03" name="claw_left_c03" group="3" />
+                <geom pos="0 0.000218214 0.000949706" quat="1.32679e-06 1 0 0" type="mesh" rgba="0.35 0.62 0.85 0.4" mesh="claw_left_c04" name="claw_left_c04" group="3" />
+                <geom pos="0 0.000218214 0.000949706" quat="1.32679e-06 1 0 0" type="mesh" rgba="0.35 0.62 0.85 0.4" mesh="claw_left_c05" name="claw_left_c05" group="3" />
+                <geom pos="0 0.000218214 0.000949706" quat="1.32679e-06 1 0 0" type="mesh" rgba="0.35 0.62 0.85 0.4" mesh="claw_left_c06" name="claw_left_c06" group="3" />
+                <geom pos="0 0.000218214 0.000949706" quat="1.32679e-06 1 0 0" type="mesh" rgba="0.35 0.62 0.85 0.4" mesh="claw_left_c07" name="claw_left_c07" group="3" />
+                <geom pos="0 0.000218214 0.000949706" quat="1.32679e-06 1 0 0" type="mesh" rgba="0.35 0.62 0.85 0.4" mesh="claw_left_c08" name="claw_left_c08" group="3" />
+                <geom pos="0 0.000218214 0.000949706" quat="1.32679e-06 1 0 0" type="mesh" rgba="0.35 0.62 0.85 0.4" mesh="claw_left_c09" name="claw_left_c09" group="3" />
+                <geom pos="0 0.000218214 0.000949706" quat="1.32679e-06 1 0 0" type="mesh" rgba="0.35 0.62 0.85 0.4" mesh="claw_left_c10" name="claw_left_c10" group="3" />
+                <geom pos="0 0.000218214 0.000949706" quat="1.32679e-06 1 0 0" type="mesh" rgba="0.35 0.62 0.85 0.4" mesh="claw_left_c11" name="claw_left_c11" group="3" />
+                <geom pos="0 0.000218214 0.000949706" quat="1.32679e-06 1 0 0" type="mesh" rgba="0.35 0.62 0.85 0.4" mesh="claw_left_c12" name="claw_left_c12" group="3" />
+                <geom pos="0 0.000218214 0.000949706" quat="1.32679e-06 1 0 0" type="mesh" rgba="0.35 0.62 0.85 0.4" mesh="camera_bracket_left_c00" name="camera_bracket_left_c00" group="3" />
+                <geom pos="0 0.000218214 0.000949706" quat="1.32679e-06 1 0 0" type="mesh" rgba="0.35 0.62 0.85 0.4" mesh="camera_bracket_left_c01" name="camera_bracket_left_c01" group="3" />
+                <geom pos="0 0.000218214 0.000949706" quat="1.32679e-06 1 0 0" type="mesh" rgba="0.35 0.62 0.85 0.4" mesh="camera_bracket_left_c02" name="camera_bracket_left_c02" group="3" />
+                <geom pos="0 0.000218214 0.000949706" quat="1.32679e-06 1 0 0" type="mesh" rgba="0.35 0.62 0.85 0.4" mesh="camera_bracket_left_c03" name="camera_bracket_left_c03" group="3" />
+                <geom pos="0 0.000218214 0.000949706" quat="1.32679e-06 1 0 0" type="mesh" rgba="0.35 0.62 0.85 0.4" mesh="camera_bracket_left_c04" name="camera_bracket_left_c04" group="3" />
+                <geom pos="0 0.000218214 0.000949706" quat="1.32679e-06 1 0 0" type="mesh" rgba="0.35 0.62 0.85 0.4" mesh="camera_bracket_left_c05" name="camera_bracket_left_c05" group="3" />
+                <geom pos="0 0.000218214 0.000949706" quat="1.32679e-06 1 0 0" type="mesh" rgba="0.35 0.62 0.85 0.4" mesh="camera_bracket_left_c06" name="camera_bracket_left_c06" group="3" />
+                <geom pos="0 0.000218214 0.000949706" quat="1.32679e-06 1 0 0" type="mesh" rgba="0.35 0.62 0.85 0.4" mesh="camera_bracket_left_c07" name="camera_bracket_left_c07" group="3" />
+                <geom pos="0 0.000218214 0.000949706" quat="1.32679e-06 1 0 0" type="mesh" rgba="0.35 0.62 0.85 0.4" mesh="camera_bracket_left_c08" name="camera_bracket_left_c08" group="3" />
+                <geom pos="0 0.000218214 0.000949706" quat="1.32679e-06 1 0 0" type="mesh" rgba="0.35 0.62 0.85 0.4" mesh="camera_bracket_left_c09" name="camera_bracket_left_c09" group="3" />
+                <geom pos="0 0.000218214 0.000949706" quat="1.32679e-06 1 0 0" type="mesh" rgba="0.35 0.62 0.85 0.4" mesh="camera_bracket_left_c10" name="camera_bracket_left_c10" group="3" />
+                <geom pos="0 0.000218214 0.000949706" quat="1.32679e-06 1 0 0" type="mesh" rgba="0.35 0.62 0.85 0.4" mesh="camera_bracket_left_c11" name="camera_bracket_left_c11" group="3" />
+                <geom pos="0 0.000218214 0.000949706" quat="1.32679e-06 1 0 0" type="mesh" rgba="0.35 0.62 0.85 0.4" mesh="camera_bracket_left_c12" name="camera_bracket_left_c12" group="3" />
+                <geom pos="0 0.000218214 0.000949706" quat="1.32679e-06 1 0 0" type="mesh" rgba="0.35 0.62 0.85 0.4" mesh="camera_bracket_left_c13" name="camera_bracket_left_c13" group="3" />
+                <geom pos="0 0.000218214 0.000949706" quat="1.32679e-06 1 0 0" type="mesh" rgba="0.35 0.62 0.85 0.4" mesh="camera_bracket_left_c14" name="camera_bracket_left_c14" group="3" />
+                <geom pos="0 0.000218214 0.000949706" quat="1.32679e-06 1 0 0" type="mesh" rgba="0.35 0.62 0.85 0.4" mesh="camera_bracket_left_c15" name="camera_bracket_left_c15" group="3" />
+                <geom pos="0 0.000218214 0.000949706" quat="1.32679e-06 1 0 0" type="mesh" rgba="0.35 0.62 0.85 0.4" mesh="camera_bracket_left_c16" name="camera_bracket_left_c16" group="3" />
+                <geom pos="0 0.000218214 0.000949706" quat="1.32679e-06 1 0 0" type="mesh" rgba="0.35 0.62 0.85 0.4" mesh="camera_bracket_left_c17" name="camera_bracket_left_c17" group="3" />
+                <geom pos="0 0.000218214 0.000949706" quat="1.32679e-06 1 0 0" type="mesh" rgba="0.35 0.62 0.85 0.4" mesh="camera_bracket_left_c18" name="camera_bracket_left_c18" group="3" />
+                <geom pos="0 0.000218214 0.000949706" quat="1.32679e-06 1 0 0" type="mesh" rgba="0.35 0.62 0.85 0.4" mesh="camera_bracket_left_c19" name="camera_bracket_left_c19" group="3" />
+                <geom pos="0 0.000218214 0.000949706" quat="1.32679e-06 1 0 0" type="mesh" rgba="0.35 0.62 0.85 0.4" mesh="camera_bracket_left_c20" name="camera_bracket_left_c20" group="3" />
+              </body>
+            </body>
+          </body>
+        </body>
+      </body>
+    </body>
+    <body name="right_shoulder_link" pos="0.1235 -0.24 0.1728" quat="-1.04306e-08 0.00785258 0.999969 1.32692e-06">
+      <inertial pos="-0.030651 8.0677e-05 -0.0305742" quat="0.999955 0.00195812 0.00655484 0.00656546" mass="0.143483" diaginertia="0.000104293 9.90805e-05 3.02718e-05" />
+      <joint name="right_shoulder_pan" range="-2.00713 2.07694" actuatorfrcrange="-10 10" damping="0.6" frictionloss="0.0383" armature="0.0711" />
+      <geom pos="-0.0675992 -0.000177759 0.0158499" quat="0.499998 0.5 -0.5 0.500002" type="mesh" contype="0" conaffinity="0" group="2" rgba="0.8784 0.2941 0.5569 1" density="0" mesh="shoulder_servo_mount_right" name="shoulder_servo_mount_right" />
+      <geom pos="0.0122008 2.22413e-05 0.0464" quat="0.707105 -0.707108 0 0" type="mesh" contype="0" conaffinity="0" group="2" rgba="0.8784 0.2941 0.5569 1" density="0" mesh="shoulder_right" name="shoulder_right" />
+      <geom pos="-0.0675992 -0.000177759 0.0158499" quat="0.499998 0.5 -0.5 0.500002" type="mesh" rgba="0.35 0.62 0.85 0.4" mesh="shoulder_servo_mount_right" group="3" name="shoulder_servo_mount_right_2" />
+      <geom pos="0.0122008 2.22413e-05 0.0464" quat="0.707105 -0.707108 0 0" type="mesh" rgba="0.35 0.62 0.85 0.4" mesh="shoulder_right" group="3" name="shoulder_right_2" />
+      <geom pos="-0.0303992 0.000422241 -0.0417" quat="0.499998 0.5 0.5 -0.500002" type="mesh" mesh="servo" group="3" rgba="0.35 0.62 0.85 0.4" name="servo_15" />
+      <geom pos="-0.0303992 0.000422241 -0.0417" quat="0.499998 0.5 0.5 -0.500002" type="mesh" contype="0" conaffinity="0" group="2" rgba="0.1 0.1 0.1 1" density="0" mesh="servo" name="servo_16" />
+      <body name="right_upper_arm_link" pos="-0.0303992 -0.0182778 -0.0542" quat="0.093522 -0.0935194 0.700895 0.700895">
+        <inertial pos="-0.0965917 -0.0108131 0.0184604" quat="0.446521 0.444265 0.550405 0.547998" mass="0.146477" diaginertia="0.00017478 0.000169078 4.87124e-05" />
+        <joint name="right_shoulder_lift" range="0 3.66519" actuatorfrcrange="-10 10" damping="0.6" frictionloss="0.0383" armature="0.0711" />
+        <geom pos="-0.065085 0.012 0.0182" quat="1.32679e-06 1 0 0" type="mesh" contype="0" conaffinity="0" group="2" rgba="0.8784 0.2941 0.5569 1" density="0" mesh="upper_arm_right" name="upper_arm_right" />
+        <geom pos="-0.065085 0.012 0.0182" quat="1.32679e-06 1 0 0" type="mesh" rgba="0.35 0.62 0.85 0.4" mesh="upper_arm_right" group="3" name="upper_arm_right_2" />
+        <geom pos="-0.11257 -0.0155 0.0187" quat="9.38184e-07 -0.707105 0.707108 -9.38187e-07" type="mesh" mesh="servo" group="3" rgba="0.35 0.62 0.85 0.4" name="servo_17" />
+        <geom pos="-0.11257 -0.0155 0.0187" quat="9.38184e-07 -0.707105 0.707108 -9.38187e-07" type="mesh" contype="0" conaffinity="0" group="2" rgba="0.1 0.1 0.1 1" density="0" mesh="servo" name="servo_18" />
+        <body name="right_lower_arm_link" pos="-0.11257 -0.028 0" quat="0.076719 0 0 0.997053">
+          <inertial pos="-0.0310011 0.022441 0.0169449" quat="-0.229067 0.673119 0.227626 0.665301" mass="0.122477" diaginertia="0.000166699 0.000150089 4.04307e-05" />
+          <joint name="right_elbow_flex" range="-3.42085 0" actuatorfrcrange="-10 10" damping="0.6" frictionloss="0.0383" armature="0.0711" />
+          <geom pos="-0.014555 -0.000707 0.0167" quat="1.26918e-09 -0.707107 -1.26918e-09 -0.707107" type="mesh" contype="0" conaffinity="0" group="2" rgba="0.8784 0.2941 0.5569 1" density="0" mesh="wrist_yaw_bracket_right" name="wrist_yaw_bracket_right" />
+          <geom pos="-0.014555 -0.000707 0.0167" quat="1.26918e-09 -0.707107 -1.26918e-09 -0.707107" type="mesh" rgba="0.35 0.62 0.85 0.4" mesh="wrist_yaw_bracket_right" group="3" name="wrist_yaw_bracket_right_2" />
+          <geom pos="-0.064455 -0.000497 0.01739" quat="1.26918e-09 1.26918e-09 0.707107 0.707107" type="mesh" contype="0" conaffinity="0" group="2" rgba="0.1 0.1 0.1 1" density="0" mesh="servo" name="servo_19" />
+          <geom pos="-0.064455 -0.000497 0.01739" quat="1.26918e-09 1.26918e-09 0.707107 0.707107" type="mesh" rgba="0.35 0.62 0.85 0.4" mesh="servo" group="3" name="servo_20" />
+          <body name="right_wrist_yaw_link" pos="-0.076955 0.018203 0.01739" quat="0.707085 0.707085 -0.00555131 0.00555131">
+            <inertial pos="-0.0310011 0.022441 0.0169449" quat="-0.229067 0.673119 0.227626 0.665301" mass="0.122477" diaginertia="0.000166699 0.000150089 4.04307e-05" />
+            <joint name="right_wrist_flex" range="-1.98968 1.98968" actuatorfrcrange="-10 10" damping="0.6" frictionloss="0.0383" armature="0.0711" />
+            <geom pos="-0.014555 -0.000707 0.0167" quat="1.26918e-09 -0.707107 -1.26918e-09 -0.707107" type="mesh" contype="0" conaffinity="0" group="2" rgba="0.8784 0.2941 0.5569 1" density="0" mesh="wrist_yaw_bracket_right" name="wrist_yaw_bracket_right_3" />
+            <geom pos="-0.014555 -0.000707 0.0167" quat="1.26918e-09 -0.707107 -1.26918e-09 -0.707107" type="mesh" rgba="0.35 0.62 0.85 0.4" mesh="wrist_yaw_bracket_right" group="3" name="wrist_yaw_bracket_right_4" />
+            <geom pos="-0.064455 -0.000497 0.01739" quat="1.26918e-09 1.26918e-09 0.707107 0.707107" type="mesh" contype="0" conaffinity="0" group="2" rgba="0.1 0.1 0.1 1" density="0" mesh="servo" name="servo_21" />
+            <geom pos="-0.064455 -0.000497 0.01739" quat="1.26918e-09 1.26918e-09 0.707107 0.707107" type="mesh" rgba="0.35 0.62 0.85 0.4" mesh="servo" group="3" name="servo_22" />
+            <body name="right_wrist_link" pos="-0.076955 0.018203 0.01739" quat="0.0308436 0.0308436 -0.706434 0.706434">
+              <inertial pos="-6.87036e-05 -0.040282 0.0288797" quat="0.979625 0.20083 0.00143868 0.000527872" mass="0.118799" diaginertia="4.77705e-05 3.52533e-05 2.57643e-05" />
+              <joint name="right_wrist_yaw" range="0 3.29867" actuatorfrcrange="-10 10" damping="0.6" frictionloss="0.0383" armature="0.0711" />
+              <geom pos="0 -0.028 0.0181" quat="0.499998 -0.5 -0.5 -0.500002" type="mesh" contype="0" conaffinity="0" group="2" rgba="0.8784 0.2941 0.5569 1" density="0" mesh="wrist_right" name="wrist_right" />
+              <geom pos="0 -0.028 0.0181" quat="0.499998 -0.5 -0.5 -0.500002" type="mesh" rgba="0.35 0.62 0.85 0.4" mesh="wrist_right" group="3" name="wrist_right_2" />
+              <geom pos="0 -0.0424 0.0306" quat="0.499998 0.5 0.5 -0.500002" type="mesh" mesh="servo_no_horn" group="3" rgba="0.35 0.62 0.85 0.4" name="servo_no_horn_3" />
+              <geom pos="0 -0.0424 0.0306" quat="0.499998 0.5 0.5 -0.500002" type="mesh" contype="0" conaffinity="0" group="2" rgba="0.1 0.1 0.1 1" density="0" mesh="servo_no_horn" name="servo_no_horn_4" />
+              <body name="right_gripper_link" pos="0 -0.0611 0.0181" quat="-0.486787 0.48679 0.512871 0.512871">
+                <inertial pos="0.000809351 0.0117275 -0.0228785" quat="0.315918 0.501246 -0.560462 0.578645" mass="0.163212" diaginertia="0.000154108 0.000132458 5.86845e-05" />
+                <joint name="right_wrist_roll" range="-3.05433 3.05433" actuatorfrcrange="-10 10" damping="0.6" frictionloss="0.0383" armature="0.0711" />
+                <geom pos="0 -0.000218214 0.000949706" quat="1.32679e-06 -1 0 0" type="mesh" contype="0" conaffinity="0" group="2" rgba="0.8784 0.2941 0.5569 1" density="0" mesh="claw_right" name="claw_right" />
+                <geom pos="0.0077 0.0001 -0.0234" quat="0.707105 -0.707108 0 0" type="mesh" mesh="servo" group="3" rgba="0.35 0.62 0.85 0.4" name="servo_23" />
+                <geom pos="0.0077 0.0001 -0.0234" quat="0.707105 -0.707108 0 0" type="mesh" contype="0" conaffinity="0" group="2" rgba="0.1 0.1 0.1 1" density="0" mesh="servo" name="servo_24" />
+                <geom pos="0 -0.000218214 0.000949706" quat="1.32679e-06 -1 0 0" type="mesh" contype="0" conaffinity="0" group="2" rgba="0.8784 0.2941 0.5569 1" density="0" mesh="camera_bracket_right" name="camera_bracket_right" />
+                <body name="right_jaw_link" pos="0.0202 0.0188 -0.0234" quat="0.707105 0.707108 -1.85362e-08 1.85363e-08">
+                  <inertial pos="-0.00157495 -0.0300244 0.0192755" quat="0.695265 0.717965 -0.0245618 -0.0230097" mass="0.012" diaginertia="6.63582e-06 5.29092e-06 1.86523e-06" />
+                  <joint name="right_gripper" range="-0.174533 1.39626" actuatorfrcrange="-10 10" damping="0.6" frictionloss="0.0383" armature="0.0711" />
+                  <geom pos="0 0 0.0189" quat="1 0 0 0" type="mesh" contype="0" conaffinity="0" group="2" rgba="0.8784 0.2941 0.5569 1" density="0" mesh="jaw_right" name="jaw_right" />
+                  <geom pos="0 0 0.0189" quat="1 0 0 0" type="mesh" rgba="0.35 0.62 0.85 0.4" mesh="jaw_right_c00" name="jaw_right_c00" group="3" />
+                  <geom pos="0 0 0.0189" quat="1 0 0 0" type="mesh" rgba="0.35 0.62 0.85 0.4" mesh="jaw_right_c01" name="jaw_right_c01" group="3" />
+                  <geom pos="0 0 0.0189" quat="1 0 0 0" type="mesh" rgba="0.35 0.62 0.85 0.4" mesh="jaw_right_c02" name="jaw_right_c02" group="3" />
+                  <geom pos="0 0 0.0189" quat="1 0 0 0" type="mesh" rgba="0.35 0.62 0.85 0.4" mesh="jaw_right_c03" name="jaw_right_c03" group="3" />
+                  <geom pos="0 0 0.0189" quat="1 0 0 0" type="mesh" rgba="0.35 0.62 0.85 0.4" mesh="jaw_right_c04" name="jaw_right_c04" group="3" />
+                  <geom pos="0 0 0.0189" quat="1 0 0 0" type="mesh" rgba="0.35 0.62 0.85 0.4" mesh="jaw_right_c05" name="jaw_right_c05" group="3" />
+                  <geom pos="0 0 0.0189" quat="1 0 0 0" type="mesh" rgba="0.35 0.62 0.85 0.4" mesh="jaw_right_c06" name="jaw_right_c06" group="3" />
+                  <geom pos="0 0 0.0189" quat="1 0 0 0" type="mesh" rgba="0.35 0.62 0.85 0.4" mesh="jaw_right_c07" name="jaw_right_c07" group="3" />
+                  <geom pos="0 0 0.0189" quat="1 0 0 0" type="mesh" rgba="0.35 0.62 0.85 0.4" mesh="jaw_right_c08" name="jaw_right_c08" group="3" />
+                  <geom pos="0 0 0.0189" quat="1 0 0 0" type="mesh" rgba="0.35 0.62 0.85 0.4" mesh="jaw_right_c09" name="jaw_right_c09" group="3" />
+                </body>
+                <site name="right_tcp" pos="-0.0079 -0.000218121 -0.1081274" quat="1.3267949e-06 0 1 0" size="0.004" rgba="0.9 0.3 0.2 1" group="4" />
+                <geom pos="0 -0.000218214 0.000949706" quat="1.32679e-06 -1 0 0" type="mesh" rgba="0.35 0.62 0.85 0.4" mesh="claw_right_c00" name="claw_right_c00" group="3" />
+                <geom pos="0 -0.000218214 0.000949706" quat="1.32679e-06 -1 0 0" type="mesh" rgba="0.35 0.62 0.85 0.4" mesh="claw_right_c01" name="claw_right_c01" group="3" />
+                <geom pos="0 -0.000218214 0.000949706" quat="1.32679e-06 -1 0 0" type="mesh" rgba="0.35 0.62 0.85 0.4" mesh="claw_right_c02" name="claw_right_c02" group="3" />
+                <geom pos="0 -0.000218214 0.000949706" quat="1.32679e-06 -1 0 0" type="mesh" rgba="0.35 0.62 0.85 0.4" mesh="claw_right_c03" name="claw_right_c03" group="3" />
+                <geom pos="0 -0.000218214 0.000949706" quat="1.32679e-06 -1 0 0" type="mesh" rgba="0.35 0.62 0.85 0.4" mesh="claw_right_c04" name="claw_right_c04" group="3" />
+                <geom pos="0 -0.000218214 0.000949706" quat="1.32679e-06 -1 0 0" type="mesh" rgba="0.35 0.62 0.85 0.4" mesh="claw_right_c05" name="claw_right_c05" group="3" />
+                <geom pos="0 -0.000218214 0.000949706" quat="1.32679e-06 -1 0 0" type="mesh" rgba="0.35 0.62 0.85 0.4" mesh="claw_right_c06" name="claw_right_c06" group="3" />
+                <geom pos="0 -0.000218214 0.000949706" quat="1.32679e-06 -1 0 0" type="mesh" rgba="0.35 0.62 0.85 0.4" mesh="claw_right_c07" name="claw_right_c07" group="3" />
+                <geom pos="0 -0.000218214 0.000949706" quat="1.32679e-06 -1 0 0" type="mesh" rgba="0.35 0.62 0.85 0.4" mesh="claw_right_c08" name="claw_right_c08" group="3" />
+                <geom pos="0 -0.000218214 0.000949706" quat="1.32679e-06 -1 0 0" type="mesh" rgba="0.35 0.62 0.85 0.4" mesh="claw_right_c09" name="claw_right_c09" group="3" />
+                <geom pos="0 -0.000218214 0.000949706" quat="1.32679e-06 -1 0 0" type="mesh" rgba="0.35 0.62 0.85 0.4" mesh="claw_right_c10" name="claw_right_c10" group="3" />
+                <geom pos="0 -0.000218214 0.000949706" quat="1.32679e-06 -1 0 0" type="mesh" rgba="0.35 0.62 0.85 0.4" mesh="claw_right_c11" name="claw_right_c11" group="3" />
+                <geom pos="0 -0.000218214 0.000949706" quat="1.32679e-06 -1 0 0" type="mesh" rgba="0.35 0.62 0.85 0.4" mesh="claw_right_c12" name="claw_right_c12" group="3" />
+                <geom pos="0 -0.000218214 0.000949706" quat="1.32679e-06 -1 0 0" type="mesh" rgba="0.35 0.62 0.85 0.4" mesh="camera_bracket_right_c00" name="camera_bracket_right_c00" group="3" />
+                <geom pos="0 -0.000218214 0.000949706" quat="1.32679e-06 -1 0 0" type="mesh" rgba="0.35 0.62 0.85 0.4" mesh="camera_bracket_right_c01" name="camera_bracket_right_c01" group="3" />
+                <geom pos="0 -0.000218214 0.000949706" quat="1.32679e-06 -1 0 0" type="mesh" rgba="0.35 0.62 0.85 0.4" mesh="camera_bracket_right_c02" name="camera_bracket_right_c02" group="3" />
+                <geom pos="0 -0.000218214 0.000949706" quat="1.32679e-06 -1 0 0" type="mesh" rgba="0.35 0.62 0.85 0.4" mesh="camera_bracket_right_c03" name="camera_bracket_right_c03" group="3" />
+                <geom pos="0 -0.000218214 0.000949706" quat="1.32679e-06 -1 0 0" type="mesh" rgba="0.35 0.62 0.85 0.4" mesh="camera_bracket_right_c04" name="camera_bracket_right_c04" group="3" />
+                <geom pos="0 -0.000218214 0.000949706" quat="1.32679e-06 -1 0 0" type="mesh" rgba="0.35 0.62 0.85 0.4" mesh="camera_bracket_right_c05" name="camera_bracket_right_c05" group="3" />
+                <geom pos="0 -0.000218214 0.000949706" quat="1.32679e-06 -1 0 0" type="mesh" rgba="0.35 0.62 0.85 0.4" mesh="camera_bracket_right_c06" name="camera_bracket_right_c06" group="3" />
+                <geom pos="0 -0.000218214 0.000949706" quat="1.32679e-06 -1 0 0" type="mesh" rgba="0.35 0.62 0.85 0.4" mesh="camera_bracket_right_c07" name="camera_bracket_right_c07" group="3" />
+                <geom pos="0 -0.000218214 0.000949706" quat="1.32679e-06 -1 0 0" type="mesh" rgba="0.35 0.62 0.85 0.4" mesh="camera_bracket_right_c08" name="camera_bracket_right_c08" group="3" />
+                <geom pos="0 -0.000218214 0.000949706" quat="1.32679e-06 -1 0 0" type="mesh" rgba="0.35 0.62 0.85 0.4" mesh="camera_bracket_right_c09" name="camera_bracket_right_c09" group="3" />
+                <geom pos="0 -0.000218214 0.000949706" quat="1.32679e-06 -1 0 0" type="mesh" rgba="0.35 0.62 0.85 0.4" mesh="camera_bracket_right_c10" name="camera_bracket_right_c10" group="3" />
+                <geom pos="0 -0.000218214 0.000949706" quat="1.32679e-06 -1 0 0" type="mesh" rgba="0.35 0.62 0.85 0.4" mesh="camera_bracket_right_c11" name="camera_bracket_right_c11" group="3" />
+                <geom pos="0 -0.000218214 0.000949706" quat="1.32679e-06 -1 0 0" type="mesh" rgba="0.35 0.62 0.85 0.4" mesh="camera_bracket_right_c12" name="camera_bracket_right_c12" group="3" />
+                <geom pos="0 -0.000218214 0.000949706" quat="1.32679e-06 -1 0 0" type="mesh" rgba="0.35 0.62 0.85 0.4" mesh="camera_bracket_right_c13" name="camera_bracket_right_c13" group="3" />
+                <geom pos="0 -0.000218214 0.000949706" quat="1.32679e-06 -1 0 0" type="mesh" rgba="0.35 0.62 0.85 0.4" mesh="camera_bracket_right_c14" name="camera_bracket_right_c14" group="3" />
+                <geom pos="0 -0.000218214 0.000949706" quat="1.32679e-06 -1 0 0" type="mesh" rgba="0.35 0.62 0.85 0.4" mesh="camera_bracket_right_c15" name="camera_bracket_right_c15" group="3" />
+                <geom pos="0 -0.000218214 0.000949706" quat="1.32679e-06 -1 0 0" type="mesh" rgba="0.35 0.62 0.85 0.4" mesh="camera_bracket_right_c16" name="camera_bracket_right_c16" group="3" />
+                <geom pos="0 -0.000218214 0.000949706" quat="1.32679e-06 -1 0 0" type="mesh" rgba="0.35 0.62 0.85 0.4" mesh="camera_bracket_right_c17" name="camera_bracket_right_c17" group="3" />
+                <geom pos="0 -0.000218214 0.000949706" quat="1.32679e-06 -1 0 0" type="mesh" rgba="0.35 0.62 0.85 0.4" mesh="camera_bracket_right_c18" name="camera_bracket_right_c18" group="3" />
+                <geom pos="0 -0.000218214 0.000949706" quat="1.32679e-06 -1 0 0" type="mesh" rgba="0.35 0.62 0.85 0.4" mesh="camera_bracket_right_c19" name="camera_bracket_right_c19" group="3" />
+                <geom pos="0 -0.000218214 0.000949706" quat="1.32679e-06 -1 0 0" type="mesh" rgba="0.35 0.62 0.85 0.4" mesh="camera_bracket_right_c20" name="camera_bracket_right_c20" group="3" />
+              </body>
+            </body>
+          </body>
+        </body>
+      </body>
+    </body>
+  </worldbody>
+  <contact>
+    <exclude body1="world" body2="right_shoulder_link" />
+    <exclude body1="world" body2="left_shoulder_link" />
+  </contact>
+  <actuator>
+    <position name="left_shoulder_pan" joint="left_shoulder_pan" kp="52.35" kv="3.891" ctrlrange="-2.07694 2.00713" forcerange="-2.94 2.94" />
+    <position name="left_shoulder_lift" joint="left_shoulder_lift" kp="52.35" kv="3.891" ctrlrange="-3.66519 0" forcerange="-2.94 2.94" />
+    <position name="left_elbow_flex" joint="left_elbow_flex" kp="52.35" kv="3.891" ctrlrange="0 3.42085" forcerange="-2.94 2.94" />
+    <position name="left_wrist_flex" joint="left_wrist_flex" kp="52.35" kv="3.891" ctrlrange="-1.98968 1.98968" forcerange="-2.94 2.94" />
+    <position name="left_wrist_yaw" joint="left_wrist_yaw" kp="52.35" kv="3.891" ctrlrange="-3.29867 0" forcerange="-2.94 2.94" />
+    <position name="left_wrist_roll" joint="left_wrist_roll" kp="52.35" kv="3.891" ctrlrange="-3.05433 3.05433" forcerange="-2.94 2.94" />
+    <position name="left_gripper" joint="left_gripper" kp="52.35" kv="3.891" ctrlrange="-1.39626 0.174533" forcerange="-2.94 2.94" />
+    <position name="right_shoulder_pan" joint="right_shoulder_pan" kp="52.35" kv="3.891" ctrlrange="-2.00713 2.07694" forcerange="-2.94 2.94" />
+    <position name="right_shoulder_lift" joint="right_shoulder_lift" kp="52.35" kv="3.891" ctrlrange="0 3.66519" forcerange="-2.94 2.94" />
+    <position name="right_elbow_flex" joint="right_elbow_flex" kp="52.35" kv="3.891" ctrlrange="-3.42085 0" forcerange="-2.94 2.94" />
+    <position name="right_wrist_flex" joint="right_wrist_flex" kp="52.35" kv="3.891" ctrlrange="-1.98968 1.98968" forcerange="-2.94 2.94" />
+    <position name="right_wrist_yaw" joint="right_wrist_yaw" kp="52.35" kv="3.891" ctrlrange="0 3.29867" forcerange="-2.94 2.94" />
+    <position name="right_wrist_roll" joint="right_wrist_roll" kp="52.35" kv="3.891" ctrlrange="-3.05433 3.05433" forcerange="-2.94 2.94" />
+    <position name="right_gripper" joint="right_gripper" kp="52.35" kv="3.891" ctrlrange="-0.174533 1.39626" forcerange="-2.94 2.94" />
+  </actuator>
+</mujoco>

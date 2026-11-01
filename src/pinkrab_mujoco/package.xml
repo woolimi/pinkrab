@@ -1,0 +1,32 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>pinkrab_mujoco</name>
+  <version>0.1.0</version>
+  <description>
+    The rig in MuJoCo: scene.xml loaded, stepped headless, asked about contact,
+    and the reach it implies - the robot as the engine has it, with nothing about
+    how it is drawn or who is driving it.
+
+    Both the studio and the safety gate answer questions about geometry, and they
+    have to answer them the same way: what stops the arm on the page is what stops
+    it on the bench only if both read the one scene.xml. So the scene lives here,
+    beside neither of them, and each is a client.
+
+    Not in pinkrab_core, which the cli and the umi tools import: someone
+    calibrating an arm should not be made to install MuJoCo to do it.
+
+    The simulation that makes takes and evaluates policies is pinkrab_sim, which
+    builds on this. Nothing here depends on it: the gate imports this package on
+    the robot's host and must not take in a policy's training stack with it.
+  </description>
+  <maintainer email="woolimi91@naver.com">Woolim Park</maintainer>
+  <license>Apache-2.0</license>
+
+  <exec_depend>pinkrab_core</exec_depend>
+  <exec_depend>pinkrab_description</exec_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

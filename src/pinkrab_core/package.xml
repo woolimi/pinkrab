@@ -1,0 +1,29 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>pinkrab_core</name>
+  <version>0.1.0</version>
+  <description>
+    What a Pinkrab is, and how to talk to its servos - the library under the cli
+    and the studio. Paths and ids, the serial port assignment, the Feetech bus,
+    the description expanded to a URDF, kinematics, and the LeRobot robot classes.
+  </description>
+  <maintainer email="woolimi91@naver.com">Woolim Park</maintainer>
+  <license>Apache-2.0</license>
+
+  <!-- LeRobot is not declared here on purpose. It is installed into the
+       environment separately (pip, from a checkout pinned to a known commit);
+       letting a package manager resolve it again would overwrite that install. -->
+
+  <!-- config.py walks the disk for this package, and urdf.py expands its xacro. -->
+  <exec_depend>pinkrab_description</exec_depend>
+  <exec_depend>xacro</exec_depend>
+
+  <test_depend>ament_copyright</test_depend>
+  <test_depend>ament_flake8</test_depend>
+  <test_depend>ament_pep257</test_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

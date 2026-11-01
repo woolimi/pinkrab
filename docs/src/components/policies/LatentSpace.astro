@@ -1,0 +1,54 @@
+---
+// ACT's latent: the CVAE encoder puts each demonstration's z where its way
+// of doing the task lies, the KL term keeps them all near N(0, I), and at run
+// time z is the centre. The commoner way covers more of the space, so the
+// centre falls in it.
+const common = [
+	[548, 96], [562, 84], [574, 102], [556, 116], [540, 110], [584, 90], [570, 122], [552, 132], [590, 112], [536, 92], [578, 136],
+];
+const rare = [
+	[628, 140], [642, 128], [650, 148], [634, 158], [658, 134],
+];
+---
+
+<figure class="pk-fig not-content">
+	<svg viewBox="0 0 720 240" role="img" aria-label="두 방식의 시연이 CVAE encoder 를 거쳐 latent 공간의 서로 다른 자리에 놓이는 모습">
+		<rect x="20" y="44" width="200" height="44" rx="6" class="box" />
+		<text x="120" y="63" text-anchor="middle">시연 A: 왼쪽으로 돌아감</text>
+		<text x="120" y="80" text-anchor="middle" class="dim">시연의 70 %</text>
+		<rect x="20" y="144" width="200" height="44" rx="6" class="box" />
+		<text x="120" y="163" text-anchor="middle">시연 B: 오른쪽으로 돌아감</text>
+		<text x="120" y="180" text-anchor="middle" class="dim">시연의 30 %</text>
+
+		<rect x="262" y="92" width="130" height="48" rx="6" class="box" />
+		<text x="327" y="112" text-anchor="middle">CVAE encoder</text>
+		<text x="327" y="130" text-anchor="middle" class="dim">정답 chunk, state</text>
+		<path class="wire" d="M220 66 C 242 66, 242 108, 260 108" marker-end="url(#lat-arrow)" />
+		<path class="wire" d="M220 166 C 242 166, 242 124, 260 124" marker-end="url(#lat-arrow)" />
+		<path class="wire" d="M392 116 L468 116" marker-end="url(#lat-arrow)" />
+		<text x="430" y="106" text-anchor="middle" class="dim">z</text>
+
+		<text x="592" y="20" text-anchor="middle" class="head">latent 공간 (32차원 중 2차원)</text>
+		<circle cx="592" cy="122" r="92" class="zone" />
+		<text x="680" y="210" text-anchor="end" class="dim">N(0, I)</text>
+		<g>
+			{common.map(([x, y]) => <circle cx={x} cy={y} r="4.5" class="fill-dim" />)}
+		</g>
+		<g>
+			{rare.map(([x, y]) => <circle cx={x} cy={y} r="4.5" class="box" />)}
+		</g>
+		<text x="526" y="74" class="dim">A 의 z</text>
+		<text x="616" y="176" class="dim">B 의 z</text>
+		<path class="wire hot-wire" d="M584 114 L600 130 M600 114 L584 130" stroke-width="2.4" />
+		<text x="592" y="196" text-anchor="middle" class="hot">실행 때 z = 0</text>
+		<path class="wire hot-wire dash" d="M592 184 L592 134" />
+		<defs>
+			<marker id="lat-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+				<path d="M0 0 L10 5 L0 10z" class="fill-dim" />
+			</marker>
+		</defs>
+	</svg>
+	<figcaption>
+		CVAE encoder 는 방식이 같은 시연들을 latent 공간의 가까운 자리에 놓고, KL 항이 그 자리들을 모두 원점 근처로 끌어당깁니다. 실행 때는 원점 z = 0 을 쓰므로, 원점을 차지한 방식의 동작이 나옵니다.
+	</figcaption>
+</figure>

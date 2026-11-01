@@ -1,0 +1,9 @@
+# Drop torque on both arms at once and refuse further commands.
+#
+# The request carries nothing: there is one thing to do and no argument that
+# could make it do less. Coming back is deliberate and takes the two calls it
+# takes - SetTeleopMode to MODE_IDLE, then SetTorque - so that a single
+# repeated call can never toggle the arms back on.
+---
+bool success
+string message

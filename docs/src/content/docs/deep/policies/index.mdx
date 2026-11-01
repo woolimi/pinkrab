@@ -1,0 +1,64 @@
+---
+title: policy 개요
+description: Pinkrab 이 학습하는 policy 의 입출력과 behavior cloning 의 난점. action chunking 과 multimodality, ACT, 실행 속도.
+---
+
+import Chunking from '../../../../components/policies/Chunking.astro';
+import Multimodal from '../../../../components/policies/Multimodal.astro';
+
+Pinkrab 은 LeRobot 에 들어 있는 ACT 를 [dataset](../convert/#dataset-구성)으로 `lerobot-train` 에서 학습하고 실행합니다. ACT 는 시연을 그대로 따라 하도록 배우는 **behavior cloning** 이고, 관찰 `o` 에서 앞으로의 동작 chunk `a` 를 내는 조건부 분포 `p(a | o)` 를 학습합니다.
+
+## 입력과 출력
+
+| | 내용 |
+|---|---|
+| 입력 | 두 그리퍼 카메라의 영상, `observation.state` 11개(두 jaw 의 열림, 두 tool 의 상대 pose) |
+| 출력 | 앞으로의 동작 여러 step(chunk). step 하나는 손마다 tool frame 의 위치·회전 변화와 다음 jaw 열림, 모두 20개입니다 |
+
+## behavior cloning 의 난점
+
+### compounding error 와 action chunking
+
+behavior cloning 으로 배운 policy 는 매 step 조금씩 틀립니다. 한 번 틀리면 팔은 시연에 없던 state 에 놓이고, 처음 보는 state 에서는 더 크게 틀리기 쉬워서 오차가 다음 오차를 부릅니다. step 마다의 오차가 `ε` 이면 길이 `T` 의 작업에서 쌓이는 오차가 `T` 가 아니라 **`T²` 에 비례해** 커질 수 있다는 것이 알려져 있습니다(Ross & Bagnell, 2010). 이것을 compounding error, 또는 학습과 실행의 state 분포가 달라진다는 뜻에서 distribution shift 라고 부릅니다.
+
+action chunking 은 한 번의 추론으로 `H` step 의 동작을 내고 그 앞의 `k` step 을 실행한 뒤 다시 묻는 방식입니다. **결정 횟수가 `k` 분의 1 로 줄어** 오차가 쌓일 기회가 줄고, chunk 안의 동작은 한꺼번에 만들어져 시간에 따라 매끄럽습니다. 사람의 시연에는 손이 잠시 멈추는 구간처럼 지금의 관찰만으로는 설명되지 않는 동작이 섞여 있는데, chunk 는 이런 동작도 앞뒤 맥락과 함께 하나의 궤적으로 배웁니다.
+
+<Chunking />
+
+`k` 를 키우면 chunk 를 끝까지 보지 않고 실행하는 open-loop 구간이 길어져, 물체가 예상과 다르게 움직였을 때 늦게 반응합니다. `k` 는 **매끄러움과 반응성 사이의 선택**이고, Pinkrab 은 이것을 시간으로 정해 **0.1 초**를 씁니다. 50 fps dataset 에서는 5 step 입니다.
+
+### multimodality
+
+같은 장면에서도 사람은 장애물을 왼쪽으로 돌아가기도 하고 오른쪽으로 돌아가기도 합니다. 둘 다 맞는 동작이라 `p(a | o)` 는 봉우리가 둘인 분포가 됩니다. 이 분포를 regression 으로 학습하면 policy 는 분포 전체가 아니라 **숫자 하나**를 내도록 배웁니다. L2 loss 로 배우는 평균은 **늘 두 봉우리 사이에** 떨어지고, L1 loss 로 배우는 중앙값은 두 방식이 비슷하게 섞여 있으면 사이에, 한쪽이 많으면 많은 쪽 봉우리에 떨어집니다.
+
+<Multimodal />
+
+봉우리 사이의 동작은 **어느 시연에도 없고**, 위 그림처럼 장애물에 그대로 부딪히기도 합니다. ACT 는 시연이 어느 방식이었는지를 latent 라는 숨은 변수로 따로 받아 이 문제를 다룹니다([latent 와 CVAE](./act/#latent-와-cvae)).
+
+## ACT
+
+**[ACT](./act/)** 는 ResNet-18 이 읽은 영상과 state 를 transformer encoder·decoder 가 받아 chunk 를 forward 한 번에 냅니다. 학습 때만 쓰는 CVAE 가 시연의 방식을 latent 로 구분해 주고, 실행 때는 latent 를 0 으로 둡니다.
+
+| | ACT |
+|---|---|
+| 영상 | ResNet-18 |
+| chunk 를 내는 방식 | L1 regression + CVAE |
+| multimodality | 학습 때 latent 로 구분, 실행 때 `z = 0` |
+| 학습하는 parameter | 약 52M (실행에는 약 34M) |
+| 학습 메모리(batch 8) | 5.7 GB |
+
+학습 메모리는 780×570 그리퍼 카메라 두 대의 dataset 에서 batch 8 한 step 의 최대값이고, **8 GB GPU 에서 batch 8** 로 학습합니다.
+
+## 실행 속도
+
+step 수는 기본인 50 fps dataset 기준입니다. 다른 fps 에서는 같은 시간이 되도록 step 수가 바뀝니다([dataset 의 fps](../convert/#dataset-의-fps)).
+
+| policy | chunk | 한 번에 실행하는 step | 추론 |
+|---|---:|---:|---|
+| ACT | 100 | 5 | 한 번의 forward |
+
+## 참고 문헌
+
+- Ross, Bagnell. *Efficient Reductions for Imitation Learning*. AISTATS 2010.
+- Ross, Gordon, Bagnell. *A Reduction of Imitation Learning and Structured Prediction to No-Regret Online Learning* (DAgger). AISTATS 2011.
+- Zhao, Kumar, Levine, Finn. *Learning Fine-Grained Bimanual Manipulation with Low-Cost Hardware* (ACT). RSS 2023.

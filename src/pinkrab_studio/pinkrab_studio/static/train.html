@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pinkrab train</title>
+  <link rel="icon" href="/static/claw.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/style.css">
+  <link rel="stylesheet" href="/static/home.css">
+  <link rel="stylesheet" href="/static/handheld.css">
+  <link rel="stylesheet" href="/static/uPlot.min.css">
+  <link rel="stylesheet" href="/static/train.css">
+</head>
+<body class="home train">
+  <!-- Training runs, wherever they are trained: this machine's train
+       directory, and any machine reached over ssh. The server reads their
+       files into one sqlite store on its own; this page only asks it what it
+       has and draws that. -->
+  <main class="home">
+    <header class="bar">
+      <a class="back" href="/" title="back to the front page">&larr;</a>
+      <h1><svg class="claw" viewBox="0 0 64 64" aria-hidden="true"><use href="/static/claw.svg#claw"/></svg><span>Train</span></h1>
+      <a class="help" href="/train/guide" title="how this page works">?</a>
+      <!-- One chip per source: whether it is being read, how many runs, how
+           long ago. A chip opens the sources; the arrow reads them all now. -->
+      <div class="sources-strip">
+        <span id="source-chips"><span class="chip-source pending">reading…</span></span>
+        <button class="icon" id="sync" title="read every source now" aria-label="read every source now">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.34-5.66"/><path d="M20 4v5h-5"/></svg>
+        </button>
+      </div>
+      <button id="open-launch" class="primary new-run"><span aria-hidden="true">+</span> New run</button>
+    </header>
+
+    <!-- What is being done on the page's behalf: a run being started (the
+         machine set up, the dataset sent), a checkpoint being copied home. -->
+    <section class="jobs" id="jobs" hidden>
+      <div class="job" id="job-launch" hidden><b></b><span class="line"></span></div>
+      <div class="job" id="job-fetch" hidden><b></b><span class="line"></span></div>
+    </section>
+
+    <section class="board">
+      <!-- The runs, newest first. A click on a card draws that run alone; a
+           tick puts it on the charts beside the others. Its colour there is
+           the swatch here. -->
+      <aside class="runs">
+        <div class="runs-head">
+          <h3>runs</h3>
+        </div>
+        <ul id="runs"><li class="empty">no runs yet: New run starts one</li></ul>
+        <!-- Training on a source's GPU that no run here accounts for: started
+             without pinkrab-train, so seen to be there and nothing more. -->
+        <div class="unrecorded" id="unrecorded" hidden>
+          <h3>on a GPU, not recorded</h3>
+          <ul></ul>
+          <p>Started without <code>pinkrab-train</code>: the studio sees it running, with no numbers to chart.</p>
+        </div>
+      </aside>
+
+      <div class="charts-side">
+        <div class="chart-controls">
+          <label>smoothing
+            <input type="range" id="smoothing" min="0" max="0.99" step="0.01" value="0.6">
+            <output id="smoothing-value">0.60</output>
+          </label>
+          <label>x axis
+            <select id="x-axis">
+              <option value="step">step</option>
+              <option value="hours">hours since start</option>
+              <option value="epochs">epochs</option>
+            </select>
+          </label>
+          <label class="check"><input type="checkbox" id="log-scale" checked> log scale for losses</label>
+          <span class="hover-step" id="hover-step"></span>
+        </div>
+        <div class="charts" id="charts">
+          <p class="empty">tick a run to draw it</p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- One run: what it is, where it is, the checkpoints it has saved, and
+       the configuration it was started with. -->
+  <dialog id="run">
+    <header><h2 id="run-title">run</h2><button id="run-close">Close</button></header>
+    <dl class="facts" id="run-facts"></dl>
+    <h3>checkpoints <label class="autofetch"><input type="checkbox" id="run-autofetch"> copy each one here as it is saved</label></h3>
+    <table class="checkpoints"><tbody id="run-checkpoints"></tbody></table>
+    <details><summary>configuration</summary><pre id="run-config"></pre></details>
+    <p class="error" id="run-error"></p>
+    <div class="choice">
+      <button id="run-resume">Resume</button>
+      <button id="run-stop" class="stop">Stop</button>
+    </div>
+  </dialog>
+
+  <!-- A run started from here: where, on what, with which policy. The rest
+       of the recipe - the policy's own settings, workers, augmentation - is
+       the server's. -->
+  <dialog id="launch">
+    <header><h2>New run</h2><button id="launch-close">Close</button></header>
+    <form id="launch-form">
+      <label>machine <select name="source" id="launch-source"></select></label>
+      <p class="probe" id="launch-probe"></p>
+      <label>dataset <select name="dataset" id="launch-dataset"></select></label>
+      <label>policy <select name="policy" id="launch-policy"></select></label>
+      <div class="row">
+        <label>steps <input name="steps" type="number" min="100" step="100"></label>
+        <label>batch <input name="batch_size" type="number" min="1"></label>
+        <label>log every <input name="log_freq" type="number" min="1"></label>
+        <label>checkpoint every <input name="save_freq" type="number" min="100" step="100"></label>
+        <label>GPU <input name="gpu" value="0"></label>
+      </div>
+      <label>name <input name="name" placeholder="policy-dataset-date, if left empty"></label>
+      <label>more lerobot-train arguments <input name="extra" placeholder="--policy.optimizer_lr=5e-5"></label>
+      <label class="check"><input type="checkbox" name="auto_fetch" checked> copy each checkpoint here as it is saved</label>
+      <p class="error" id="launch-error"></p>
+      <div class="choice"><button type="submit" class="primary">Start</button></div>
+    </form>
+  </dialog>
+
+  <!-- Where runs are read from. This machine's train directory always is;
+       the others are ssh logins, pasted the way a cloud console hands them
+       out - the host and the port change every session there. -->
+  <dialog id="sources">
+    <header><h2>Sources</h2><button id="sources-close">Close</button></header>
+    <ul class="source-list" id="sources-list"></ul>
+    <h3>a machine over ssh - new, or one of the above again</h3>
+    <form id="source-form"></form>
+  </dialog>
+
+  <script src="/static/uPlot.iife.min.js"></script>
+  <script type="module" src="/static/train.js"></script>
+</body>
+</html>

@@ -1,0 +1,10 @@
+Motor numbering - this writes new ids into servo EEPROM.
+  Do not run it on servos that already work. It is for a servo that was
+  replaced, or an arm whose numbering is wrong or unfinished.
+  target: left   tty.usbmodem5B7B0139551
+  order:  gripper -> wrist_roll -> wrist_yaw -> wrist_flex -> elbow_flex -> shoulder_lift -> shoulder_pan
+  Connect only the servo named on screen, then press ENTER.
+  With more than one connected, they all take the id, or the wrong one does.
+
+Proceed? Type 'y' to continue: 
+...

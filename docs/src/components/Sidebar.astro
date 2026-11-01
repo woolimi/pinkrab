@@ -1,0 +1,111 @@
+---
+// The sidebar with a handle on its edge: drag it to widen or narrow the
+// sidebar, double-click it to go back to the default. The width is kept in
+// the browser and set again before the page paints (astro.config.mjs).
+import Default from '@astrojs/starlight/components/Sidebar.astro';
+---
+
+<Default />
+<pk-sidebar-resize
+	role="separator"
+	aria-orientation="vertical"
+	aria-label="사이드바 너비"
+	tabindex="0"
+	title="끌어서 너비 조절, 더블클릭으로 기본값"></pk-sidebar-resize>
+
+<script>
+	const KEY = 'pk-sidebar-width';
+	const MIN = 200;
+	const STEP = 16;
+	const root = document.documentElement;
+
+	const max = () => Math.min(560, window.innerWidth / 2);
+	const current = () =>
+		document.querySelector<HTMLElement>('.sidebar-pane')?.getBoundingClientRect().width ?? MIN;
+
+	function apply(px: number | null) {
+		if (px === null) {
+			root.style.removeProperty('--sl-sidebar-width');
+		} else {
+			px = Math.round(Math.min(max(), Math.max(MIN, px)));
+			root.style.setProperty('--sl-sidebar-width', `${px}px`);
+		}
+		try {
+			if (px === null) localStorage.removeItem(KEY);
+			else localStorage.setItem(KEY, String(px));
+		} catch {}
+	}
+
+	class SidebarResize extends HTMLElement {
+		connectedCallback() {
+			this.addEventListener('pointerdown', (e) => {
+				if (e.button !== 0) return;
+				e.preventDefault();
+				this.setPointerCapture(e.pointerId);
+				root.classList.add('pk-resizing');
+				const move = (ev: PointerEvent) => apply(ev.clientX);
+				const up = () => {
+					root.classList.remove('pk-resizing');
+					this.removeEventListener('pointermove', move);
+					this.removeEventListener('pointerup', up);
+					this.removeEventListener('pointercancel', up);
+				};
+				this.addEventListener('pointermove', move);
+				this.addEventListener('pointerup', up);
+				this.addEventListener('pointercancel', up);
+			});
+			this.addEventListener('dblclick', () => apply(null));
+			this.addEventListener('keydown', (e) => {
+				if (e.key === 'ArrowLeft') apply(current() - STEP);
+				else if (e.key === 'ArrowRight') apply(current() + STEP);
+				else return;
+				e.preventDefault();
+			});
+		}
+	}
+	customElements.define('pk-sidebar-resize', SidebarResize);
+</script>
+
+<style>
+	pk-sidebar-resize {
+		display: none;
+	}
+	@media (min-width: 50rem) {
+		pk-sidebar-resize {
+			display: block;
+			position: fixed;
+			z-index: calc(var(--sl-z-index-menu) + 1);
+			inset-block: var(--sl-nav-height) 0;
+			inset-inline-start: calc(var(--sl-sidebar-width) - 4px);
+			width: 8px;
+			cursor: col-resize;
+			touch-action: none;
+		}
+		/* A pink line over the sidebar's border while the handle is under the
+		 * pointer, held, or focused from the keyboard. */
+		pk-sidebar-resize::after {
+			content: '';
+			position: absolute;
+			inset-block: 0;
+			inset-inline-start: 3px;
+			width: 2px;
+			background: var(--pk-shell);
+			opacity: 0;
+			transition: opacity 0.15s ease;
+		}
+		pk-sidebar-resize:hover::after,
+		pk-sidebar-resize:focus-visible::after,
+		:global(.pk-resizing) pk-sidebar-resize::after {
+			opacity: 1;
+		}
+		pk-sidebar-resize:focus-visible {
+			outline: none;
+		}
+	}
+	/* While dragging, the pointer stays a resize cursor and no text is selected. */
+	:global(.pk-resizing),
+	:global(.pk-resizing *) {
+		cursor: col-resize !important;
+		user-select: none;
+	}
+</style>

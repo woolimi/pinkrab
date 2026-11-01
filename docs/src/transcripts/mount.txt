@@ -1,0 +1,14 @@
+Wall mount
+  Two measurements say where the arms are; everything else in mount.yaml
+  is derived. Millimetres, Enter keeps the current value.
+    1. between the two arm bases, centre to centre
+    2. from the desk surface up to the top of a base - the flat face
+       its plate, its beam and the cap over the first servo share
+
+  distance between the two arm bases, centre to centre, in mm [480]: 
+  height of a base's top face above the desk, in mm [180]: 
+
+[32m/[0m Written to ~/projects/pinkrab/src/pinkrab_description/config/mount.yaml
+    arms      480 mm apart, at y = +240.0 / -240.0 mm
+    base top  180 mm above the desk
+    The workspace URDF is expanded again by whatever next needs it.

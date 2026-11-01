@@ -1,0 +1,6 @@
+[INFO] [launch]: Default logging verbosity is set to INFO
+[INFO] [gate-1]: process started with pid [41241]
+[INFO] [driver-2]: process started with pid [41242]
+[gate-1] [INFO] [1793200725.355597000] [pinkrab_safety]: scene.xml: 14 joints, ramped at 300 deg/s, 60 deg/s under a policy, shaped at 400 deg/s^2 and 8000 deg/s^3
+[driver-2] [INFO] [1793200726.033573000] [pinkrab_driver]: left, right on the bus at 60 Hz, torque off
+...

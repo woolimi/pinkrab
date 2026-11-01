@@ -1,0 +1,27 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>pinkrab_cli</name>
+  <version>0.1.0</version>
+  <description>
+    Bring-up tooling for Pinkrab: pin serial boards to arms, check the Feetech
+    servo bus, calibrate, and teleoperate. Wraps the LeRobot CLIs so ports and
+    calibration ids can never be typed in the wrong order.
+  </description>
+  <maintainer email="woolimi91@naver.com">Woolim Park</maintainer>
+  <license>Apache-2.0</license>
+
+  <!-- LeRobot is not declared here on purpose. It is installed into the
+       environment separately (pip, from a checkout pinned to a known commit);
+       letting a package manager resolve it again would overwrite that install. -->
+
+  <exec_depend>pinkrab_core</exec_depend>
+
+  <test_depend>ament_copyright</test_depend>
+  <test_depend>ament_flake8</test_depend>
+  <test_depend>ament_pep257</test_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

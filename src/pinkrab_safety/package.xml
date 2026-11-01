@@ -1,0 +1,32 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>pinkrab_safety</name>
+  <version>0.1.0</version>
+  <description>
+    The gate every command crosses on its way to the servos. It takes
+    /joint_commands, holds each pose against the joint bands and against the same
+    MuJoCo scene the studio draws, walks it in from where the arms actually are at
+    max_joint_speed_dps, and republishes what survives on /joint_commands_checked.
+
+    Its own node rather than part of the driver, so the thing holding the serial
+    bus never learns what a teleop mode is. It also owns what an operator is
+    allowed to believe - armed, mode, and why the last command did not go through
+    - and publishes that as TeleopState, because a page keeping its own copy of
+    those is a page that can lie about a moving arm.
+  </description>
+  <maintainer email="woolimi91@naver.com">Woolim Park</maintainer>
+  <license>Apache-2.0</license>
+
+  <exec_depend>rclpy</exec_depend>
+  <!-- The middleware pinkrab_core's config pins, loaded by rclpy.init. -->
+  <exec_depend>rmw_cyclonedds_cpp</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
+  <exec_depend>pinkrab_interfaces</exec_depend>
+  <exec_depend>pinkrab_mujoco</exec_depend>
+  <exec_depend>pinkrab_core</exec_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

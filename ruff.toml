@@ -1,0 +1,21 @@
+# Pins what ruff cannot work out on its own: which names are ours, so import sorting
+# groups `pinkrab_core` and `pinkrab_core.config` together instead of guessing that
+# one of them is a third-party package. The rules are pyflakes and pycodestyle's
+# errors, named so a newer ruff's wider default set does not change them.
+src = ["src/pinkrab_core", "src/pinkrab_cli", "src/pinkrab_mujoco", "src/pinkrab_safety", "src/pinkrab_driver",
+       "src/pinkrab_studio", "src/pinkrab_bridge", "src/pinkrab_umi"]
+
+# What the code is already wrapped to.
+line-length = 100
+
+[lint]
+select = ["E4", "E7", "E9", "F"]
+# Codes suppressed by `# noqa` in this repo that ruff's default rule set does not
+# enable. Listed so those directives are kept rather than reported as dead: they mark
+# imports that are deliberately not at the top of a file or a function, and handler
+# methods whose names are the http.server API's rather than ours.
+external = ["E402", "N802", "PLC0415"]
+
+[lint.isort]
+known-first-party = ["pinkrab_core", "pinkrab_cli", "pinkrab_mujoco", "pinkrab_safety", "pinkrab_driver",
+                     "pinkrab_bridge", "pinkrab_studio", "pinkrab_umi"]

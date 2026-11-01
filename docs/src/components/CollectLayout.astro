@@ -1,0 +1,160 @@
+---
+// Where things go for a take: the top camera on the demonstrator's head, the table marker in
+// front of the demonstrator, the hands within reach of where the board would be.
+---
+
+<div class="pk-layout not-content">
+	<figure>
+		<svg viewBox="0 0 360 300" role="img"
+			aria-label="옆에서 본 배치. 시연자 바로 앞 책상에 테이블 마커가 있고, 시연자 머리에 단 탑 카메라가 아래를 내려다보며 작업 자리와 테이블 마커를 함께 담습니다.">
+			<!-- floor, desk -->
+			<line class="ground" x1="10" y1="288" x2="290" y2="288"></line>
+			<rect class="desk" x="70" y="200" width="170" height="10" rx="2"></rect>
+			<line class="ground" x1="82" y1="210" x2="82" y2="288"></line>
+			<line class="ground" x1="228" y1="210" x2="228" y2="288"></line>
+			<!-- the top camera, on the demonstrator's forehead, looking down: its
+			     wide lens takes in the table marker and the work area together -->
+			<path class="cone" d="M68 98L66 200L246 200z"></path>
+			<rect class="work" x="86" y="196" width="140" height="4"></rect>
+			<!-- the table marker, right in front of the demonstrator -->
+			<path class="marker" d="M82 200v-10l7-7h10l7 7v10z"></path>
+			<!-- the demonstrator -->
+			<circle class="person" cx="46" cy="96" r="15"></circle>
+			<rect class="camera" x="56" y="86" width="16" height="12" rx="3"></rect>
+			<path class="person" d="M30 118h32v80h-32z"></path>
+			<!-- the upper arm hanging, the elbow bent at a right angle, the forearm forward -->
+			<path class="arm" d="M58 128V176H128"></path>
+			<rect class="hermit" x="126" y="168" width="18" height="12" rx="2"></rect>
+			<text class="label" x="80" y="84">탑 카메라</text>
+			<text class="label" x="94" y="226" text-anchor="middle">테이블 마커</text>
+			<text class="label" x="170" y="226" text-anchor="middle">작업 자리</text>
+			<text class="label" x="46" y="70" text-anchor="middle">시연자</text>
+		</svg>
+		<figcaption>옆에서 본 배치</figcaption>
+	</figure>
+	<figure>
+		<svg viewBox="0 0 360 300" role="img"
+			aria-label="위에서 본 배치. 테이블 마커는 시연자 몸통 바로 앞에 +Y 면이 시연자 반대쪽을 향하게 놓고, 두 손은 그 앞, 시연자 가슴에서 약 40 cm 안쪽에서 작업합니다.">
+			<defs>
+				<marker id="top-arrow" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+					<path d="M0 0L10 5L0 10z" fill="currentColor"></path>
+				</marker>
+			</defs>
+			<!-- desk -->
+			<rect class="desk" x="40" y="24" width="280" height="226" rx="4"></rect>
+			<!-- the reach: within about 40 cm of the chest -->
+			<path class="work" d="M86 250A94 94 0 0 1 274 250z"></path>
+			<text class="label" x="180" y="148" text-anchor="middle">가슴에서 약 40 cm</text>
+			<!-- the top camera's picture -->
+			<rect class="frame" x="72" y="56" width="216" height="186" rx="6"></rect>
+			<text class="label" x="80" y="74">탑 카메라 화면</text>
+			<!-- table marker, right in front of the demonstrator, +Y away from them -->
+			<rect class="marker" x="168" y="220" width="24" height="24" rx="4"></rect>
+			<line class="dir" x1="180" y1="220" x2="180" y2="190" marker-end="url(#top-arrow)"></line>
+			<text class="label strong" x="188" y="198">+Y</text>
+			<text class="label" x="198" y="237">테이블 마커</text>
+			<!-- Hermits in the two hands, working in front of it -->
+			<rect class="hermit" x="134" y="178" width="14" height="22" rx="3"></rect>
+			<rect class="hermit" x="212" y="178" width="14" height="22" rx="3"></rect>
+			<text class="label" x="141" y="215" text-anchor="middle">왼손</text>
+			<text class="label" x="219" y="215" text-anchor="middle">오른손</text>
+			<!-- the demonstrator, at the desk's edge -->
+			<path class="person" d="M120 292a60 26 0 0 1 120 0z"></path>
+			<circle class="person" cx="180" cy="270" r="15"></circle>
+			<text class="label" x="252" y="282">시연자</text>
+		</svg>
+		<figcaption>위에서 본 배치</figcaption>
+	</figure>
+</div>
+
+<style>
+	.pk-layout {
+		display: grid;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		gap: 1rem;
+		margin: 1.5rem 0;
+		color: var(--pk-text);
+	}
+	figure {
+		margin: 0;
+		padding: 0.75rem;
+		border: 1px solid var(--pk-line);
+		border-radius: 0.75rem;
+		background: var(--pk-panel);
+	}
+	svg {
+		display: block;
+		width: 100%;
+		height: auto;
+	}
+	figcaption {
+		margin-top: 0.4rem;
+		font-size: 0.85rem;
+		color: var(--pk-dim);
+		text-align: center;
+	}
+	.ground {
+		stroke: var(--pk-dim);
+		stroke-width: 2;
+		stroke-linecap: round;
+	}
+	.desk {
+		fill: #efe9dd;
+		stroke: #c9bda6;
+		stroke-width: 1.5;
+	}
+	.cone {
+		fill: rgba(29, 27, 46, 0.07);
+		stroke: rgba(29, 27, 46, 0.35);
+		stroke-dasharray: 4 3;
+	}
+	.work {
+		fill: rgba(226, 72, 142, 0.18);
+		stroke: var(--pk-shell);
+		stroke-width: 1.5;
+	}
+	.frame {
+		fill: none;
+		stroke: rgba(29, 27, 46, 0.45);
+		stroke-width: 1.5;
+		stroke-dasharray: 5 4;
+	}
+	.camera {
+		fill: #1d1b2e;
+	}
+	.marker {
+		fill: #fff;
+		stroke: #1d1b2e;
+		stroke-width: 1.5;
+	}
+	.hermit {
+		fill: var(--pk-shell);
+	}
+	.person {
+		fill: #d8c7cf;
+	}
+	/* A shade darker than the body, so the arm reads against it. */
+	.arm {
+		fill: none;
+		stroke: #b79fab;
+		stroke-width: 9;
+		stroke-linecap: round;
+		stroke-linejoin: round;
+	}
+	.dir {
+		stroke: currentColor;
+		stroke-width: 1.25;
+	}
+	.label {
+		fill: currentColor;
+		font-size: 12px;
+	}
+	.strong {
+		font-weight: 700;
+	}
+	@media (max-width: 560px) {
+		.pk-layout {
+			grid-template-columns: 1fr;
+		}
+	}
+</style>

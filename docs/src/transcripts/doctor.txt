@@ -1,0 +1,18 @@
+Environment
+  [32m/[0m python - 3.12.14
+  [32m/[0m lerobot - 0.6.1
+  ...
+
+Servos
+  [32m/[0m left     - 7/7 responded, 30-34C
+  [32m/[0m right    - 7/7 responded, 30-33C
+
+Before starting
+  Arms
+    [32m/[0m arm boards named (which USB board is which arm) - left, right assigned
+    [32m/[0m wall mount measured (base spacing, height above the desk) - mount.yaml
+    [32m/[0m left arm calibrated (home pose held, every joint swept) - pinkrab_left.json
+    [32m/[0m right arm calibrated (home pose held, every joint swept) - pinkrab_right.json
+    ...
+
+[32m/[0m Environment looks good.

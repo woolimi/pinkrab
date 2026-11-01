@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pinkrab collect</title>
+  <link rel="icon" href="/static/claw.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/style.css">
+  <link rel="stylesheet" href="/static/home.css">
+  <link rel="stylesheet" href="/static/handheld.css">
+  <script type="importmap">
+    { "imports": { "three": "/static/three.module.min.js" } }
+  </script>
+</head>
+<body class="home handheld">
+  <!-- The gripper in the hand, checked without a robot: what its two cameras
+       see, what the top camera makes of the solid and the desk. All of it comes
+       from the live server, which the switch here starts and stops - the same
+       process the teleop page's camera pane runs. Pictures on black, numbers
+       laid over their corners, and one card per thing the top camera solves. -->
+  <main class="home">
+    <header class="bar">
+      <a class="back" href="/" title="back to the front page">&larr;</a>
+      <h1><svg class="claw" viewBox="0 0 64 64" aria-hidden="true"><use href="/static/claw.svg#claw"/></svg><span>Collect</span></h1>
+      <span class="state" id="live-state"><span class="dot" id="live-dot"></span><span id="live-line">not connected</span></span>
+      <!-- Recording, in the bar so it stays in view down the shelf. While
+           this page is in front, pedal 2 starts an episode and pedal 3 stops
+           and saves it - the same board as the floor's, drawn with what the
+           pedals mean on this page; the page's pedals do the same by click. -->
+      <span class="record-bar">
+        <span class="rec-dot" id="rec-dot"></span>
+        <span class="rec-line" id="rec-line">not recording</span>
+      </span>
+      <div class="pedalboard">
+        <button class="pedal" id="pedal-jog" disabled><span class="num">1</span>&mdash;</button>
+        <span class="plate-mark">L</span>
+        <button class="pedal" id="pedal-record"><span class="num">2</span>record</button>
+        <span class="plate-mark">R</span>
+        <button class="pedal stop" id="pedal-stop"><span class="num">3</span>stop &amp; save</button>
+      </div>
+      <button id="live-toggle" class="primary">Connect</button>
+    </header>
+    <p class="note" id="rec-note"></p>
+
+    <!-- From Connect on: a line per thing the live view opens and the pedal,
+         each with a Refresh, and a bar while they come up. -->
+    <div class="progress startup" id="startup" hidden>
+      <h3 role="button" tabindex="0">connecting</h3>
+      <div class="bar"><span></span></div>
+      <ul></ul>
+    </div>
+
+    <section class="feeds">
+      <figure class="cam" id="cam-left">
+        <img alt="what the left gripper camera sees" hidden>
+        <p class="off">left gripper camera</p>
+        <figcaption><span class="name">left gripper</span><span class="stat"></span></figcaption>
+      </figure>
+      <figure class="cam" id="cam-right">
+        <img alt="what the right gripper camera sees" hidden>
+        <p class="off">right gripper camera</p>
+        <figcaption><span class="name">right gripper</span><span class="stat"></span></figcaption>
+      </figure>
+      <figure class="cam" id="cam-head">
+        <img alt="what the top camera sees" hidden>
+        <p class="off">top camera</p>
+        <!-- The top camera comes and goes with its cable. When the view says it
+             is gone, this asks it to open the camera again, in place. -->
+        <button class="retry" id="head-retry" hidden>Retry top camera</button>
+        <figcaption><span class="name">top camera</span><span class="stat"></span></figcaption>
+      </figure>
+      <!-- What the top camera makes of each hand and of the desk: one card
+           each, the big number first and the rest under it. Green when the hand
+           has a place in the world, red when it is seen but has none. -->
+      <aside class="cards">
+        <div class="metric" id="card-left"><h2>left UMI</h2><p class="big">—</p><p class="sub"></p></div>
+        <div class="metric" id="card-right"><h2>right UMI</h2><p class="big">—</p><p class="sub"></p></div>
+        <div class="metric" id="card-desk"><h2>desk</h2><p class="big">—</p><p class="sub"></p></div>
+        <p class="note" id="note"></p>
+      </aside>
+      <!-- The top camera's exposure and brightness, set while it runs
+           (toplight.js): under what it makes of the desk, off the picture. -->
+      <div class="light" id="head-light" hidden></div>
+    </section>
+
+    <!-- The shelf: what has been recorded, on disk, whether or not anything is
+         connected. Play it back on the arms, or delete it. -->
+    <section class="shelf">
+      <div class="shelf-head">
+        <h2>Episodes</h2>
+        <span class="count" id="episodes-count"></span>
+        <label class="tick-all"><input type="checkbox" id="tick-all"> all</label>
+        <button id="tick-failing" disabled title="tick every take that fails a test - lost hand, too short, an arm that cannot follow, a jaw that never moved, a camera or desk that moved">tick failing</button>
+        <button id="delete-ticked" disabled>delete ticked</button>
+      </div>
+      <table class="episodes" id="episodes">
+        <thead><tr><th></th><th></th><th>episode</th><th>seconds</th><th>head</th><th>left</th><th>right</th><th>dropped</th><th>size</th><th class="sort" id="sort-follow" title="sort by how much of the take the arm can follow">arm follows</th><th>verdict</th><th></th></tr></thead>
+        <tbody></tbody>
+      </table>
+      <p class="note" id="episodes-empty">no episodes yet</p>
+      <div class="pager" id="episodes-pager" hidden>
+        <button id="page-prev" title="newer episodes">‹</button>
+        <span id="page-where"></span>
+        <button id="page-next" title="older episodes">›</button>
+        <label><select id="page-size"><option>20</option><option>50</option><option>100</option></select> per page</label>
+      </div>
+
+      <p class="note next-stage">The takes go on to the <a href="/curate">Curate</a> page, to become a dataset.</p>
+    </section>
+
+  </main>
+  <!-- An episode played back, over the page: the three videos in step on the
+       left, the arms doing what the hand did on the right, and under both a
+       timeline with the frames the solver flagged in red. -->
+  <dialog id="replay">
+    <header>
+      <h2 id="replay-title"></h2>
+      <span class="note" id="replay-summary"></span>
+      <span class="note" id="replay-note"></span>
+      <button id="replay-close">close</button>
+    </header>
+    <div class="replay-body">
+      <div class="videos">
+        <figure><video id="replay-head" muted playsinline preload="auto"></video><figcaption>head</figcaption></figure>
+        <figure><video id="replay-left" muted playsinline preload="auto"></video><figcaption>left gripper</figcaption></figure>
+        <figure><video id="replay-right" muted playsinline preload="auto"></video><figcaption>right gripper</figcaption></figure>
+      </div>
+      <canvas id="replay-view"></canvas>
+    </div>
+    <div class="timeline">
+      <button id="replay-play">play</button>
+      <span class="frame" id="replay-frame"></span>
+      <div class="track">
+        <canvas id="replay-flags"></canvas>
+        <input id="replay-scrub" type="range" min="0" max="0" value="0" step="1">
+      </div>
+    </div>
+    <p class="why" id="replay-why"></p>
+  </dialog>
+  <script type="module" src="/static/handheld.js"></script>
+</body>
+</html>

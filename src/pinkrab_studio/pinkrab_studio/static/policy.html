@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pinkrab policy</title>
+  <link rel="icon" href="/static/claw.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/style.css">
+  <link rel="stylesheet" href="/static/home.css">
+  <link rel="stylesheet" href="/static/handheld.css">
+  <link rel="stylesheet" href="/static/policy.css">
+</head>
+<body class="home policy">
+  <!-- A checkpoint asked about the pictures the cameras are taking now. What
+       comes back is a delta and an opening per arm, drawn as numbers, as five
+       traces each, and as the paths those deltas would have taken the tools
+       along. The cameras are the live view's, started here the way the
+       collect page starts them. -->
+  <main class="home">
+    <header class="bar">
+      <a class="back" href="/" title="back to the front page">&larr;</a>
+      <h1><svg class="claw" viewBox="0 0 64 64" aria-hidden="true"><use href="/static/claw.svg#claw"/></svg><span>Policy</span></h1>
+      <span class="state" id="live-state"><span class="dot" id="live-dot"></span><span id="live-line">not connected</span></span>
+      <!-- The correction's pedals, in the bar so they stay in view: what the
+           run is recording and who has the arms, and the same board as the
+           floor's - pressable once a run goes. -->
+      <span class="record-bar">
+        <span class="rec-dot" id="corr-dot"></span>
+        <span class="rec-line" id="corr-line">not driving</span>
+      </span>
+      <div class="pedalboard">
+        <button class="pedal" id="corr-follow"><span class="num">1</span><span class="word">follow</span></button>
+        <span class="plate-mark">L</span>
+        <button class="pedal" id="corr-toggle"><span class="num">2</span><span class="word">take over</span></button>
+        <span class="plate-mark">R</span>
+        <button class="pedal stop" id="corr-stop"><span class="num">3</span><span class="word">stop</span></button>
+      </div>
+      <!-- The arms' cameras, the bridge to the robot and the handheld loop,
+           the pedal: everything a session needs but the robot's own launch,
+           which runs in a terminal. -->
+      <button id="connect" class="primary">Connect</button>
+    </header>
+    <!-- From Connect on: a line per thing Connect starts - the cameras, the
+         rig's own launch (the driver and the gate), the bridge that carries
+         what it says into this page, the handheld loop, the pedal - each
+         with a Refresh where this page can open it again, and a bar while
+         they come up. -->
+    <div class="progress startup" id="startup" hidden>
+      <h3 role="button" tabindex="0">connecting</h3>
+      <div class="bar"><span></span></div>
+      <ul></ul>
+    </div>
+
+
+
+    <!-- Two steps down the left, once connected - which checkpoint, then
+         asked or driven - and what the policy sees and answers on the right. -->
+    <div class="policy-grid">
+    <div class="col steps">
+      <section class="step-section controls" id="step-checkpoint">
+        <div class="step-head">
+          <span class="step-no" aria-hidden="true">1</span>
+          <h2>Checkpoint</h2>
+          <span class="step-state" id="checkpoint-state"></span>
+        </div>
+        <p class="step-why">The trained policy to run.</p>
+        <div class="checkpoint-row">
+          <select id="checkpoint" aria-label="checkpoint"><option value="">looking…</option></select>
+          <button id="settings-open" class="icon" title="settings: the cameras, and how the checkpoint is asked" aria-label="settings">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+          </button>
+        </div>
+        <!-- What a checkpoint that reads a command is told: offered its
+             dataset's, typed freely. Hidden for one that reads none. -->
+        <label class="field command" id="command-field" hidden>command
+          <input id="command" type="text" list="command-tasks" autocomplete="off" spellcheck="false">
+          <datalist id="command-tasks"></datalist>
+        </label>
+      </section>
+
+      <section class="step-section controls" id="step-run">
+        <div class="step-head">
+          <span class="step-no" aria-hidden="true">2</span>
+          <h2>Run</h2>
+        </div>
+        <p class="step-why">Ask walks the arms to the start and only asks - nothing moves. Drive lets the policy move them. Stop holds them where they are.</p>
+        <!-- What the checkpoint wants fed to it, and whether it is being fed.
+             A missing camera here is why the run will not start. -->
+        <p class="wants" id="wants"></p>
+        <!-- The two poses a session starts and ends at, walked through the
+             gate with nothing else driving: to set the arms up before Ask or
+             Drive, and to put them away after Stop. Once connected. -->
+        <div class="segmented poses" role="group" aria-label="walk the arms to a pose" id="poses" hidden>
+          <span class="label">walk to</span>
+          <button id="ready" class="pose">Ready</button>
+          <button id="home" class="pose">Home</button>
+        </div>
+        <!-- Three orders. Ask walks the arms to the ready pose and on to where
+             the takes began, and then only asks: the answer is drawn, nothing
+             moves. Drive hands the arms to the rollout node, which walks them
+             there itself and then does what the policy says. Stop idles the
+             gate: nothing more passes, the servos hold where they are. -->
+        <div class="orders">
+          <button id="ask" class="order ask">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg><b>Ask</b>
+          </button>
+          <button id="drive" class="order drive">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4.5v15l12-7.5z"/></svg><b>Drive</b>
+          </button>
+          <button id="halt" class="order halt">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="1.5"/></svg><b>Stop</b>
+          </button>
+        </div>
+        <p class="status" id="status"></p>
+        <p class="note" id="note"></p>
+      <!-- The policy's arms taken over by the handhelds and put right
+           (DAgger). Every run is recorded from Drive to its stop as a rollout -
+           the arms' cameras and the driven arms' joints, and the top camera
+           during a correction, the only time it is open; each reading marked
+           with who had the arms. While a policy drives, pedal 2
+           hands the arms to the handhelds, held where they stand. Pedal 1 lets
+           them follow the hands - the top camera following each solid - then
+           holds them and lets them follow again, a clutch to set the hands and
+           go on; pedal 2 again hands the arms back to the policy. Pedal 3 is
+           the stop, and keeps the run's recording - except during a
+           correction, where it throws that correction away and stands the
+           arms still, and pedal 2 then walks them back to the pose the
+           take-over began at to try again. The page's pedals do the
+           same by click, and the floor's while this page is in front. -->
+      <section class="record correct" id="correct">
+        <h3>Runs</h3>
+        <!-- Each jaw is its hand's once the hand's opening meets the arm's:
+             drawn while it has not, so the hand knows where to go. -->
+        <div class="jaws" data-arm="left" hidden>
+          <span class="label">left jaw</span>
+          <span class="gauge"><i class="hand"></i><i class="arm"></i></span>
+          <span class="words"></span>
+        </div>
+        <div class="jaws" data-arm="right" hidden>
+          <span class="label">right jaw</span>
+          <span class="gauge"><i class="hand"></i><i class="arm"></i></span>
+          <span class="words"></span>
+        </div>
+        <p class="note" id="corr-note"></p>
+        <div class="kept">
+          <span id="corr-count"></span>
+          <ul id="corr-list"></ul>
+        </div>
+      </section>
+      </section>
+    </div>
+
+    <div class="col look">
+      <section class="cam-grid">
+        <figure class="cam" id="cam-gripper-left">
+          <img alt="what the left gripper camera sees" hidden>
+          <p class="off">left gripper camera</p>
+          <figcaption><span class="name">left gripper</span><span class="stat"></span></figcaption>
+        </figure>
+        <figure class="cam" id="cam-gripper-right">
+          <img alt="what the right gripper camera sees" hidden>
+          <p class="off">right gripper camera</p>
+          <figcaption><span class="name">right gripper</span><span class="stat"></span></figcaption>
+        </figure>
+        <!-- The top camera, while the hands have the arms (a correction): it
+             is what follows the handhelds' solids, and its picture shows what
+             it makes of them. -->
+        <figure class="cam" id="cam-head" hidden>
+          <img alt="what the top camera sees" hidden>
+          <p class="off">top camera</p>
+          <figcaption><span class="name">top camera</span><span class="stat"></span></figcaption>
+        </figure>
+      </section>
+      <!-- What the policy just asked of each arm: how far its tool steps, how
+           much it turns, and its jaw. -->
+      <section class="cards" id="readout">
+        <div class="metric" id="m-left"><h2>left arm</h2><p class="big">—</p><p class="sub">mm per tick</p></div>
+        <div class="metric" id="m-right"><h2>right arm</h2><p class="big">—</p><p class="sub">mm per tick</p></div>
+        <div class="metric" id="m-rate"><h2>asked</h2><p class="big">—</p><p class="sub">steps, Hz, latency</p></div>
+      </section>
+    </div>
+    </div>
+
+    <!-- Shown once something has been asked. -->
+    <section class="traces" id="traces" hidden>
+      <div class="panel">
+        <h3>what it asked for, step by step</h3>
+        <!-- dx, dy, dz in each tool's own frame, the turn, and the jaw. A
+             canvas per arm, the two on one scale and one tick axis, so the
+             arms can be read against each other. -->
+        <p class="arm-label">left arm</p>
+        <canvas class="trace" data-arm="left" width="1200" height="200"></canvas>
+        <p class="arm-label">right arm</p>
+        <canvas class="trace" data-arm="right" width="1200" height="200"></canvas>
+        <ul class="key">
+          <li><i class="k-dx"></i>dx</li>
+          <li><i class="k-dy"></i>dy</li>
+          <li><i class="k-dz"></i>dz</li>
+          <li><i class="k-rot"></i>turn</li>
+          <li><i class="k-grip"></i>gripper</li>
+          <li class="wild"><i></i>refused by the gate's numbers</li>
+        </ul>
+      </div>
+      <div class="panel narrow">
+        <h3>where those steps lead</h3>
+        <!-- Each arm's deltas composed, seen from above. Not a claim about the
+             room: each is the path from wherever its tool started. -->
+        <canvas id="path" width="420" height="420"></canvas>
+        <ul class="key">
+          <li><i class="k-left"></i>left</li>
+          <li><i class="k-right"></i>right</li>
+        </ul>
+        <p class="hint" id="path-hint">from wherever each tool started</p>
+      </div>
+    </section>
+  </main>
+  <!-- Which camera is which arm's, and how the chosen checkpoint is asked:
+       set once and seldom changed, so out of the way of a session. -->
+  <dialog id="settings-drawer">
+    <header>
+      <h2>Settings</h2>
+      <button id="settings-close">Close</button>
+    </header>
+    <div class="drawer-body">
+      <section class="sources">
+        <h3>cameras</h3>
+        <!-- Which socket is each arm's camera: the modules report the same
+             serial number, so a socket is the only name a camera has. -->
+        <figure class="source-row" id="source-left"><figcaption>left arm camera</figcaption></figure>
+        <figure class="source-row" id="source-right"><figcaption>right arm camera</figcaption></figure>
+      </section>
+      <!-- How the chosen checkpoint is asked: its policy type's settings in the
+           rig's inference.yaml, beside what it was trained with. Saved here,
+           they are what the next Ask or Drive runs with. -->
+      <section class="settings" id="settings" hidden>
+        <h3><span id="settings-title">how it is asked</span><span class="file" id="settings-file"></span></h3>
+        <table id="settings-kind">
+          <thead><tr><th>setting</th><th>here</th><th>trained</th><th></th></tr></thead>
+          <tbody></tbody>
+        </table>
+        <p class="fixed" id="settings-trained"></p>
+        <!-- How Pinkrab drives with any policy: the device, the gate's speed,
+             when a step is a bad answer and when the run ends. Folded:
+             changed seldom, and long. -->
+        <details class="common">
+          <summary>every policy</summary>
+          <table id="settings-common">
+            <thead><tr><th>setting</th><th>here</th><th>default</th><th></th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </details>
+        <div class="save"><button id="settings-save" class="primary" disabled>Save</button><span class="note" id="settings-note"></span></div>
+        <p class="inuse" id="settings-inuse"></p>
+      </section>
+    </div>
+  </dialog>
+  <!-- Pressed Connect with the rig missing something on disk: the list, each
+       with the command that writes it. Said before anything starts, because
+       the driver would otherwise exit at once with the reason in a terminal
+       nobody is watching. The cameras and the gate do not need any of it, so
+       connecting anyway is a real choice. -->
+  <dialog id="bringup">
+    <h2>The rig is not set up yet</h2>
+    <p id="bringup-what"></p>
+    <ul id="bringup-list" class="needs"></ul>
+    <p class="hint">Run these in a terminal on this machine, then come back. The cameras and the gate come up without them; the driver will not hold the arms until they are there.</p>
+    <div class="choice">
+      <button id="bringup-cancel">Cancel</button>
+      <button id="bringup-retry">Check again</button>
+      <button id="bringup-anyway" class="primary">Connect anyway</button>
+    </div>
+  </dialog>
+  <!-- A rollout kept this sitting, played back: the driven arms' cameras,
+       what convert learns from, and the top camera beside them. -->
+  <dialog id="corr-play">
+    <h2 id="corr-play-title"></h2>
+    <div class="clips">
+      <figure><video id="corr-play-left" controls muted playsinline preload="auto"></video><figcaption>left arm camera</figcaption></figure>
+      <figure id="corr-play-right-figure"><video id="corr-play-right" muted playsinline preload="auto"></video><figcaption>right arm camera</figcaption></figure>
+      <figure id="corr-play-head-figure"><video id="corr-play-head" muted playsinline preload="auto"></video><figcaption>top camera</figcaption></figure>
+    </div>
+    <p class="note" id="corr-play-note"></p>
+    <div class="choice"><button id="corr-play-close">Close</button></div>
+  </dialog>
+  <script type="module" src="/static/policy.js"></script>
+</body>
+</html>

@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+# LeRobot finds robots from other packages by distribution name: anything starting
+# lerobot_robot_ is imported under that same name. Underscores, not hyphens - the
+# name goes to import_module as it is.
+name = "lerobot_robot_pinkrab"
+version = "0.1.0"
+license = "Apache-2.0"
+description = "Pinkrab's two arms as a LeRobot robot type, for lerobot-calibrate, -record and the rest"
+requires-python = ">=3.10"
+dependencies = ["pinkrab_core"]
+
+[tool.setuptools]
+packages = ["lerobot_robot_pinkrab"]

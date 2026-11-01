@@ -1,0 +1,30 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>pinkrab_interfaces</name>
+  <version>0.1.0</version>
+  <description>
+    Service and message definitions shared by the Pinkrab nodes. Torque,
+    emergency stop and the teleop mode are each one call, so a client cannot
+    leave the robot half-configured between a parameter set and a trigger.
+    Joint data stays on sensor_msgs/JointState and is not redefined here.
+
+    Nothing but rosidl and builtin_interfaces is depended on, so a node that
+    only needs to speak to the driver does not pull in the driver.
+  </description>
+  <maintainer email="woolimi91@naver.com">Woolim Park</maintainer>
+  <license>Apache-2.0</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <buildtool_depend>rosidl_default_generators</buildtool_depend>
+
+  <depend>builtin_interfaces</depend>
+
+  <exec_depend>rosidl_default_runtime</exec_depend>
+
+  <member_of_group>rosidl_interface_packages</member_of_group>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

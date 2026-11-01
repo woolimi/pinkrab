@@ -1,0 +1,11 @@
+# Choose what is allowed to drive the arms.
+#
+# The teleop and studio clients stay up across a mode change; the mode decides
+# whose commands the gate lets through. Starting and stopping teleop is this
+# call, not a process being spawned and killed.
+
+# One of the MODE_ constants in TeleopState.
+uint8 mode
+---
+bool success
+string message

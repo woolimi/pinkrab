@@ -1,0 +1,84 @@
+Pinkrab
+Copyright 2026 Woolim Park
+
+This product includes software and hardware designs developed by Woolim Park,
+licensed under the Apache License, Version 2.0 (see LICENSE), EXCEPT where stated
+below.
+
+
+TheRobotStudio SO-ARM100 / SO-ARM 101 - Apache-2.0
+--------------------------------------------------
+https://github.com/TheRobotStudio/SO-ARM100
+
+The arm in src/pinkrab_description/urdf/pinkrab.urdf.xacro is derived from that
+project's Simulation/SO101/so101_new_calib.urdf, and most STLs in
+src/pinkrab_description/meshes/ are its assets, either verbatim or reshaped. The
+reshaped ones - base, upper_arm, claw, jaw - remain derivative works of it.
+
+
+ahb, "SO-ARM100 additional wrist joint" - CC BY-SA
+--------------------------------------------------
+https://makerworld.com/en/models/2845098
+
+    src/pinkrab_description/meshes/wrist_yaw_bracket_left.stl
+    src/pinkrab_description/meshes/wrist_yaw_bracket_right.stl
+
+These two files are derived from that model and are therefore licensed CC BY-SA,
+NOT Apache-2.0. Share-alike carries: anything derived from them - a reshaped
+bracket, a mesh cut out of one - carries CC BY-SA with it.
+
+The arm description references these meshes but does not incorporate their
+geometry, so the description itself is unaffected.
+
+
+Meta SAM 3 - SAM License (not included)
+---------------------------------------
+https://github.com/facebookresearch/sam3
+
+src/pinkrab_umi/pinkrab_umi/sam_track.py runs SAM 3 to find a task's things in
+the gripper videos. Neither SAM 3's code nor its weights are part of this
+product: they are installed separately (see the docs' install page) and are
+licensed under the SAM License, whose terms - including its acceptable use
+policy - apply to their use.
+
+
+three.js r160 - MIT
+-------------------
+https://github.com/mrdoob/three.js
+
+    src/pinkrab_studio/pinkrab_studio/static/three.module.min.js
+    src/pinkrab_studio/pinkrab_studio/static/OrbitControls.js
+    src/pinkrab_studio/pinkrab_studio/static/STLLoader.js
+
+Copyright © 2010-2023 three.js authors
+
+
+uPlot 1.6.32 - MIT
+------------------
+https://github.com/leeoniya/uPlot
+
+    src/pinkrab_studio/pinkrab_studio/static/uPlot.iife.min.js
+    src/pinkrab_studio/pinkrab_studio/static/uPlot.min.css
+
+Copyright (c) 2022 Leon Sorokin
+
+
+Both are distributed under the MIT License:
+
+    Permission is hereby granted, free of charge, to any person obtaining a copy
+    of this software and associated documentation files (the "Software"), to deal
+    in the Software without restriction, including without limitation the rights
+    to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+    copies of the Software, and to permit persons to whom the Software is
+    furnished to do so, subject to the following conditions:
+
+    The above copyright notice and this permission notice shall be included in
+    all copies or substantial portions of the Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+    AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+    OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+    SOFTWARE.

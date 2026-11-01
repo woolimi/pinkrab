@@ -1,0 +1,11 @@
+# The devices Pinkrab opens as the user who plugged them in.
+#
+#     sudo cp scripts/udev/60-pinkrab.rules /etc/udev/rules.d/
+#     sudo udevadm control --reload && sudo udevadm trigger
+#
+# then plug the device in again.
+
+# PCsensor foot switch (three pedals, a USB keyboard): its HID interface, read
+# by pinkrab-footswitch. hidraw is root-only by default.
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="3553", ATTRS{idProduct}=="b001", MODE="0660", GROUP="plugdev", TAG+="uaccess"
+SUBSYSTEM=="usb", ATTRS{idVendor}=="3553", ATTRS{idProduct}=="b001", MODE="0660", GROUP="plugdev", TAG+="uaccess"

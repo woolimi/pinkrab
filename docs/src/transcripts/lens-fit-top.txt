@@ -1,0 +1,4 @@
+  top camera: rms 0.465 px over 20 views (worst 0.67 px)
+    f 605.2 / 608.2 px (+-0.19%), centre (1045.8, 636.5), k +1.9460, +2.4231, -0.0005, +0.0003, +0.3098, +2.0318, +2.2415, +0.5145
+    it started from f 603.7 / 606.7, centre (1045.7, 636.5): f +0.25 %, centre +0.1, -0.0 px
+  written: ~/pinkrab/lens.yaml - the live view solves with it from its next start

@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pinkrab studio</title>
+  <link rel="icon" href="/static/claw.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/style.css">
+  <link rel="stylesheet" href="/static/home.css">
+  <script type="importmap">
+    { "imports": { "three": "/static/three.module.min.js" } }
+  </script>
+</head>
+<body class="home landing">
+  <main class="home">
+    <!-- The name, and whether this machine is set up: one line when it is,
+         the list of what is missing when it is not. -->
+    <header class="top">
+      <span class="brand"><svg class="claw" viewBox="0 0 64 64" aria-hidden="true"><use href="/static/claw.svg#claw"/></svg>Pinkrab studio</span>
+      <button class="setup-pill" id="setup-pill" aria-expanded="false" aria-controls="before">checking the setup…</button>
+    </header>
+
+    <!-- The robot itself, reaching for the pointer, and the way into driving
+         it: the arms on the wall - which starts the bridge and the handheld
+         loop beside the server before the page opens - or the simulation. -->
+    <section class="hero">
+      <div class="hero-text">
+        <!-- The name, drawn: round strokes like the crab's, and the k - where
+             pink and crab share a letter - taken apart into its stem and a
+             claw. "pink", with a plain k, is one layer; "crab" - a claw for
+             its c, then "rab" - another in front of it, each in its own pink.
+             Straight on, the claw covers the k's arms and they make one k;
+             turned, they come apart into the two words. -->
+        <h1 class="wordmark">
+          <span class="sr">Pinkrab</span>
+          <span class="tilt" id="wordmark" aria-hidden="true">
+            <svg class="layer-pin" viewBox="0 0 466 102">
+              <g fill="none" stroke="currentColor" stroke-width="20" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M11 89V11H38A21.5 21.5 0 0 1 38 54H11"/>
+                <path d="M91.5 89V44"/>
+                <path d="M123.5 89V44M123.5 65A21 21 0 0 1 165.5 65V89"/>
+                <path d="M197.5 89V11"/>
+                <!-- The k's arms, plain: straight on, the claw in front covers them. -->
+                <path d="M203 66L239 44M203 66L241 89"/>
+              </g>
+              <circle fill="currentColor" cx="91.5" cy="12" r="10.5"/>
+            </svg>
+            <svg class="layer-crab" viewBox="0 0 466 102">
+              <g fill="none" stroke="currentColor" stroke-width="20" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M276 89V44M276 66A22 22 0 0 1 298 44H302"/>
+                <circle cx="354.5" cy="66.5" r="22.5"/><path d="M377 44V89"/>
+                <path d="M409 89V11"/><circle cx="431.5" cy="66.5" r="22.5"/>
+              </g>
+              <!-- The claw: each finger the arm behind it in a wider stroke,
+                   a talon hooked in at its end, the knuckle over the joint. -->
+              <path fill="none" stroke="currentColor" stroke-width="27.0" stroke-linecap="round" d="M203.0 66.0L242.4 41.9M203.0 66.0L244.4 91.1"/>
+              <path fill="currentColor" d="M232.8 32.0Q251.0 21.4 263.9 46.4Q250.8 40.3 247.1 49.6ZM234.9 101.1Q253.1 111.5 265.9 86.5Q252.8 92.6 249.1 83.4Z"/>
+              <circle fill="currentColor" cx="203.0" cy="66.0" r="14.0"/>
+            </svg>
+          </span>
+        </h1>
+        <p class="lede">Two 6-DoF arms on a wall, taught by hand with Hermit.</p>
+        <div class="drive">
+          <button class="go primary" id="go-real" data-real="1"><b>Real robot</b><span>the arms on the wall</span></button>
+          <button class="go" id="go-sim" data-real="0"><b>Simulation</b><span>no arms needed</span></button>
+        </div>
+        <p class="hint" id="teleop-hint"></p>
+        <!-- Drawn while the robot's side starts: two lines and a bar. -->
+        <div class="progress" id="progress" hidden>
+          <div class="bar"><span></span></div>
+          <ul></ul>
+        </div>
+      </div>
+      <!-- The picture, and what is on it: each line from a part to what the
+           part is. dx and dy are where the words go from the part, in
+           fractions of the picture. -->
+      <figure class="scene">
+        <canvas id="hero-robot" aria-label="the two arms on their pegboard, and Hermit on the desk in front of them"></canvas>
+        <svg class="leaders" aria-hidden="true"></svg>
+        <ul class="callouts">
+          <li data-at="board" data-dx="0.12" data-dy="-0.12" hidden><b>IKEA SKÅDIS pegboard</b><span>the wall the arms hang on</span></li>
+          <li data-at="joints" data-dx="0.01" data-dy="-0.15" hidden><b>6-DoF arm</b><span>evolved from the 5-DoF SO&#8209;ARM&nbsp;101</span></li>
+          <li data-at="pink" data-dx="-0.13" data-dy="-0.024" hidden><b>Printed in hot pink</b><span>the pink in the name</span></li>
+          <li data-at="claw" data-dx="-0.005" data-dy="0.233" hidden><b>Claw gripper</b><span>the crab in the name</span></li>
+          <li data-at="hermit" data-dx="-0.01" data-dy="0.15" hidden><b>Hermit</b><span>the same claw, held in the hand to record demonstrations</span></li>
+        </ul>
+      </figure>
+    </section>
+
+    <!-- Data to a policy to the arms, in the order it happens. Each stage says
+         where it stands now. -->
+    <nav class="loop" aria-label="from demonstrations to a running policy">
+      <a class="stage" href="/collect">
+        <span class="step" aria-hidden="true">1</span>
+        <h2>Collect</h2>
+        <p>Record episodes with the handheld gripper: its cameras, the top camera's view of the solid and the desk, the pedals. No robot needed.</p>
+        <p class="now" id="now-collect">&nbsp;</p>
+      </a>
+      <a class="stage" href="/curate">
+        <span class="step" aria-hidden="true">2</span>
+        <h2>Curate</h2>
+        <p>Keep the takes worth training on, label what each gripper picture keeps, look the labels over, and convert - as recorded or with randomised backgrounds.</p>
+        <p class="now" id="now-curate">&nbsp;</p>
+      </a>
+      <a class="stage" href="/train">
+        <span class="step" aria-hidden="true">3</span>
+        <h2>Train</h2>
+        <p>Train on this machine or a GPU machine over ssh, and watch the loss come down as it does.</p>
+        <p class="now" id="now-train">&nbsp;</p>
+      </a>
+      <a class="stage" href="/policy">
+        <span class="step" aria-hidden="true">4</span>
+        <h2>Policy</h2>
+        <p>Show a checkpoint what the gripper camera sees now, see what it asks for, then let it drive an arm.</p>
+        <p class="now" id="now-policy">&nbsp;</p>
+      </a>
+    </nav>
+
+    <!-- What is done once per machine or per rig and then forgotten - a rule,
+         a board named, a servo calibrated, the desk measured - each with
+         whether it has been done here, and the line that does it. The same
+         list `pinkrab doctor` prints. -->
+    <section class="card before" id="before" hidden>
+      <h2>Before starting <span class="count" id="before-count"></span></h2>
+      <div class="before-bar" aria-hidden="true"><span id="before-bar"></span></div>
+      <div class="todo-groups" id="before-list"><p class="pending">looking ...</p></div>
+      <div class="choice">
+        <button id="before-again">Check again</button>
+      </div>
+      <p class="hint">Nothing here opens a servo or a camera; each line is done in a terminal, once.</p>
+    </section>
+  </main>
+  <!-- Teleop, asked for before sim or real was chosen: the choice, asked
+       here rather than by a silent trip back home. Sent back because the
+       robot's side went down, the bringup dialog opens instead - unless it is
+       up again by then, when this one does. (Policy drives an arm too, but
+       chooses real itself with its Connect.) -->
+  <dialog id="choose" class="sheet">
+    <h2>Sim or real first</h2>
+    <p id="choose-what">This page drives an arm, so it opens once you have chosen which arms.</p>
+    <div class="choice">
+      <button id="choose-cancel">Cancel</button>
+      <button id="choose-sim">Simulation</button>
+      <button id="choose-real" class="primary">Real robot</button>
+    </div>
+    <p class="hint">Collect, Train and Policy open as they are; Policy's Connect chooses the real robot itself.</p>
+  </dialog>
+  <!-- Real, with nothing to drive: the robot's own side is not running on
+       this machine. Said before the page opens, with the line to type. -->
+  <dialog id="bringup" class="sheet">
+    <h2>The robot is not up</h2>
+    <p id="bringup-what">Nothing is driving the arms on this machine: neither the driver nor the gate is running.</p>
+    <p>In a terminal on the robot's host:</p>
+    <div id="bringup-cmd"></div>
+    <p class="hint">Then come back here.</p>
+    <div class="choice">
+      <button id="bringup-cancel">Cancel</button>
+      <button id="bringup-retry" class="primary">Check again</button>
+    </div>
+  </dialog>
+  <script type="module" src="/static/home.js"></script>
+</body>
+</html>

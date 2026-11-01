@@ -1,0 +1,31 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>pinkrab_driver</name>
+  <version>0.1.0</version>
+  <description>
+    The servo bus, and nothing else. It reads both arms onto /joint_states, takes
+    poses from /joint_commands_checked, and switches torque on and off through
+    SetTorque and Estop.
+
+    The checked topic is the only one it subscribes to, so a gate that is not
+    running is a robot that takes no new commands rather than one taking them
+    unchecked. It knows nothing about teleop modes, handhelds or the studio: what
+    reaches it has already been held against the joint bands, the scene and the
+    ramp by pinkrab_safety, and a driver that also made those decisions would be
+    hardware deciding policy.
+  </description>
+  <maintainer email="woolimi91@naver.com">Woolim Park</maintainer>
+  <license>Apache-2.0</license>
+
+  <exec_depend>rclpy</exec_depend>
+  <!-- The middleware pinkrab_core's config pins, loaded by rclpy.init. -->
+  <exec_depend>rmw_cyclonedds_cpp</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
+  <exec_depend>pinkrab_interfaces</exec_depend>
+  <exec_depend>pinkrab_core</exec_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

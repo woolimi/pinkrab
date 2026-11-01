@@ -1,0 +1,63 @@
+---
+// ACT as LeRobot builds it: the CVAE encoder (training only) reads the true
+// chunk and the state into a latent z; the transformer encoder reads z, the
+// state and both cameras' ResNet tokens; 100 decoder queries answer the chunk.
+---
+
+<figure class="pk-fig not-content">
+	<svg viewBox="0 0 720 340" role="img" aria-label="ACT 의 구조: 학습 때만 쓰는 CVAE encoder, ResNet-18, transformer encoder 와 decoder">
+		<rect x="190" y="10" width="340" height="96" rx="8" class="zone" />
+		<text x="202" y="30" class="dim">학습 때만</text>
+		<rect x="202" y="42" width="120" height="48" rx="6" class="box" />
+		<text x="262" y="62" text-anchor="middle">정답 chunk</text>
+		<text x="262" y="80" text-anchor="middle" class="dim">100 × 20, state</text>
+		<rect x="346" y="42" width="170" height="48" rx="6" class="box" />
+		<text x="431" y="62" text-anchor="middle">CVAE encoder ×4</text>
+		<text x="431" y="80" text-anchor="middle" class="dim">μ, σ → z ~ N(μ, σ²)</text>
+		<path class="wire" d="M322 66 L344 66" marker-end="url(#act-arrow)" />
+
+		<rect x="350" y="118" width="110" height="44" rx="6" class="box-hot" />
+		<text x="405" y="136" text-anchor="middle">z (32)</text>
+		<text x="405" y="153" text-anchor="middle" class="dim">실행 때 0</text>
+		<path class="wire" d="M405 90 L405 116" marker-end="url(#act-arrow)" />
+
+		<rect x="20" y="124" width="150" height="34" rx="6" class="box" />
+		<text x="95" y="146" text-anchor="middle">그리퍼 영상 2장</text>
+		<rect x="20" y="182" width="150" height="48" rx="6" class="box" />
+		<text x="95" y="202" text-anchor="middle">ResNet-18</text>
+		<text x="95" y="220" text-anchor="middle" class="dim">1/32 feature map</text>
+		<path class="wire" d="M95 158 L95 180" marker-end="url(#act-arrow)" />
+
+		<rect x="210" y="124" width="110" height="34" rx="6" class="box" />
+		<text x="265" y="146" text-anchor="middle">state 11</text>
+
+		<rect x="200" y="182" width="270" height="48" rx="6" class="box" />
+		<text x="335" y="202" text-anchor="middle">transformer encoder ×4</text>
+		<text x="335" y="220" text-anchor="middle" class="dim">[z, state, 영상 token] 폭 512</text>
+		<path class="wire" d="M170 206 L198 206" marker-end="url(#act-arrow)" />
+		<path class="wire" d="M265 158 L265 180" marker-end="url(#act-arrow)" />
+		<path class="wire" d="M405 162 L405 180" marker-end="url(#act-arrow)" />
+		<text x="20" y="252" class="dim">칸마다 token 하나, 2D sine 위치</text>
+
+		<rect x="530" y="124" width="170" height="34" rx="6" class="box" />
+		<text x="615" y="146" text-anchor="middle">query ×100</text>
+		<rect x="530" y="182" width="170" height="48" rx="6" class="box" />
+		<text x="615" y="202" text-anchor="middle">transformer decoder ×1</text>
+		<text x="615" y="220" text-anchor="middle" class="dim">cross-attention</text>
+		<path class="wire" d="M470 206 L528 206" marker-end="url(#act-arrow)" />
+		<path class="wire" d="M615 158 L615 180" marker-end="url(#act-arrow)" />
+		<rect x="545" y="256" width="140" height="34" rx="6" class="box-hot" />
+		<text x="615" y="278" text-anchor="middle">chunk 100 × 20</text>
+		<path class="wire" d="M615 230 L615 254" marker-end="url(#act-arrow)" />
+
+		<text x="20" y="318" class="mono">loss = L1(chunk, 정답) + 10 · KL( N(μ, σ²) ‖ N(0, I) )</text>
+		<defs>
+			<marker id="act-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+				<path d="M0 0 L10 5 L0 10z" class="fill-dim" />
+			</marker>
+		</defs>
+	</svg>
+	<figcaption>
+		점선 안의 CVAE encoder 는 학습 때만 돌고, 정답 chunk 가 어느 방식의 동작이었는지를 z 로 줄여 encoder 에 건넵니다. 실행 때는 정답이 없으므로 z 를 prior 의 중심인 0 으로 둡니다.
+	</figcaption>
+</figure>

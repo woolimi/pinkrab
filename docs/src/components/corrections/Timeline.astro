@@ -1,0 +1,80 @@
+---
+// One Drive recorded whole: who had the arms at each reading (`controller`),
+// which take-over each reading belongs to (`correction`), the pedals that
+// changed it, and the stretches convert keeps - only the hands', and not
+// those of a correction thrown away.
+const bar = { y: 70, h: 30 };
+const parts = [
+	{ x: 20, w: 100, kind: 'policy' },
+	{ x: 120, w: 40, kind: 'hold' },
+	{ x: 160, w: 85, kind: 'human' },
+	{ x: 245, w: 40, kind: 'hold' },
+	{ x: 285, w: 45, kind: 'human' },
+	{ x: 330, w: 80, kind: 'policy' },
+	{ x: 410, w: 40, kind: 'hold' },
+	{ x: 450, w: 50, kind: 'thrown' },
+	{ x: 500, w: 55, kind: 'none' },
+	{ x: 555, w: 40, kind: 'hold' },
+	{ x: 595, w: 65, kind: 'human' },
+	{ x: 660, w: 40, kind: 'policy' },
+];
+const label = { policy: 'policy', hold: 'hold', human: 'human', thrown: 'human', none: 'none' };
+const pedals = [
+	[120, '2'], [160, '1'], [245, '1'], [285, '1'], [330, '2'],
+	[410, '2'], [450, '1'], [500, '3'], [525, '2'], [595, '1'], [660, '2'],
+];
+const corrections = [
+	{ x: 120, w: 210, n: '교정 1' },
+	{ x: 410, w: 90, n: '교정 2 (버림)' },
+	{ x: 555, w: 105, n: '교정 3' },
+];
+const kept = [
+	{ x: 160, w: 85 },
+	{ x: 285, w: 45 },
+	{ x: 595, w: 65 },
+];
+---
+
+<figure class="pk-fig not-content">
+	<svg viewBox="0 0 720 230" role="img" aria-label="Drive 한 번의 기록에서 controller 가 바뀌는 모습과 dataset 에 남는 구간">
+		<text x="20" y="20" class="head">페달</text>
+		{pedals.map(([x, p]) => (
+			<g>
+				<circle cx={x} cy="44" r="9" class={p === '3' ? 'box-hot' : 'box'} />
+				<text x={x} y="48" text-anchor="middle" class="dim">{p}</text>
+				<path class="wire dash" d={`M${x} 53 L${x} ${bar.y}`} />
+			</g>
+		))}
+
+		{parts.map((p) => (
+			<g>
+				<rect x={p.x} y={bar.y} width={p.w} height={bar.h}
+					class={p.kind === 'human' ? 'box-hot' : p.kind === 'thrown' ? 'zone' : 'box'} />
+				<text x={p.x + p.w / 2} y={bar.y + 19} text-anchor="middle" class={p.kind === 'human' ? 'hot' : 'dim'}>
+					{label[p.kind]}
+				</text>
+			</g>
+		))}
+		<text x="700" y={bar.y + bar.h + 16} text-anchor="end" class="dim">controller</text>
+
+		{corrections.map((c) => (
+			<g>
+				<path class="wire" d={`M${c.x} 122 L${c.x} 130 L${c.x + c.w} 130 L${c.x + c.w} 122`} />
+				<text x={c.x + c.w / 2} y="146" text-anchor="middle" class="dim">{c.n}</text>
+			</g>
+		))}
+		<text x="527" y="146" text-anchor="middle" class="dim">되돌아감</text>
+
+		<text x="20" y="186" class="head">dataset</text>
+		{kept.map((k) => (
+			<g>
+				<rect x={k.x} y="174" width={k.w} height="22" rx="3" class="box-hot" />
+				<text x={k.x + k.w / 2} y="189" text-anchor="middle" class="hot">에피소드</text>
+			</g>
+		))}
+		<text x="20" y="220" class="dim">human 구간마다 에피소드 하나. hold 가 구간을 나누고, 버린 교정과 policy 구간은 남지 않음</text>
+	</svg>
+	<figcaption>
+		Drive 한 번은 처음부터 끝까지 기록되고, 관절 읽기값마다 그때 누가 팔을 움직였는지와 몇 번째 교정인지가 붙습니다. Convert 는 버리지 않은 교정의 human 구간만 에피소드로 만듭니다.
+	</figcaption>
+</figure>
