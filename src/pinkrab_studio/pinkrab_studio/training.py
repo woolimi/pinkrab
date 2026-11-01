@@ -63,12 +63,12 @@ CREATE TABLE IF NOT EXISTS checkpoints (
     run_id INTEGER NOT NULL, step INTEGER NOT NULL, path TEXT, t REAL, local TEXT,
     PRIMARY KEY (run_id, step));
 CREATE TABLE IF NOT EXISTS launches (
-    source TEXT NOT NULL, output_dir TEXT NOT NULL, auto_fetch INTEGER NOT NULL DEFAULT 1,
+    source TEXT NOT NULL, output_dir TEXT NOT NULL,
     recipe TEXT, log TEXT, t REAL, PRIMARY KEY (source, output_dir));
 """
 # Columns added after a store was first made: added to an older file on open.
-# An older file keeps the runs' `hidden` column, which nothing reads now: left
-# there, a studio still running from before reads the same file unbroken.
+# An older file keeps the runs' `hidden` and the launches' `auto_fetch` columns,
+# which nothing reads now: left there, a studio still running from before reads the same file unbroken.
 MIGRATIONS = ("ALTER TABLE checkpoints ADD COLUMN local TEXT", "ALTER TABLE sources ADD COLUMN gpu TEXT")
 # How a training names its run on its command line - the same argument Stop
 # finds a run's process by.
@@ -507,10 +507,8 @@ class TrainStore:
                 row["rate"] = rate
                 row["checkpoints"], row["fetched"] = db.execute(
                     "SELECT COUNT(*), COUNT(local) FROM checkpoints WHERE run_id = ?", (row["id"],)).fetchone()
-                launch = db.execute("SELECT auto_fetch FROM launches WHERE source = ? AND output_dir = ?",
-                                    (row["source"], row["output_dir"])).fetchone()
-                row["launched"] = launch is not None
-                row["auto_fetch"] = bool(launch and launch[0])
+                row["launched"] = db.execute("SELECT 1 FROM launches WHERE source = ? AND output_dir = ?",
+                                             (row["source"], row["output_dir"])).fetchone() is not None
                 if row["status"] == "running" and (row["updated"] is None or now - row["updated"] > CORE.train_stale_s):
                     row["status"] = "quiet"
                 left = (row["steps"] or 0) - (row["last_step"] or 0)
@@ -544,31 +542,31 @@ class TrainStore:
             launch = db.execute("SELECT * FROM launches WHERE source = ? AND output_dir = ?",
                                 (found["source"], found["output_dir"])).fetchone()
             found["launch"] = dict(launch) if launch else None
+        # Where its checkpoints are on this machine: a run trained elsewhere is
+        # copied home under the train directory, by its name.
+        found["here"] = str(Path(found["output_dir"]) / "checkpoints" if found["source"] == LOCAL
+                            else CORE.train_dir / found["name"] / "checkpoints")
         return found
 
-    def record_launch(self, source: str, output_dir: str, auto_fetch: bool, recipe: dict, log: str) -> None:
+    def record_launch(self, source: str, output_dir: str, recipe: dict, log: str) -> None:
         with self._lock, self._db() as db:
-            db.execute("INSERT OR REPLACE INTO launches VALUES (?, ?, ?, ?, ?, ?)",
-                       (source, output_dir, 1 if auto_fetch else 0, json.dumps(recipe), log, time.time()))
-
-    def set_auto_fetch(self, run_id: int, on: bool) -> None:
-        run = self.run(run_id)
-        with self._lock, self._db() as db:
-            db.execute("""INSERT INTO launches (source, output_dir, auto_fetch, t) VALUES (?, ?, ?, ?)
-                          ON CONFLICT(source, output_dir) DO UPDATE SET auto_fetch = excluded.auto_fetch""",
-                       (run["source"], run["output_dir"], 1 if on else 0, time.time()))
+            db.execute("INSERT OR REPLACE INTO launches (source, output_dir, recipe, log, t) VALUES (?, ?, ?, ?, ?)",
+                       (source, output_dir, json.dumps(recipe), log, time.time()))
 
     def mark_fetched(self, run_id: int, step: int, local: str) -> None:
         with self._lock, self._db() as db:
             db.execute("UPDATE checkpoints SET local = ? WHERE run_id = ? AND step = ?", (local, run_id, step))
 
+    def forget_checkpoint(self, run_id: int, step: int) -> None:
+        with self._lock, self._db() as db:
+            db.execute("DELETE FROM checkpoints WHERE run_id = ? AND step = ?", (run_id, step))
+
     def to_fetch(self) -> list[dict]:
-        """Checkpoints of runs that fetch their own, saved and not yet here."""
+        """Checkpoints saved on another machine and not yet here."""
         with self._db() as db:
             return [dict(r) for r in db.execute(
                 """SELECT c.run_id, c.step, c.path FROM checkpoints c JOIN runs r ON r.id = c.run_id
-                   JOIN launches l ON l.source = r.source AND l.output_dir = r.output_dir
-                   WHERE l.auto_fetch = 1 AND c.local IS NULL AND r.source != ? ORDER BY c.run_id, c.step""",
+                   WHERE c.local IS NULL AND r.source != ? ORDER BY c.run_id, c.step""",
                 (LOCAL,))]
 
 

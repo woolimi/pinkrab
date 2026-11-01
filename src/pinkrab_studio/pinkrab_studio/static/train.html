@@ -83,9 +83,16 @@
   <!-- One run: what it is, where it is, the checkpoints it has saved, and
        the configuration it was started with. -->
   <dialog id="run">
-    <header><h2 id="run-title">run</h2><button id="run-close">Close</button></header>
+    <header>
+      <div class="heading"><h2 id="run-title">run</h2><p class="what" id="run-what"></p></div>
+      <button id="run-close">Close</button>
+    </header>
     <dl class="facts" id="run-facts"></dl>
-    <h3>checkpoints <label class="autofetch"><input type="checkbox" id="run-autofetch"> copy each one here as it is saved</label></h3>
+    <div class="checkpoints-head">
+      <h3>checkpoints</h3>
+      <code id="run-here"></code>
+      <button class="icon" id="run-here-copy" title="copy this folder's path"></button>
+    </div>
     <table class="checkpoints"><tbody id="run-checkpoints"></tbody></table>
     <details><summary>configuration</summary><pre id="run-config"></pre></details>
     <p class="error" id="run-error"></p>
@@ -114,7 +121,6 @@
       </div>
       <label>name <input name="name" placeholder="policy-dataset-date, if left empty"></label>
       <label>more lerobot-train arguments <input name="extra" placeholder="--policy.optimizer_lr=5e-5"></label>
-      <label class="check"><input type="checkbox" name="auto_fetch" checked> copy each checkpoint here as it is saved</label>
       <p class="error" id="launch-error"></p>
       <div class="choice"><button type="submit" class="primary">Start</button></div>
     </form>

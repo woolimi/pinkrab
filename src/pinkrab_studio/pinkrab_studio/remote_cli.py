@@ -55,7 +55,6 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--save-freq", type=int, default=DEFAULTS["save_freq"])
     p.add_argument("--gpu", default="0")
     p.add_argument("--name")
-    p.add_argument("--no-fetch", action="store_true", help="leave the checkpoints where they are made")
     p.add_argument("--extra", default="", help="more lerobot-train arguments, as one string")
     sub.add_parser("runs", help="every run read so far")
     for name, what in (("stop", "stop a run"), ("resume", "resume a run from its last checkpoint")):
@@ -99,7 +98,7 @@ def main(argv: list[str] | None = None) -> int:
             done = jobs.launch_now({"source": args.source, "dataset": args.dataset, "policy": args.policy,
                                     "steps": args.steps, "batch_size": args.batch, "log_freq": args.log_freq,
                                     "save_freq": args.save_freq, "gpu": args.gpu, "name": args.name,
-                                    "auto_fetch": not args.no_fetch, "extra": args.extra},
+                                    "extra": args.extra},
                                    say=lambda line: print(f"  {line}", flush=True))
             time.sleep(2.0)
             store.sync(args.source)

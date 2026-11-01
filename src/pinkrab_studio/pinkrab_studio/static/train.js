@@ -92,7 +92,9 @@ function num(v) {
   return v.toPrecision(4).replace(/\.?0+$/, '');
 }
 function clock(t) {
-  return t ? new Date(t * 1000).toLocaleString() : '—';
+  if (!t) return '—';
+  const d = new Date(t * 1000), two = (n) => String(n).padStart(2, '0');
+  return `${two(d.getMonth() + 1)}-${two(d.getDate())} ${two(d.getHours())}:${two(d.getMinutes())}`;
 }
 
 // --- the run list ------------------------------------------------------------------
@@ -411,62 +413,81 @@ const runDialog = document.getElementById('run');
 const runErrorEl = document.getElementById('run-error');
 let openRunId = null;
 
+const TRASH = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v6M14 11v6"/></svg>';
+const COPY = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h9"/></svg>';
+const CHECK = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7"/></svg>';
+const hereCopyEl = document.getElementById('run-here-copy');
+hereCopyEl.innerHTML = COPY;
+hereCopyEl.addEventListener('click', async () => {
+  try { await navigator.clipboard.writeText(document.getElementById('run-here').textContent); } catch { return; }
+  hereCopyEl.innerHTML = CHECK;
+  setTimeout(() => { hereCopyEl.innerHTML = COPY; }, 1200);
+});
+
+// One checkpoint: its step, when it was saved - or that it is on its way
+// here - and its delete, pressed twice.
+function checkpointRow(id, c, local) {
+  const tr = document.createElement('tr');
+  tr.innerHTML = '<td class="step"></td><td class="when"></td><td class="act"></td>';
+  tr.children[0].textContent = steps(c.step);
+  tr.children[0].title = `step ${c.step.toLocaleString()}`;
+  const when = tr.children[1];
+  // A run trained on this machine saved it here; another's is here once copied.
+  const here = local || !!c.local;
+  if (here) when.textContent = clock(c.t);
+  else { when.textContent = 'copying here'; when.classList.add('pending'); }
+  const del = document.createElement('button');
+  del.className = 'remove';
+  del.innerHTML = TRASH;
+  // A checkpoint being copied cannot be deleted from under the copy.
+  del.disabled = !here;
+  del.title = here ? 'delete this checkpoint, on the machine it was saved on and here' : 'being copied here';
+  del.addEventListener('click', async () => {
+    if (!del.classList.contains('sure')) { del.classList.add('sure'); del.textContent = 'Delete?'; return; }
+    del.disabled = true;
+    try { await post('/train/checkpoint/delete', { id, step: c.step }); openRun(id); } catch (exc) { runErrorEl.textContent = exc.message; del.disabled = false; }
+  });
+  del.addEventListener('mouseleave', () => { if (del.classList.contains('sure')) { del.classList.remove('sure'); del.innerHTML = TRASH; } });
+  tr.children[2].append(del);
+  return tr;
+}
+
 async function openRun(id) {
-  const r = await (await fetch(`/train/run?id=${id}`)).json();
-  if (r.error) return;
+  // A run that ended badly carries its own `error`; only the answer's status
+  // says the run could not be read.
+  const answer = await fetch(`/train/run?id=${id}`);
+  if (!answer.ok) return;
+  const r = await answer.json();
   openRunId = id;
   runErrorEl.textContent = '';
   const listed = runs.find((x) => x.id === id);
   const status = listed?.status || r.status;
-  const local = r.source === 'this machine';
   document.getElementById('run-title').textContent = r.name || r.output_dir;
+  const what = document.getElementById('run-what');
+  const chip = Object.assign(document.createElement('span'), { className: `chip ${status}`, textContent: status });
+  what.replaceChildren(chip, ` ${r.policy || '?'} · ${r.dataset || '?'} · ${r.source}`);
   const facts = [
-    ['status', status + (r.error ? ` - ${r.error}` : '')], ['source', r.source], ['host', r.host],
-    ['output', r.output_dir], ['policy', r.policy], ['dataset', r.dataset],
     ['steps', `${(r.last_step || 0).toLocaleString()} of ${(r.steps || 0).toLocaleString()}`],
     ['batch', r.batch_size], ['log every', r.log_freq ? `${r.log_freq} steps` : null],
     ['started', clock(r.started)], ['last news', clock(r.updated)],
-    ...(r.launch?.log ? [['terminal', r.launch.log]] : []),
+    ['ended on', r.error], ['host', r.host], ['output', r.output_dir], ['terminal', r.launch?.log],
   ];
   const dl = document.getElementById('run-facts');
   // A fact the run did not leave is left out, not shown as a dash.
   dl.replaceChildren(...facts.filter(([, v]) => v !== null && v !== undefined && v !== '').flatMap(([k, v]) => {
     const dt = document.createElement('dt'); dt.textContent = k;
-    const dd = document.createElement('dd'); dd.textContent = v ?? '—';
+    const dd = document.createElement('dd'); dd.textContent = v;
     return [dt, dd];
   }));
-  const autofetch = document.getElementById('run-autofetch');
-  autofetch.parentElement.hidden = local;
-  autofetch.checked = !!r.launch?.auto_fetch;
+  document.getElementById('run-here').textContent = r.here;
   const body = document.getElementById('run-checkpoints');
-  body.replaceChildren(...(r.checkpoints.length ? r.checkpoints : [null]).map((c) => {
-    const tr = document.createElement('tr');
-    if (!c) { tr.innerHTML = '<td colspan="3">none saved yet</td>'; return tr; }
-    tr.innerHTML = '<td></td><td></td><td></td>';
-    tr.children[0].textContent = steps(c.step);
-    const here = local ? `${c.path}/pretrained_model` : c.local;
-    tr.children[1].textContent = here || c.path;
-    const cell = tr.children[2];
-    if (here) {
-      const mark = document.createElement('span'); mark.className = 'here'; mark.textContent = 'here ';
-      const copy = document.createElement('button'); copy.textContent = 'copy path';
-      copy.addEventListener('click', () => navigator.clipboard?.writeText(here));
-      cell.append(mark, copy);
-    } else {
-      const get = document.createElement('button'); get.textContent = 'copy here';
-      get.addEventListener('click', async () => {
-        get.disabled = true;
-        try { await post('/train/fetch', { id, step: c.step }); get.textContent = 'queued'; } catch (exc) { runErrorEl.textContent = exc.message; get.disabled = false; }
-      });
-      cell.append(get);
-    }
-    return tr;
-  }));
+  if (r.checkpoints.length) body.replaceChildren(...r.checkpoints.map((c) => checkpointRow(id, c, r.source === 'this machine')));
+  else body.innerHTML = '<tr><td class="none" colspan="3">none saved yet</td></tr>';
   document.getElementById('run-config').textContent = r.config ? JSON.stringify(r.config, null, 2) : '';
   document.getElementById('run-config').closest('details').hidden = !r.config;
   document.getElementById('run-stop').hidden = !['running', 'quiet'].includes(status);
   document.getElementById('run-resume').hidden = ['running', 'done'].includes(status) || !r.checkpoints.length;
-  runDialog.showModal();
+  if (!runDialog.open) runDialog.showModal();
 }
 document.getElementById('run-close').addEventListener('click', () => runDialog.close());
 // A click outside the dialog's box - on the backdrop - closes it too, when
@@ -489,9 +510,6 @@ runDialog.addEventListener('mousedown', (e) => { pressedOnBackdrop = onBackdrop(
 runDialog.addEventListener('click', (e) => {
   if (pressedOnBackdrop && onBackdrop(e)) runDialog.close();
   pressedOnBackdrop = false;
-});
-document.getElementById('run-autofetch').addEventListener('change', async (e) => {
-  try { await post('/train/autofetch', { id: openRunId, on: e.target.checked }); } catch (exc) { runErrorEl.textContent = exc.message; }
 });
 for (const [button, url] of [['run-stop', '/train/stop'], ['run-resume', '/train/resume']]) {
   const el = document.getElementById(button);
@@ -564,7 +582,6 @@ launchForm.addEventListener('submit', async (e) => {
   e.preventDefault();
   launchErrorEl.textContent = '';
   const payload = Object.fromEntries(new FormData(launchForm).entries());
-  payload.auto_fetch = launchForm.auto_fetch.checked;
   for (const k of ['steps', 'batch_size', 'log_freq', 'save_freq']) payload[k] = payload[k] ? Number(payload[k]) : null;
   try {
     await post('/train/launch', payload);
@@ -578,8 +595,6 @@ launchForm.addEventListener('submit', async (e) => {
 
 const sourcesDialog = document.getElementById('sources');
 const form = sourceForm(document.getElementById('source-form'), async () => form.say('saved - reading it now'));
-
-const TRASH = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v6M14 11v6"/></svg>';
 
 function renderSources(now) {
   const list = document.getElementById('sources-list');

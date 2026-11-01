@@ -424,8 +424,37 @@ class Jobs:
             self._queued_fetches.add((run_id, step))
         self._submit("fetch", f"{run['name']} step {step}", lambda say: self._fetch(run, step, say))
 
+    def delete_checkpoint(self, run_id: int, step: int, in_use: str = "") -> None:
+        """One checkpoint gone from the machine it was saved on and from here.
+        `in_use` is the checkpoint the Policy page has loaded, if any."""
+        run = self.store.run(run_id)
+        c = next((c for c in run["checkpoints"] if c["step"] == step), None)
+        if c is None:
+            raise LaunchError(f"{run['name']} has no checkpoint at step {step}")
+        with self._lock:
+            if (run_id, step) in self._queued_fetches:
+                raise LaunchError(f"{run['name']} step {step} is being copied here - delete it once that is done")
+        source = self.store.source(run["source"])
+        here = Path(c["path"]) if source["kind"] == "local" else Path(c["local"]).parent if c.get("local") else None
+        if in_use and here and Path(in_use).is_relative_to(here):
+            raise LaunchError(f"{run['name']} step {step} is loaded on the Policy page - stop it first")
+        # rm -rf only on what is a run's checkpoints/<step>.
+        for path in (Path(c["path"]) if c.get("path") else None, here):
+            if path and path.parent.name != "checkpoints":
+                raise LaunchError(f"{path} is not a checkpoint directory")
+        if c.get("path"):
+            ckpt, parent = shlex.quote(c["path"]), shlex.quote(str(Path(c["path"]).parent))
+            # `last` is what Resume starts from: it moves to the newest checkpoint
+            # left, and goes with the last of them.
+            _run(source, f"rm -rf -- {ckpt} && cd {parent} && "
+                         "n=$(ls -1 | grep -E '^[0-9]+$' | sort -n | tail -n 1); "
+                         'if [ -n "$n" ]; then ln -sfn "$n" last; else rm -f last; fi', timeout=60.0)
+        if source["kind"] != "local" and here:
+            shutil.rmtree(here, ignore_errors=True)
+        self.store.forget_checkpoint(run_id, step)
+
     def fetch_due(self) -> None:
-        """Every checkpoint of a run that fetches its own, not yet here."""
+        """Every checkpoint saved on another machine and not yet here."""
         now = time.monotonic()
         for c in self.store.to_fetch():
             with self._lock:
@@ -465,8 +494,7 @@ class Jobs:
         args += [f"--policy.chunk_size={chunk}", f"--policy.n_action_steps={chunk}"]
         extra = shlex.split(str(payload.get("extra") or ""))
         return {"source": name, "kind": source["kind"], "policy": policy, "dataset": dataset, "run": run,
-                "args": args, "extra": extra, "workers": recipe["workers"], "gpu": str(payload.get("gpu") or "0"),
-                "auto_fetch": bool(payload.get("auto_fetch", True))}
+                "args": args, "extra": extra, "workers": recipe["workers"], "gpu": str(payload.get("gpu") or "0")}
 
     def _ready(self, source: dict, say) -> dict:
         """The machine set up to train: the kit there, and a venv from this lock."""
@@ -570,7 +598,7 @@ class Jobs:
             env |= {"TORCH_HOME": f"{root}/torch-cache", "HF_HOME": f"{root}/hf-cache"}
         say(f"starting {plan['run']}")
         log = self._start(source, root, plan["run"], args, env, say)
-        self.store.record_launch(source["name"], output, plan["auto_fetch"], plan, log)
+        self.store.record_launch(source["name"], output, plan, log)
         say(f"started - its terminal is {log}")
         return {"run": plan["run"], "output_dir": output, "log": log}
 

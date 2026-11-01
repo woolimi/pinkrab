@@ -1362,7 +1362,7 @@ def make_handler(state: StudioState, allowed_hosts: frozenset[str] | None = None
                 return
 
             if path in ("/train/sources/key", "/train/sources/test", "/train/launch", "/train/stop",
-                        "/train/resume", "/train/fetch", "/train/autofetch"):
+                        "/train/resume", "/train/checkpoint/delete"):
                 payload = self._body()
                 if payload is None:
                     return
@@ -1381,12 +1381,10 @@ def make_handler(state: StudioState, allowed_hosts: frozenset[str] | None = None
                     elif path == "/train/resume":
                         jobs.resume(int(payload["id"]))
                         answer = {"ok": True}
-                    elif path == "/train/fetch":
-                        jobs.fetch(int(payload["id"]), int(payload["step"]))
-                        answer = {"ok": True}
                     else:
-                        store.set_auto_fetch(int(payload["id"]), bool(payload.get("on", True)))
-                        jobs.fetch_due()
+                        policy = state.policy.state()
+                        jobs.delete_checkpoint(int(payload["id"]), int(payload["step"]),
+                                               in_use=policy["checkpoint"] if policy["running"] else "")
                         answer = {"ok": True}
                 except (LaunchError, TrainError, KeyError, TypeError, ValueError) as exc:
                     self._send_json({"error": str(exc)}, 400)

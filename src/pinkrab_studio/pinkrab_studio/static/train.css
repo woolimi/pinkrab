@@ -98,8 +98,7 @@ dl.facts dt { color: var(--dim); }
 dl.facts dd { margin: 0; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
 table.checkpoints, table.sources { width: 100%; border-collapse: collapse; font-size: 12px; }
 table.checkpoints td, table.sources td { padding: 4px 6px; border-top: 1px solid var(--line); vertical-align: top; overflow-wrap: anywhere; }
-table.checkpoints td:first-child { width: 70px; font-variant-numeric: tabular-nums; font-weight: 600; }
-table.checkpoints button, table.sources button { padding: 2px 8px; font-size: 11px; }
+table.sources button { padding: 2px 8px; font-size: 11px; }
 table.sources .err { color: var(--shell-deep); }
 dialog details { margin-top: 12px; font-size: 12px; }
 dialog details pre { max-height: 360px; overflow: auto; background: var(--paper); border: 1px solid var(--line); border-radius: 6px; padding: 8px; font-size: 11px; }
@@ -133,9 +132,30 @@ dialog#launch::backdrop { background: rgba(44,26,37,.45); }
 #launch-form .probe, table.sources .probe { margin: 0; font-size: 11px; color: var(--dim); }
 #launch-form .error, dialog#run .error { margin: 0; font-size: 12px; color: var(--shell-deep); }
 #launch-form .error:empty, dialog#run .error:empty { display: none; }
-dialog#run h3 .autofetch { float: right; text-transform: none; letter-spacing: 0; font-weight: 400; display: inline-flex; gap: 5px; align-items: center; }
 dialog#run .choice button.stop { background: var(--panel); border-color: var(--shell); color: var(--shell-deep); }
-table.checkpoints .here { color: #1d7a3a; font-size: 11px; }
+dialog#run header { align-items: flex-start; }
+dialog#run .heading { min-width: 0; }
+dialog#run .heading .what { margin: 4px 0 0; font-size: 12px; color: var(--dim); }
+dialog#run dl.facts { padding-bottom: 12px; border-bottom: 1px solid var(--line); }
+.checkpoints-head { display: flex; align-items: center; gap: 10px; margin: 12px 0 4px; min-width: 0; }
+.checkpoints-head h3 { margin: 0; flex: 0 0 auto; }
+.checkpoints-head code {
+  flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font: 11px ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--dim);
+}
+.checkpoints-head button.icon {
+  flex: 0 0 auto; width: 26px; height: 26px; padding: 0; border-radius: 6px; display: inline-flex;
+  align-items: center; justify-content: center; background: none; border: 1px solid transparent;
+}
+.checkpoints-head button.icon svg { width: 14px; height: 14px; fill: none; stroke: var(--dim); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.checkpoints-head button.icon:hover { border-color: var(--line-strong); background: var(--paper); }
+.checkpoints-head button.icon:hover svg { stroke: var(--text); }
+table.checkpoints td { vertical-align: middle; padding: 3px 6px; }
+table.checkpoints tr:first-child td { border-top: 0; }
+table.checkpoints td.step { width: 64px; font-variant-numeric: tabular-nums; font-weight: 600; }
+table.checkpoints td.when { color: var(--dim); font-variant-numeric: tabular-nums; white-space: nowrap; }
+table.checkpoints td.act { width: 1%; text-align: right; white-space: nowrap; }
+table.checkpoints td.none { color: var(--dim); padding: 8px 6px; }
 
 /* --- a link that looks like the header's buttons -------------------------------- */
 
@@ -225,13 +245,16 @@ ul.source-list { list-style: none; margin: 0 0 6px; padding: 0; }
 .source-row .probe { grid-column: 1 / -1; margin: 2px 0 0; font-size: 11px; color: var(--dim); }
 .source-row .probe:empty { display: none; }
 .source-row .actions { grid-column: 2; grid-row: 1 / span 2; display: flex; gap: 8px; align-items: center; }
-.source-row button.remove {
+.source-row button.remove, table.checkpoints button.remove {
   flex: 0 0 auto; width: 30px; height: 30px; padding: 0; border-radius: 7px; display: inline-flex;
   align-items: center; justify-content: center; background: none; border: 1px solid transparent;
 }
-.source-row button.remove svg { width: 15px; height: 15px; fill: none; stroke: var(--dim); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-.source-row button.remove:hover { border-color: var(--shell); background: #fdf0f5; }
-.source-row button.remove:hover svg { stroke: var(--shell-deep); }
-.source-row button.remove.sure { width: auto; padding: 0 10px; border-color: var(--shell); background: var(--shell); color: #fff; font-size: 12px; font-weight: 600; }
+.source-row button.remove svg, table.checkpoints button.remove svg { width: 15px; height: 15px; fill: none; stroke: var(--dim); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.source-row button.remove:hover, table.checkpoints button.remove:hover:not(:disabled) { border-color: var(--shell); background: #fdf0f5; }
+.source-row button.remove:hover svg, table.checkpoints button.remove:hover:not(:disabled) svg { stroke: var(--shell-deep); }
+.source-row button.remove.sure, table.checkpoints button.remove.sure,
+table.checkpoints button.remove.sure:hover:not(:disabled) { width: auto; padding: 0 10px; border-color: var(--shell-deep); background: var(--shell-deep); color: #fff; font-size: 12px; font-weight: 600; }
+table.checkpoints button.remove { width: 28px; height: 28px; }
+table.checkpoints button.remove:disabled { opacity: .35; cursor: default; }
 /* A dialog's own action sits at its natural width, bottom right. */
 dialog#run .choice button, dialog#launch .choice button, dialog#sources .choice button { flex: 0 0 auto; padding: 8px 18px; }

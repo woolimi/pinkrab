@@ -45,7 +45,7 @@ studio 를 실행한 컴퓨터에 GPU 가 없으면, ssh 로 접속할 수 있�
 
 - **보내기**: 학습을 시작하면 studio 가 dataset 을 그 컴퓨터로 보내고, 필요한 Python 환경을 설치한 뒤 학습을 띄웁니다.
 - **지표**: studio 가 30 초마다 그 컴퓨터의 학습 기록을 읽어 와 이 컴퓨터에 쌓으므로, loss 같은 지표가 Train 페이지에 이 컴퓨터의 run 과 똑같이 그려집니다. 연결이 끊겼다 다시 이어지면 그동안의 기록도 이어서 가져옵니다.
-- **checkpoint**: **copy each checkpoint here** 를 켜 두면 checkpoint 가 저장될 때마다 이 컴퓨터로 복사되고, 아니면 run 의 **copy here** 로 원하는 것만 가져옵니다. 가져온 checkpoint 는 바로 Policy 페이지에서 [실행](../run/)할 수 있습니다.
+- **checkpoint**: checkpoint 는 저장될 때마다 이 컴퓨터로 복사됩니다. studio 가 꺼져 있던 동안 저장된 것은 다시 켜질 때 가져옵니다. 복사된 checkpoint 는 바로 Policy 페이지에서 [실행](../run/)할 수 있습니다.
 
 ## 새 학습
 
@@ -61,7 +61,6 @@ studio 를 실행한 컴퓨터에 GPU 가 없으면, ssh 로 접속할 수 있�
 | log every, checkpoint every | 기본 50, 20 000. log 간격을 줄이면 차트가 촘촘해질 뿐 학습 속도는 그대로입니다 |
 | name | 비워 두면 `policy-dataset-날짜` |
 | more arguments | `lerobot-train` 이 받는 다른 인자, 예: `--policy.optimizer_lr=5e-5` |
-| copy each checkpoint here | 켜 두면 checkpoint 가 저장될 때마다 이 컴퓨터로 복사합니다 |
 
 화면 위 노란 줄에 단계가 차례로 표시됩니다. 원격 컴퓨터는 처음 학습할 때 Python 환경을 만드느라 몇 분 걸리고, 그다음부터는 몇 초면 시작합니다. 학습은 접속과 상관없이 그 컴퓨터에서 따로 실행되므로 **브라우저를 닫거나 연결이 끊겨도 계속됩니다**.
 
@@ -81,7 +80,7 @@ run 의 **details** 에서 학습을 관리합니다.
 
 - **Stop**: **두 번 누르면** 학습을 멈춥니다.
 - **Resume**: **마지막 checkpoint 부터** 같은 컴퓨터에서 이어서 학습합니다. 컴퓨터가 꺼져 quiet 이 된 run 에 씁니다.
-- **copy here**: checkpoint 하나를 `~/pinkrab/train/<run>/checkpoints/<step>/pretrained_model` 로 복사합니다.
+- **delete**: checkpoint 하나를 학습한 컴퓨터와 이 컴퓨터 양쪽에서 지웁니다. 두 번 눌러야 지워지고, Policy 페이지에서 실행 중인 checkpoint 는 지우지 않습니다. 마지막 checkpoint 를 지우면 Resume 은 남은 것 중 가장 최근 checkpoint 부터 이어 갑니다.
 
 이 컴퓨터로 복사된 checkpoint 는 studio 의 Policy 페이지에 나타나고, 거기서 팔에 [실행](../run/)합니다.
 

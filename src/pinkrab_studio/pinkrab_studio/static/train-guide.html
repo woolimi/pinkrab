@@ -91,7 +91,6 @@ pinkrab-studio            # http://localhost:8730/</code></pre>
           <tr><th>steps, log every, checkpoint every</th><td>100 000, 50, 20 000 unless changed; a smaller <i>log every</i> is a denser chart at no cost to speed</td></tr>
           <tr><th>name</th><td>policy-dataset-date if left empty</td></tr>
           <tr><th>more arguments</th><td>anything else <code>lerobot-train</code> takes, e.g. <code>--policy.optimizer_lr=5e-5</code></td></tr>
-          <tr><th>copy each checkpoint here</th><td>on: every checkpoint is copied to this machine as it is saved</td></tr>
         </table>
         <p><b>Start</b>, and the strip says each step: the machine asked, the kit sent (the metrics logger, the setup script, this checkout's lock), the venv built or checked against the lock - minutes the first time on a machine, seconds after - the dataset sent if it is not there, the run started detached. It trains on with this page closed and the connection gone.</p>
         <p>The run is <code>lerobot-train</code> started through <code>pinkrab-train</code>, the metrics logger: the same training, with a <code>metrics.jsonl</code> beside its checkpoints that this page reads. A run started with plain <code>lerobot-train</code> has none - it is only seen on the GPU, with no numbers (see <a href="#watch">Run states</a>).</p>
@@ -116,10 +115,9 @@ pinkrab-studio            # http://localhost:8730/</code></pre>
         <table>
           <tr><th>Stop</th><td>pressed twice; the run is sent SIGTERM and ends <i>stopped</i></td></tr>
           <tr><th>Resume</th><td>from its last checkpoint, on the same machine - for a run cut short by a machine that went away</td></tr>
-          <tr><th>copy here</th><td>one checkpoint copied to <code>~/pinkrab/train/&lt;run&gt;/checkpoints/&lt;step&gt;/pretrained_model</code>; marked <i>here</i> when it is</td></tr>
-          <tr><th>copy each one here</th><td>the same for every checkpoint, as it is saved, while the studio is up (and the ones missed, when it comes back)</td></tr>
+          <tr><th>delete</th><td>pressed twice; one checkpoint gone from its machine and from here. Not one the policy page has loaded. Resume then starts from the newest left</td></tr>
         </table>
-        <p>A checkpoint here is on the <a href="/policy">policy page</a>: <b>Ask</b> to see what it answers, <b>Drive</b> to run it on the arm.</p>
+        <p>Every checkpoint is copied to <code>~/pinkrab/train/&lt;run&gt;/checkpoints/&lt;step&gt;</code> as it is saved, and the ones saved while the studio was off when it comes back. A checkpoint here is on the <a href="/policy">policy page</a>: <b>Ask</b> to see what it answers, <b>Drive</b> to run it on the arm.</p>
       </section>
 
       <section id="terminal">

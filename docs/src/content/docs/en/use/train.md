@@ -45,7 +45,7 @@ Training on a remote computer is handled the same way as training on this comput
 
 - **Sending**: When you start training, studio sends the dataset to that computer, installs the needed Python environment, and launches the training.
 - **Metrics**: Studio reads that computer's training log every 30 seconds and accumulates it on this computer, so metrics such as loss are drawn on the Train page just like runs on this computer. If the connection drops and comes back, the records from the gap are fetched as well.
-- **checkpoint**: With **copy each checkpoint here** on, each checkpoint is copied to this computer when saved; otherwise bring over only the ones you want with the run's **copy here**. A checkpoint brought over can be [run](../run/) right away on the Policy page.
+- **checkpoint**: Each checkpoint is copied to this computer when saved. Ones saved while studio was off are brought over when it comes back. A copied checkpoint can be [run](../run/) right away on the Policy page.
 
 ## New run
 
@@ -61,7 +61,6 @@ In **New run**, choose the following and press Start.
 | log every, checkpoint every | Default 50, 20 000. A shorter log interval only makes the chart denser; training speed stays the same |
 | name | If left empty, `policy-dataset-date` |
 | more arguments | Other arguments `lerobot-train` accepts, e.g. `--policy.optimizer_lr=5e-5` |
-| copy each checkpoint here | When on, each checkpoint is copied to this computer when saved |
 
 The yellow line at the top of the screen shows the steps in turn. A remote computer takes a few minutes the first time to build the Python environment, and after that starts in a few seconds. Training runs separately on that computer regardless of the connection, so it **continues even if you close the browser or the connection drops**.
 
@@ -81,7 +80,7 @@ Manage training from a run's **details**.
 
 - **Stop**: **Press twice** to stop the training.
 - **Resume**: Continues training on the same computer **from the last checkpoint**. Use it on a run that became quiet because the computer shut down.
-- **copy here**: Copies one checkpoint to `~/pinkrab/train/<run>/checkpoints/<step>/pretrained_model`.
+- **delete**: Deletes one checkpoint on the training computer and on this one. It takes two presses, and a checkpoint running on the Policy page is not deleted. After the newest checkpoint is deleted, Resume continues from the newest one left.
 
 A checkpoint copied to this computer appears on the Policy page in studio, and from there you [run](../run/) it on the arms.
 
