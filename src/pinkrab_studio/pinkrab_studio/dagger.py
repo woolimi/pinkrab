@@ -64,7 +64,6 @@ pushes, sixty a second, and go to the live view in batches.
 """
 from __future__ import annotations
 
-import collections
 import math
 import threading
 import time
@@ -73,7 +72,6 @@ from collections.abc import Callable
 from pinkrab_core.config import SETTINGS as CORE
 from pinkrab_core.jaw import aperture_of, gripper_band
 from pinkrab_core.kinematics import arm_fingerprint
-from pinkrab_umi.config import SETTINGS as UMI
 
 from .alerts import ALERTS
 from .real import MODE_CORRECT, MODE_IDLE, MODE_POLICY, MODE_STUDIO
@@ -87,8 +85,6 @@ MODE_WAIT_S = 3.0
 SEND_EVERY_S = 0.2
 # Closing three videos takes the live view a few seconds.
 STOP_TIMEOUT_S = 15.0
-# The rollouts of this sitting the page lists, newest first.
-KEPT = 20
 # A redo's walk back to the take-over pose: done once every joint is this
 # close, and given the time the farthest joint takes at the parking speed and
 # this much more before it is given up.
@@ -143,7 +139,6 @@ class Dagger:
         self._recording: str | None = None
         self._arms: list[str] = []
         self._samples: list[dict] = []
-        self._saved: collections.deque = collections.deque(maxlen=KEPT)
         self._note = ""
         self._bands: dict[str, tuple[float, float]] = {}
         threading.Thread(target=self._send_samples, name="dagger-samples", daemon=True).start()
@@ -505,12 +500,10 @@ class Dagger:
         return all(k in here and abs(math.degrees(v - here[k])) <= REDO_TOL_DEG for k, v in pose.items())
 
     def delete(self, name: str) -> dict:
-        """A rollout of this sitting, thrown away from the shelf."""
+        """A rollout thrown away from the shelf."""
         answer, code = live_request("/episode/delete", {"name": name})
         if code != 200:
             return self._fail(answer.get("error") or f"could not delete {name}")
-        with self._lock:
-            self._saved = collections.deque((c for c in self._saved if c["name"] != name), maxlen=KEPT)
         return {"ok": True}
 
     def outcome(self, name: str, outcome: str | None) -> dict:
@@ -562,7 +555,7 @@ class Dagger:
     def _end(self, keep: bool) -> dict:
         """The recording closed - its last readings sent first - and kept or thrown away."""
         with self._lock:
-            name, arms = self._recording, self._arms
+            name = self._recording
             self._recording = None    # no reading is taken for it from here
         self._flush()                 # and what was taken goes before the stop
         answer, code = live_request("/episode/stop", {}, timeout=STOP_TIMEOUT_S)
@@ -573,10 +566,6 @@ class Dagger:
             if code != 200:
                 return self._fail(gone.get("error") or f"could not throw {name} away")
             return {"ok": True, "discarded": name}
-        episode = answer.get("episode") or {}
-        with self._lock:
-            self._saved.appendleft({"name": name, "arms": arms, "seconds": episode.get("seconds"),
-                                    "controlled": episode.get("controlled"), "at": time.time()})
         return {"ok": True, "saved": name}
 
     def _top_camera(self, on: bool) -> None:
@@ -632,10 +621,6 @@ class Dagger:
         run = self._policy.state()
         with self._lock:
             taken = self._taken
-            # A rollout deleted elsewhere - the collect page's shelf - is
-            # gone from this list too.
-            self._saved = collections.deque((c for c in self._saved if (UMI.episodes_dir / c["name"]).is_dir()),
-                                            maxlen=KEPT)
             arms = self._arms if self._recording else run["hands"] if run["driving"] else []
             answer = {
                 "armed": armed,
@@ -647,7 +632,6 @@ class Dagger:
                 "redone": self._redone,
                 "recording": self._recording,
                 "arms": arms,
-                "saved": list(self._saved),
                 "note": self._note,
                 "jaw_catch": CORE.correct_jaw_catch,
             }

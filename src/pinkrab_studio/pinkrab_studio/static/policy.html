@@ -12,10 +12,9 @@
 </head>
 <body class="home policy">
   <!-- A checkpoint asked about the pictures the cameras are taking now. What
-       comes back is a delta and an opening per arm, drawn as numbers, as five
-       traces each, and as the paths those deltas would have taken the tools
-       along. The cameras are the live view's, started here the way the
-       collect page starts them. -->
+       comes back is a delta and an opening per arm, drawn as numbers and as
+       five traces each. The cameras are the live view's, started here the way
+       the collect page starts them. -->
   <main class="home">
     <header class="bar">
       <a class="back" href="/" title="back to the front page">&larr;</a>
@@ -53,8 +52,9 @@
 
 
 
-    <!-- Two steps down the left, once connected - which checkpoint, then
-         asked or driven - and what the policy sees and answers on the right. -->
+    <!-- Down the left, held in view: which checkpoint, asked or driven, and
+         the runs kept. On the right what the policy answers and, one under
+         the other, what it sees. -->
     <div class="policy-grid">
     <div class="col steps">
       <section class="step-section controls" id="step-checkpoint">
@@ -111,6 +111,8 @@
         </div>
         <p class="status" id="status"></p>
         <p class="note" id="note"></p>
+      </section>
+
       <!-- The policy's arms taken over by the handhelds and put right
            (DAgger). Every run is recorded from Drive to its stop as a rollout -
            the arms' cameras and the driven arms' joints, and the top camera
@@ -125,8 +127,8 @@
            arms still, and pedal 2 then walks them back to the pose the
            take-over began at to try again. The page's pedals do the
            same by click, and the floor's while this page is in front. -->
-      <section class="record correct" id="correct">
-        <h3>Runs</h3>
+      <section class="step-section correct" id="correct">
+        <div class="step-head"><h2>Runs</h2></div>
         <!-- Each jaw is its hand's once the hand's opening meets the arm's:
              drawn while it has not, so the hand knows where to go. -->
         <div class="jaws" data-arm="left" hidden>
@@ -145,10 +147,16 @@
           <ul id="corr-list"></ul>
         </div>
       </section>
-      </section>
     </div>
 
     <div class="col look">
+      <!-- What the policy just asked of each arm: how far its tool steps, how
+           much it turns, and its jaw. -->
+      <section class="cards" id="readout">
+        <div class="metric" id="m-left"><h2>left arm</h2><p class="big">—</p><p class="sub">mm per tick</p></div>
+        <div class="metric" id="m-right"><h2>right arm</h2><p class="big">—</p><p class="sub">mm per tick</p></div>
+        <div class="metric" id="m-rate"><h2>asked</h2><p class="big">—</p><p class="sub">steps, Hz, latency</p></div>
+      </section>
       <section class="cam-grid">
         <figure class="cam" id="cam-gripper-left">
           <img alt="what the left gripper camera sees" hidden>
@@ -168,13 +176,6 @@
           <p class="off">top camera</p>
           <figcaption><span class="name">top camera</span><span class="stat"></span></figcaption>
         </figure>
-      </section>
-      <!-- What the policy just asked of each arm: how far its tool steps, how
-           much it turns, and its jaw. -->
-      <section class="cards" id="readout">
-        <div class="metric" id="m-left"><h2>left arm</h2><p class="big">—</p><p class="sub">mm per tick</p></div>
-        <div class="metric" id="m-right"><h2>right arm</h2><p class="big">—</p><p class="sub">mm per tick</p></div>
-        <div class="metric" id="m-rate"><h2>asked</h2><p class="big">—</p><p class="sub">steps, Hz, latency</p></div>
       </section>
     </div>
     </div>
@@ -198,17 +199,6 @@
           <li><i class="k-grip"></i>gripper</li>
           <li class="wild"><i></i>refused</li>
         </ul>
-      </div>
-      <div class="panel narrow">
-        <h3>tool path</h3>
-        <!-- Each arm's deltas composed, seen from above. Not a claim about the
-             room: each is the path from wherever its tool started. -->
-        <canvas id="path" width="420" height="420"></canvas>
-        <ul class="key">
-          <li><i class="k-left"></i>left</li>
-          <li><i class="k-right"></i>right</li>
-        </ul>
-        <p class="hint" id="path-hint"></p>
       </div>
     </section>
   </main>
@@ -267,7 +257,7 @@
       <button id="bringup-anyway" class="primary">Connect anyway</button>
     </div>
   </dialog>
-  <!-- A rollout kept this sitting, played back: the driven arms' cameras,
+  <!-- A rollout on the shelf, played back: the driven arms' cameras,
        what convert learns from, and the top camera beside them. -->
   <dialog id="corr-play">
     <h2 id="corr-play-title"></h2>

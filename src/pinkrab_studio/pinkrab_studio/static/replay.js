@@ -5,7 +5,8 @@
 // dataset of it runs at. The page keeps that clock itself and sets each video
 // to the frame the moment shows: a camera that skipped frames left its video
 // shorter than the take, so no video can be the clock. Moments the solver
-// flagged are red on the timeline.
+// flagged are red on the timeline. A rollout's correction is played alone:
+// the moments from its first reading the hands drove to its last.
 import * as THREE from 'three';
 import { OrbitControls } from './OrbitControls.js';
 import { loadURDF } from './urdf.js';
@@ -219,9 +220,21 @@ for (const v of Object.values(videos)) {
   v.addEventListener('error', () => { if (v.getAttribute('src')) v.closest('figure').hidden = true; });
 }
 
-export async function openReplay(name) {
+// The flags each hand's moments carry, counted.
+function countFlags(trajectory) {
+  const flags = {};
+  for (const f of trajectory) {
+    for (const [arm, list] of Object.entries(f.flags || {})) {
+      for (const k of list) { flags[arm] ??= {}; flags[arm][k] = (flags[arm][k] || 0) + 1; }
+    }
+  }
+  return flags;
+}
+
+// `correction`, when given, a rollout's: {correction, from_ts, to_ts}.
+export async function openReplay(name, correction = null) {
   dialog.showModal();
-  titleEl.textContent = name;
+  titleEl.textContent = correction ? `${name} · correction ${correction.correction ?? ''}`.trim() : name;
   noteEl.textContent = 'solving the arms ...';
   whyEl.textContent = '';
   summaryEl.textContent = '';
@@ -236,6 +249,15 @@ export async function openReplay(name) {
     await ensureScene();
     const answer = await (await fetch(`/episodes/${name}/replay.json`, { cache: 'no-store' })).json();
     if (answer.error) { noteEl.textContent = answer.error; return; }
+    if (correction) {
+      const kept = answer.trajectory.filter((f) => f.host_ts >= correction.from_ts && f.host_ts <= correction.to_ts);
+      if (!kept.length) { noteEl.textContent = 'no frame of this correction'; return; }
+      const t0 = kept[0].t;
+      answer.trajectory = kept.map((f) => ({ ...f, t: f.t - t0 }));
+      answer.frames = kept.length;
+      const clean = kept.filter((f) => Object.values(f.flags || {}).every((list) => !list.length)).length;
+      answer.summary = { clean, flags: countFlags(kept) };
+    }
     replay = answer;
     scrub.max = replay.trajectory.length - 1;
     const s = replay.summary;

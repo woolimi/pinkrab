@@ -7,10 +7,19 @@
  * are style.css's. What is here is this page's own layout, the controls and
  * the traces. */
 
-body.policy main.home { max-width: 1440px; padding-top: 28px; }
+body.policy main.home { max-width: 1440px; padding-top: 0; }
+/* The window scrolls, not the body, so the controls can stay in view (sticky). */
+body.policy { overflow: visible; }
 .policy-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0 28px; margin-bottom: 18px; }
 @media (min-width: 1100px) {
   .policy-grid { grid-template-columns: 400px minmax(0, 1fr); align-items: start; }
+  /* The controls stay in view beside the pictures, which run down the page;
+     the runs kept fill what is left of the window and scroll in it. */
+  /* Under the bar, which sticks too: 75 px tall on one line. */
+  .policy-grid .col.steps { position: sticky; top: 91px; max-height: calc(100vh - 107px); display: flex; flex-direction: column; }
+  .policy-grid #correct { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+  .policy-grid #correct .kept { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+  .policy-grid #correct .kept ul { flex: 1 1 auto; min-height: 120px; max-height: none; }
   body.policy #readout .metric { flex: 1 1 0; min-width: 0; }
 }
 .col.steps .step-section { padding: 16px 0; border-top: 1px solid var(--line); }
@@ -30,24 +39,22 @@ body.policy main.home { max-width: 1440px; padding-top: 28px; }
 
 /* --- the two pictures --------------------------------------------------- */
 
+/* One column, each picture the stage's full width: what the policy is shown,
+   large enough to read. A correction adds the top camera, following the
+   hands, above them - in view while the hands have the arms. */
 body.policy .cam-grid {
-  display: grid; gap: 10px;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  grid-template-areas: "left right";
-  margin-bottom: 14px;
+  display: grid; gap: 10px; grid-template-columns: minmax(0, 1fr);
+  grid-template-areas: "left" "right"; margin-bottom: 14px;
 }
+body.policy .cam-grid.with-head { grid-template-areas: "head" "left" "right"; }
 #cam-gripper-left { grid-area: left; }
 #cam-gripper-right { grid-area: right; }
-/* A correction: the arms' cameras and, beside them, the top camera following the hands. */
-body.policy .cam-grid.with-head { grid-template-columns: repeat(3, minmax(0, 1fr)); grid-template-areas: "left right head"; }
 body.policy .cam-grid #cam-head { grid-area: head; }
+body.policy .cam-grid #cam-gripper-left, body.policy .cam-grid #cam-gripper-right { aspect-ratio: 4 / 3; }
 body.policy .cam-grid #cam-head img { object-fit: contain; background: #000; }
 /* A camera the checkpoint is shown, marked. */
 .cam.fed { border-color: var(--shell); }
 .cam.fed figcaption .name::after { content: "  ·  shown to the policy"; font-weight: 400; text-transform: none; letter-spacing: 0; }
-@media (max-width: 640px) {
-  body.policy .cam-grid, body.policy .cam-grid.with-head { grid-template-columns: 1fr; grid-template-areas: "left" "right" "head"; }
-}
 
 /* --- how it is asked, out of the way ----------------------------------- */
 
@@ -195,13 +202,8 @@ body.policy .cards { margin-bottom: 12px; }
 
 /* --- the traces --------------------------------------------------------- */
 
-.traces { display: flex; gap: 12px; align-items: stretch; }
+.traces { padding-top: 14px; border-top: 1px solid var(--line); }
 .traces[hidden] { display: none; }
-.traces .panel {
-  flex: 1 1 auto; min-width: 0;
-  background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px;
-}
-.traces .panel.narrow { flex: 0 0 auto; width: 300px; }
 .traces h3 {
   margin: 0 0 10px; font-size: 11px; letter-spacing: .06em;
   text-transform: uppercase; color: var(--dim); font-weight: 700;
@@ -219,11 +221,6 @@ body.policy .cards { margin-bottom: 12px; }
 .key .k-rot { background: #f5b301; }
 .key .k-grip { background: #7a4fd6; }
 .key .wild i { height: 10px; width: 3px; background: var(--shell-deep); opacity: .45; }
-/* The two arms' paths: a colour and a line each, so neither rests on the colour alone. */
-.key .k-left { background: #e2488e; }
-.key .k-right { background: repeating-linear-gradient(90deg, #1668c9 0 4px, transparent 4px 7px); }
-
-.traces .hint { margin: 8px 0 0; font-size: 11px; color: var(--dim); }
 
 /* --- what the rig is missing, in the dialog ------------------------------ */
 
@@ -233,10 +230,7 @@ dialog#bringup ul.needs b { color: var(--shell-deep); }
 dialog#bringup ul.needs .why { color: var(--dim); }
 dialog#bringup ul.needs pre { margin: 4px 0 0; }
 
-/* The correction: the collect page's record panel and pedal board, under the cameras. */
-.policy .correct { margin: 16px 0 0; padding: 14px 0 0; border: 0; border-top: 1px solid var(--line); border-radius: 0; }
-.policy .correct h3 { margin: 0 0 10px; }
-.policy .correct .pedalboard { max-width: none; }
+/* The runs kept, and while the hands have the arms each jaw against its hand's. */
 .policy .correct .jaws { display: flex; align-items: center; gap: 10px; margin-top: 10px; font-size: 12px; color: var(--dim); }
 .policy .correct .jaws[hidden] { display: none; }
 .policy .correct .jaws + .jaws { margin-top: 6px; }
@@ -246,13 +240,17 @@ dialog#bringup ul.needs pre { margin: 4px 0 0; }
 .policy .correct .jaws .gauge .hand { background: var(--claw); }
 .policy .correct .jaws .gauge .arm { background: var(--shell); }
 .policy .correct .kept { margin-top: 8px; font-size: 12px; color: var(--dim); }
-.policy .correct .kept ul { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.policy .correct .kept ul { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px;
+  max-height: 360px; overflow-x: hidden; overflow-y: auto; }
 .policy .correct .kept li { display: flex; align-items: center; justify-content: space-between; gap: 8px;
   font-variant-numeric: tabular-nums; color: var(--text); }
 .policy .correct .kept button.drop { flex: 0 0 auto; padding: 0 8px; line-height: 20px; font-size: 14px; }
 .policy .correct .kept button.play { flex: 1 1 auto; padding: 0 8px; line-height: 20px; font: inherit;
   font-variant-numeric: tabular-nums; text-align: left; background: none; border: 0; color: var(--text); cursor: pointer; }
 .policy .correct .kept button.play:hover { color: var(--shell-deep); }
+.policy .correct .kept button.play { min-width: 0; }
+.policy .correct .kept button.play > span { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.policy .correct .kept button.play .checkpoint { font-size: 11px; color: var(--dim); }
 .policy .correct .kept .segmented.judge > button { padding: 0 9px; line-height: 20px; font-size: 11px; white-space: nowrap; }
 .policy .correct .kept .judged { flex: 0 0 auto; font-size: 11px; color: var(--dim); white-space: nowrap; }
 

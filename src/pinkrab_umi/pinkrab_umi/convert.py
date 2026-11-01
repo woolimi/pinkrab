@@ -108,7 +108,7 @@ from pinkrab_core.dataset import (GRIPPER_WIDTH, NO_STEP, POSE_NAMES, STEP_NAMES
 from .backgrounds import painted, pattern, seed
 from .backgrounds import read as read_labels
 from .config import SETTINGS
-from .episode import ROBOT_GAP_S
+from .episode import ROBOT_GAP_S, _lines, learned_from
 from .trajectory import matrix_to_quat, quat_to_matrix
 
 # About a second: thirty frames at 30 fps span 0.97 s.
@@ -146,19 +146,6 @@ OTHER_BUILD = ("recorded on the arm built another way - its joint angles are not
 
 class ConvertError(RuntimeError):
     pass
-
-
-def _lines(path: Path) -> list[dict]:
-    return [json.loads(line) for line in path.read_text().splitlines() if line.strip()] if path.is_file() else []
-
-
-def learned_from(readings: list[dict], events: list[dict]) -> tuple[np.ndarray, int]:
-    """Which of a rollout's readings its dataset learns from: the hands driving
-    the arms (`controller` human), in a correction not thrown away and made
-    again (a `redo` event). And how many were redone."""
-    redone = {e.get("correction") for e in events if e.get("event") == "redo"}
-    return np.array([r.get("controller") == "human" and r.get("correction") not in redone
-                     for r in readings], dtype=bool), len(redone)
 
 
 def latest(stamps: np.ndarray, times: np.ndarray) -> np.ndarray:

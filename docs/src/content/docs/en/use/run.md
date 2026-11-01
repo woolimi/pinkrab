@@ -23,7 +23,7 @@ It picks frames from the dataset used for training and, for each hand, measures 
 
 ## Policy page
 
-Press the Policy card on the studio home screen. The top bar has the connection status, the correction pedals, and **Connect**. Below it, the left side has two steps, and the right side shows the wrist camera views of both arms and the policy's answer. Buttons are enabled only when they can be pressed.
+Press the Policy card on the studio home screen. The top bar has the connection status, the correction pedals, and **Connect**. Below it, the left side has the two steps and the list of run records, which stay in place as the page scrolls, and the right side shows the policy's answer and, large and one under the other, the wrist camera views of both arms. Buttons are enabled only when they can be pressed.
 
 **Connect** opens the real robot, the wrist cameras of both arms, and the pedals. The top camera is turned on only for correction. If required setup is not finished, the page shows what is left.
 
@@ -81,7 +81,7 @@ It is better to **keep a correction short** and return the arms to a pose the po
 
 A run made with Drive is **recorded entirely**, from the start until it stops. The images from both wrist cameras, the joints of both arms, and who was moving the arms at each moment (policy, person, hold) are kept together. The top camera turns on at the moment of takeover and off when you let go, so the Hermit markers are recorded only during correction. If recording is not possible, **the run does not start**.
 
-The record from this run appears in the list under the pedals, and you can press it to replay the video. The record also appears in the Collect page list alongside the demonstrations. When you Convert, without redoing anything, **only the segments where Hermit moved the arms** go into the dataset from the kept corrections, one episode per segment, with the arm-side camera video and the motion computed from the arm's joints. How recording works and why is in [Correction data](../../deep/corrections/).
+Every kept record, past runs included, appears newest first in the list under the pedals, each row naming the checkpoint that run used, and you can press it to replay the video. The Collect page list shows not the whole run but only its kept corrections, one row each, alongside the demonstrations. When you Convert, without redoing anything, **only the segments where Hermit moved the arms** go into the dataset from the kept corrections, one episode per segment, with the arm-side camera video and the motion computed from the arm's joints. How recording works and why is in [Correction data](../../deep/corrections/).
 
 ## Outcome marking
 

@@ -40,8 +40,10 @@ read off the robot - and every reading says who had the arms then:
     hold     the clutch holding them still
     none     neither - the walk to ready, a run stopped at an arm's reach
 
-The videos run through all of it; which stretches are learned from is
-convert's choice, made from `controller`.
+The videos run through all of it; which stretches are learned from
+(`learned_from`) is read from `controller`: the corrections, but for one
+thrown away and made again. The shelf lists those (`corrections`), and
+convert keeps only them.
 
 Every line carries `host_ts`, this machine's clock at the moment the frame
 or reading arrived - the master clock the three cameras and the jaws are
@@ -472,6 +474,53 @@ def _camera_meta(cameras: str = "handheld") -> dict:
 
 
 # --- the shelf ----------------------------------------------------------------------
+def _lines(path: Path) -> list[dict]:
+    return [json.loads(line) for line in path.read_text().splitlines() if line.strip()] if path.is_file() else []
+
+
+def learned_from(readings: list[dict], events: list[dict]) -> tuple[np.ndarray, int]:
+    """Which of a rollout's readings its dataset learns from: the hands driving
+    the arms (`controller` human), in a correction not thrown away and made
+    again (a `redo` event). And how many were redone."""
+    redone = {e.get("correction") for e in events if e.get("event") == "redo"}
+    return np.array([r.get("controller") == "human" and r.get("correction") not in redone
+                     for r in readings], dtype=bool), len(redone)
+
+
+# Each rollout's corrections by its directory, kept while its readings and
+# events are as they were read: the shelf is listed every second.
+_CORRECTIONS: dict[Path, tuple[tuple, list[dict]]] = {}
+
+
+def corrections(root: Path) -> list[dict]:
+    """A rollout's corrections as its dataset learns from them, in the order
+    made: each one's number, its first and last reading the hands drove
+    (host clock) and the seconds they drove it."""
+    files = (root / "robot.jsonl", root / "events.jsonl")
+    stamp = tuple(f.stat().st_mtime_ns if f.is_file() else None for f in files)
+    kept = _CORRECTIONS.get(root)
+    if kept is not None and kept[0] == stamp:
+        return kept[1]
+    readings = sorted(_lines(files[0]), key=lambda r: r["host_ts"])
+    driven, _ = learned_from(readings, _lines(files[1]))
+    out: dict = {}
+    previous = None
+    for reading, learned in zip(readings, driven):
+        if learned:
+            c = out.setdefault(reading.get("correction"), {"correction": reading.get("correction"),
+                                                           "from_ts": reading["host_ts"], "seconds": 0.0})
+            c["to_ts"] = reading["host_ts"]
+            # The time to this reading is the hands', if the one before was too.
+            if previous is not None and previous[1] and previous[2] == c["correction"]:
+                gap = reading["host_ts"] - previous[0]
+                if 0.0 < gap <= ROBOT_GAP_S:
+                    c["seconds"] += gap
+        previous = (reading["host_ts"], learned, reading.get("correction"))
+    listed = [{**c, "seconds": round(c["seconds"], 1)} for c in out.values()]
+    _CORRECTIONS[root] = (stamp, listed)
+    return listed
+
+
 def list_episodes(root: Path | None = None) -> list[dict]:
     root = root or SETTINGS.episodes_dir
     out = []
@@ -495,6 +544,13 @@ def list_episodes(root: Path | None = None) -> list[dict]:
                     entry["controlled"] = meta.get("controlled")
                     entry["policy"] = meta.get("policy")
                     entry["outcome"] = meta.get("outcome")
+                    # No reading to look through where the hands drove nothing;
+                    # readings that do not parse cost the corrections, not the run.
+                    try:
+                        entry["corrections"] = (corrections(path) if (meta.get("controlled") or {}).get("human")
+                                                else [])
+                    except (OSError, ValueError, KeyError, TypeError):
+                        entry["corrections"] = []
             except (OSError, ValueError):
                 entry["complete"] = False
         out.append(entry)
@@ -509,6 +565,7 @@ def delete_episode(name: str, root: Path | None = None) -> None:
     if not path.is_dir():
         raise EpisodeError(f"no episode {name!r}")
     shutil.rmtree(path)
+    _CORRECTIONS.pop(path, None)
 
 
 # What the person watching a rollout says of it. Nothing the recording holds

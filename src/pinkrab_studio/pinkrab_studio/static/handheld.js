@@ -301,7 +301,9 @@ function showEpisode(ep) {
 
 // --- the shelf --------------------------------------------------------------------
 // Every take on disk, a page of them at a time, newest first. Ticks are for
-// deleting; the dataset below is made from every complete take.
+// deleting; the dataset below is made from every complete take. A rollout is
+// here only as its corrections - what a dataset learns from it, a row each;
+// the whole run, the policy's stretches too, is on the policy page.
 const ticked = new Set();
 const tickAll = document.getElementById('tick-all');
 const deleteTicked = document.getElementById('delete-ticked');
@@ -314,7 +316,7 @@ const pageWhere = document.getElementById('page-where');
 const pageSizeEl = document.getElementById('page-size');
 const pagerEl = document.getElementById('episodes-pager');
 const PAGE_SIZES = [20, 50, 100];
-let shelf = [];
+let shelf = [];               // the rows: each demonstration, and each correction of a rollout
 // Each take's verdict by name (verdict.py), and the takes still being replayed.
 let verdicts = {};
 let verdictsPending = [];
@@ -345,16 +347,16 @@ function showTicks() {
   if (deleteTicked.classList.contains('sure')) deleteTicked.textContent = `sure? delete ${ticked.size}`;
   else deleteTicked.textContent = ticked.size ? `delete ${ticked.size} ticked` : 'delete ticked';
   // The box in the head ticks the page shown: the takes it sits above.
-  const complete = shownTakes().filter((e) => e.complete);
+  const complete = shownTakes().filter(tickable);
   tickAll.checked = complete.length > 0 && complete.every((e) => ticked.has(e.name));
-  const failing = shelf.filter((e) => e.complete && verdicts[e.name]?.fails.length).length;
+  const failing = shelf.filter((e) => tickable(e) && verdicts[e.name]?.fails.length).length;
   tickFailing.disabled = failing === 0;
   tickFailing.textContent = verdictsPending.length ? `tick failing (${failing}, judging ${verdictsPending.length})`
     : `tick failing (${failing})`;
 }
 
 tickFailing.addEventListener('click', () => {
-  for (const ep of shelf) if (ep.complete && verdicts[ep.name]?.fails.length) ticked.add(ep.name);
+  for (const ep of shelf) if (tickable(ep) && verdicts[ep.name]?.fails.length) ticked.add(ep.name);
   showTicks();
 });
 
@@ -382,7 +384,7 @@ function fillVerdicts() {
     const v = verdicts[tr.dataset.name];
     const follow = tr.querySelector('td.follow');
     const cell = tr.querySelector('td.verdict');
-    if (!follow || !cell) continue;
+    if (!follow || !cell || 'sameRun' in tr.dataset) continue;
     if (!v) {
       follow.textContent = '';
       cell.className = 'verdict';
@@ -429,7 +431,7 @@ watch('verdicts', (answer) => {
 });
 
 tickAll.addEventListener('change', () => {
-  for (const ep of shownTakes()) if (ep.complete) { if (tickAll.checked) ticked.add(ep.name); else ticked.delete(ep.name); }
+  for (const ep of shownTakes()) if (tickable(ep)) { if (tickAll.checked) ticked.add(ep.name); else ticked.delete(ep.name); }
   showTicks();
 });
 
@@ -447,15 +449,29 @@ deleteTicked.addEventListener('click', async () => {
   showTicks();
 });
 
+// A row deleted or ticked here is a demonstration's: a correction is part of
+// its rollout, which the policy page keeps and deletes.
+function tickable(row) { return row.complete && !row.correction; }
+
+// The shelf's rows of the episodes on disk: a demonstration as it is, a
+// finished rollout as each of its corrections - its seconds the hands'.
+function rowsOf(episodes) {
+  return episodes.flatMap((e) => e.kind !== 'rollout' ? [e]
+    : !e.complete ? [] : (e.corrections || []).map((c, i) => ({ ...e, correction: c, seconds: c.seconds, later: i > 0 })));
+}
+
 // The shelf, as it changes on disk: a take begun, finished, deleted.
 watch('episodes', (answer) => {
-  const list = answer?.episodes || [];
-  shelf = list;
-  for (const name of [...ticked]) if (!list.some((e) => e.name === name && e.complete)) ticked.delete(name);
-  const seconds = list.reduce((a, e) => a + (e.seconds || 0), 0);
-  const bytes = list.reduce((a, e) => a + (e.bytes || 0), 0);
-  const frames = list.reduce((a, e) => a + ((e.frames || {}).head || 0), 0);
-  countEl.textContent = list.length ? `${list.length} episodes · ${fmtSeconds(seconds)} · ${frames} frames · ${fmtBytes(bytes)}` : '';
+  shelf = rowsOf(answer?.episodes || []);
+  for (const name of [...ticked]) if (!shelf.some((e) => e.name === name && tickable(e))) ticked.delete(name);
+  const takes = shelf.filter((e) => !e.correction);
+  const corrections = shelf.length - takes.length;
+  const seconds = shelf.reduce((a, e) => a + (e.seconds || 0), 0);
+  const bytes = takes.reduce((a, e) => a + (e.bytes || 0), 0);
+  const frames = takes.reduce((a, e) => a + ((e.frames || {}).head || 0), 0);
+  countEl.textContent = shelf.length ? `${takes.length} episodes`
+    + (corrections ? ` · ${corrections} correction${corrections === 1 ? '' : 's'}` : '')
+    + ` · ${fmtSeconds(seconds)} · ${frames} frames · ${fmtBytes(bytes)}` : '';
   drawShelf();
 });
 
@@ -474,29 +490,34 @@ function drawShelf() {
     const tr = document.createElement('tr');
     tr.dataset.name = ep.name;
     if (!ep.complete) tr.className = 'partial';
+    // A rollout's verdict is its run's: said once, on its first correction.
+    if (ep.later) tr.dataset.sameRun = '';
+    const c = ep.correction;
     const tickTd = document.createElement('td'); tickTd.className = 'tick';
-    const tick = document.createElement('input'); tick.type = 'checkbox'; tick.checked = ticked.has(ep.name); tick.disabled = !ep.complete;
-    tick.addEventListener('change', () => { if (tick.checked) ticked.add(ep.name); else ticked.delete(ep.name); showTicks(); });
-    tickTd.append(tick); tr.append(tickTd);
-    const f = ep.frames || {};
+    if (!c) {
+      const tick = document.createElement('input'); tick.type = 'checkbox'; tick.checked = ticked.has(ep.name); tick.disabled = !ep.complete;
+      tick.addEventListener('change', () => { if (tick.checked) ticked.add(ep.name); else ticked.delete(ep.name); showTicks(); });
+      tickTd.append(tick);
+    }
+    tr.append(tickTd);
+    const f = c ? {} : ep.frames || {};
     // Play first: the whole point of the shelf is to see what an episode does.
     const playTd = document.createElement('td');
     const play = document.createElement('button');
     play.textContent = '▶'; play.className = 'play'; play.title = 'play it back on the arms';
     play.disabled = !ep.complete;
-    play.addEventListener('click', () => openReplay(ep.name));
+    play.addEventListener('click', () => openReplay(ep.name, c ? { correction: c.correction, from_ts: c.from_ts, to_ts: c.to_ts } : null));
     playTd.append(play); tr.append(playTd);
-    const cells = [ep.name, ep.seconds != null ? ep.seconds.toFixed(1) : (ep.complete ? '' : 'recording / partial'), f.head ?? '', f.gripper_left ?? '', f.gripper_right ?? '', ep.dropped ?? '', fmtBytes(ep.bytes || 0)];
+    const cells = [ep.name, ep.seconds != null ? ep.seconds.toFixed(1) : (ep.complete ? '' : 'recording / partial'), f.head ?? '', f.gripper_left ?? '', f.gripper_right ?? '', c ? '' : ep.dropped ?? '', c ? '' : fmtBytes(ep.bytes || 0)];
     for (const [i, text] of cells.entries()) {
       const td = document.createElement('td'); td.textContent = text; if (i === 0) td.className = 'name'; tr.append(td);
-      // A rollout - a policy's run, its arms put right by the hands where it
-      // went wrong, recorded on the robot - is kept beside the demonstrations
-      // and said so.
-      if (i === 0 && ep.kind === 'rollout') {
+      // A correction - the hands putting a policy's run right, recorded on
+      // the robot - is kept beside the demonstrations and said so.
+      if (i === 0 && c) {
         const tag = document.createElement('span');
-        const corrected = ep.controlled?.human;
         tag.className = 'kind';
-        tag.textContent = 'rollout' + (corrected != null ? ` · corrected ${corrected.toFixed(1)} s` : '');
+        tag.textContent = `correction ${c.correction ?? ''}`.trim();
+        tag.title = 'the whole run is on the policy page';
         td.append(' ', tag);
       }
     }
@@ -504,6 +525,8 @@ function drawShelf() {
       const td = document.createElement('td'); td.className = name; tr.append(td);
     }
     const td = document.createElement('td');
+    tr.append(td);
+    if (c) return tr;
     const del = document.createElement('button'); del.textContent = 'delete';
     // Twice to delete: the second click, within a few seconds, is the yes.
     del.addEventListener('click', async () => {
@@ -511,7 +534,7 @@ function drawShelf() {
       del.disabled = true;
       await ask('/rig/live/episode/delete', { name: ep.name }).catch(() => {});
     });
-    td.append(del); tr.append(td);
+    td.append(del);
     return tr;
   }));
   shelfEmpty.hidden = total > 0;

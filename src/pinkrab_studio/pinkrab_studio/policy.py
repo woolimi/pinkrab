@@ -152,8 +152,6 @@ class PolicyRun:
         self._loading = False
         self._hz = 0.0
         self._latency_ms = 0.0
-        # Each tool where the policy's deltas have taken it, from its start.
-        self._poses: dict[str, np.ndarray] = {}
         # How the policy is being asked in this run (pinkrab_core.inference):
         # the asking loop's own, or what the rollout node reports.
         self._settings: dict | None = None
@@ -233,7 +231,6 @@ class PolicyRun:
             self._settings = None
             self._loading = True
             self._hz = 0.0
-            self._poses = {}
             self._thread = threading.Thread(target=self._run, args=(joints_now,), name="policy", daemon=True)
             self._thread.start()
 
@@ -273,7 +270,6 @@ class PolicyRun:
             self._note = ""
             self._hz = 0.0
             self._latency_ms = 0.0
-            self._poses = {hand: np.eye(4) for hand in hands}
             self._driving = True
             self._settings = None
             self._phase = "starting"
@@ -342,8 +338,7 @@ class PolicyRun:
                                   "latency_ms": 0.0})
 
     def _arm_row(self, hand: str, action: np.ndarray, aperture: float, held: str, limits: dict) -> dict:
-        """One arm's part of a step, for the page - its tool composed on, held
-        steps not - under the lock."""
+        """One arm's part of a step, for the page."""
         from pinkrab_core.dataset import delta_to_matrix
 
         delta = delta_to_matrix(action)
@@ -355,11 +350,8 @@ class PolicyRun:
         fps = limits.get("fps") or CORE.dataset_fps
         wild = (bool(held) or step_mm * fps > limits.get("max_tool_speed_mm_s", CORE.policy_max_tool_speed_mm_s)
                 or step_deg * fps > limits.get("max_tool_turn_dps", CORE.policy_max_tool_turn_dps))
-        if not held:
-            self._poses[hand] = self._poses[hand] @ delta
         return {"action": [round(float(v), 6) for v in action], "aperture": round(aperture, 4),
-                "step_mm": round(step_mm, 3), "step_deg": round(step_deg, 3), "wild": wild,
-                "where": [round(float(v), 5) for v in self._poses[hand][:3, 3]]}
+                "step_mm": round(step_mm, 3), "step_deg": round(step_deg, 3), "wild": wild}
 
     # --- the loop ---------------------------------------------------------
 
@@ -402,7 +394,6 @@ class PolicyRun:
             self._task = brain.task or ""
             self._settings = brain.settings
             self._loading = False
-            self._poses = {hand: np.eye(4) for hand in brain.hands}
 
         # The jaws the first observation carries are the arms' as read when
         # the asking began; from the next step on they are the policy's own

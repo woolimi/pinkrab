@@ -452,6 +452,7 @@ async function loadCheckpoints() {
   showWants();
   showCommand();
   loadSettings();
+  showTally();
   if (lastRig) showRig(lastRig);
 }
 
@@ -750,10 +751,7 @@ function showPolicy(s) {
 // --- the traces -------------------------------------------------------------
 
 const traceEls = [...document.querySelectorAll('canvas.trace')];
-const pathEl = document.getElementById('path');
 const COLOURS = { dx: '#e2488e', dy: '#1668c9', dz: '#17a673', rot: '#f5b301', grip: '#7a4fd6' };
-// The two arms' paths: a colour and a line each.
-const PATHS = { left: { colour: '#e2488e', dash: [] }, right: { colour: '#1668c9', dash: [6, 4] } };
 
 function series(arm) {
   // Millimetres and degrees, so the traces are read in the units the gate
@@ -814,44 +812,6 @@ function drawTrace(traceEl, arm, lines, span) {
   }
 }
 
-function drawPath() {
-  const ctx = pathEl.getContext('2d');
-  const { width: w, height: h } = pathEl;
-  ctx.clearRect(0, 0, w, h);
-  if (steps.length < 2) return;
-  const wheres = Object.fromEntries(ARMS.map((arm) => [arm, steps.map((s) => s.arms?.[arm]?.where).filter(Boolean)]));
-  const all = Object.values(wheres).flat();
-  // One scale for both axes and both arms, so a path is a shape and not a stretched one.
-  const half = Math.max(...all.map((p) => Math.max(Math.abs(p[0]), Math.abs(p[1]))), 0.01) * 1.15;
-  const px = (v) => w / 2 + (v / half) * (w / 2 - 14);
-  const py = (v) => h / 2 - (v / half) * (h / 2 - 14);
-
-  ctx.strokeStyle = '#ecd9e2';
-  ctx.lineWidth = 1;
-  ctx.beginPath(); ctx.moveTo(px(0), 0); ctx.lineTo(px(0), h); ctx.stroke();
-  ctx.beginPath(); ctx.moveTo(0, py(0)); ctx.lineTo(w, py(0)); ctx.stroke();
-
-  ctx.lineWidth = 1.5;
-  for (const [arm, path] of Object.entries(wheres)) {
-    if (path.length < 2) continue;
-    ctx.strokeStyle = PATHS[arm].colour;
-    ctx.setLineDash(PATHS[arm].dash);
-    ctx.beginPath();
-    path.forEach((p, i) => (i ? ctx.lineTo(px(p[0]), py(p[1])) : ctx.moveTo(px(p[0]), py(p[1]))));
-    ctx.stroke();
-    // Where it is now; each started at the middle.
-    ctx.setLineDash([]);
-    ctx.fillStyle = PATHS[arm].colour;
-    ctx.beginPath(); ctx.arc(px(path.at(-1)[0]), py(path.at(-1)[1]), 4, 0, Math.PI * 2); ctx.fill();
-  }
-  ctx.setLineDash([]);
-  ctx.fillStyle = '#8f7283';
-  ctx.beginPath(); ctx.arc(px(0), py(0), 3, 0, Math.PI * 2); ctx.fill();
-
-  document.getElementById('path-hint').textContent =
-    `${(half * 2 * 1000).toFixed(0)} mm across · ${steps.length} steps`;
-}
-
 // --- what the studio says, as it changes ---------------------------------------
 
 watch('policy', showPolicy);
@@ -860,7 +820,6 @@ watch('policy_history', ({ steps: fresh, reset }) => {
   // started elsewhere that numbers its steps from one again.
   steps = (reset ? [] : steps).concat(fresh).slice(-600);
   drawTraces();
-  drawPath();
 });
 // The robot's launch, looked for in the process table; the rig the bridge and
 // the live view; the view's numbers while it shows the arms' cameras.
@@ -897,9 +856,10 @@ const corr = {
   count: document.getElementById('corr-count'),
   list: document.getElementById('corr-list'),
 };
-let shownSaved = null;
-// The shelf's rollouts by name, as the episodes topic lists them: each one's
-// outcome and checkpoint, which the rows and the tally are drawn from.
+let shownRuns = null;
+// The shelf's rollouts by name, newest first, as the episodes topic lists
+// them - every run on disk, not only this sitting's: each one's outcome and
+// checkpoint, which the rows and the tally are drawn from.
 let rollouts = {};
 function showDagger(d) {
   dagger = d;
@@ -941,18 +901,16 @@ function showDagger(d) {
   else if (d.note && !corr.note.textContent) corr.note.textContent = d.note;
   showJaws(d);
   showHead();
-  showSaved();
 }
 
 // Rows made again only when the list or an outcome on it changes: made afresh
-// with every update - the counter while recording, the grip while a policy
-// drives - a row took the click from under the pointer.
-function showSaved() {
-  const saved = dagger?.saved || [];
-  const savedKey = JSON.stringify(saved.map((c) => [c.name, c.seconds, rollouts[c.name]?.outcome]));
-  if (savedKey === shownSaved) return;
-  shownSaved = savedKey;
-  corr.list.replaceChildren(...saved.map(savedRow));
+// with every update a row took the click from under the pointer.
+function showRuns() {
+  const runs = Object.values(rollouts);
+  const key = JSON.stringify(runs.map((c) => [c.name, c.seconds, c.outcome]));
+  if (key === shownRuns) return;
+  shownRuns = key;
+  corr.list.replaceChildren(...runs.map(runRow));
 }
 
 // A run the hands took over is not the policy's own: it counts as failed,
@@ -1000,11 +958,18 @@ const clip = {
   figures: [document.getElementById('corr-play-right-figure'), document.getElementById('corr-play-head-figure')],
   note: document.getElementById('corr-play-note'),
 };
+// The checkpoint a run drove, as its step and run - `<run>/checkpoints/<step>/...` -
+// the step first, which a narrow row still shows.
+function checkpointWords(path) {
+  const m = /([^/]+)\/checkpoints\/0*(\d+)/.exec(path || '');
+  return m ? `step ${m[2]} · ${m[1]}` : path || '';
+}
+
 // A kept rollout in a few words: its run's length and the hand's share of it.
 function rolloutWords(c) {
   const corrected = c.controlled?.human;
   return `${c.seconds != null ? c.seconds.toFixed(1) : '?'} s`
-    + (corrected != null ? `, corrected ${corrected.toFixed(1)} s` : '');
+    + (corrected ? `, corrected ${corrected.toFixed(1)} s` : '');
 }
 function openClip(c) {
   const at = (stream) => `/episodes/${encodeURIComponent(c.name)}/${stream}.mp4`;
@@ -1030,12 +995,17 @@ clip.others.forEach((v, i) => v.addEventListener('error', () => { if (v.getAttri
 clip.dialog.addEventListener('close', closeClip);
 document.getElementById('corr-play-close').addEventListener('click', () => clip.dialog.close());
 
-function savedRow(c) {
+function runRow(c) {
   const li = document.createElement('li');
   const name = document.createElement('button');
   name.className = 'play';
-  name.title = 'play this rollout';
-  name.textContent = `▶ ${c.name} · ${rolloutWords(c)}`;
+  name.title = c.policy || 'play this rollout';
+  const what = document.createElement('span');
+  what.textContent = `▶ ${c.name} · ${rolloutWords(c)}`;
+  const which = document.createElement('span');
+  which.className = 'checkpoint';
+  which.textContent = checkpointWords(c.policy);
+  name.append(what, which);
   name.addEventListener('click', () => openClip(c));
   const drop = document.createElement('button');
   drop.className = 'drop';
@@ -1066,15 +1036,13 @@ function judgeOf(c) {
     over.textContent = 'taken over';
     return over;
   }
-  const outcome = rollouts[c.name]?.outcome ?? null;
+  const outcome = c.outcome ?? null;
   const seg = document.createElement('span');
   seg.className = 'segmented judge';
   for (const [value, word] of [['succeeded', 'succeeded'], ['failed', 'failed']]) {
     const b = document.createElement('button');
     b.textContent = word;
     b.classList.toggle('on', outcome === value);
-    // Judged once the run is on the shelf, its meta.json written as it closed.
-    b.disabled = !rollouts[c.name];
     b.addEventListener('click', async () => {
       for (const x of seg.children) x.disabled = true;
       try {
@@ -1084,8 +1052,8 @@ function judgeOf(c) {
         corr.note.textContent = String(err);
       }
       // Drawn again from the shelf the topic sends next, outcome and all.
-      shownSaved = null;
-      showSaved();
+      shownRuns = null;
+      showRuns();
     });
     seg.append(b);
   }
@@ -1139,7 +1107,7 @@ watch('dagger', showDagger);
 watch('episodes', ({ episodes }) => {
   rollouts = Object.fromEntries((episodes || []).filter((e) => e.kind === 'rollout' && e.complete).map((e) => [e.name, e]));
   showTally();
-  showSaved();
+  showRuns();
 });
 // This page in front, while it is visible: what makes the floor's pedals
 // correct rather than drive.

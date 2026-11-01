@@ -57,14 +57,14 @@ A rollout recording becomes a dataset through the same Convert as the demonstrat
 
 ## Verdicts for corrections
 
-The Episodes list on the Collect page shows rollout recordings together with demonstrations, and **the verdict uses different criteria from demonstrations**. A correction is computed from joint readings rather than markers, so even if the top camera misses Hermit's marker solid while it is taken over, the arm in that segment was merely standing still, and it is not a gap.
+The Episodes list on the Collect page shows a rollout recording **only as its corrections**. A correction discarded to be redone is left out, each remaining correction is one row beside the demonstrations, and ▶ plays only that correction. The whole run, including the segments the policy drove, is viewed and deleted on the Policy page. **The verdict for a correction uses different criteria from demonstrations**. A correction is computed from joint readings rather than markers, so even if the top camera misses Hermit's marker solid while it is taken over, the arm in that segment was merely standing still, and it is not a gap.
 
 | Verdict | Criterion |
 |---|---|
 | Dropped | The total time joints could not be read exceeds 1/6 second |
 | Warning | Hermit moved the arm for less than 1 second, or neither jaw moved during the correction |
 
-A rollout recording with almost no correction is not dropped, only given a warning. Convert has nothing to take from that recording, but it is still worth keeping as a record of what the policy did.
+A rollout recording with only a short correction is not dropped, only given a warning. A rollout recording with no correction does not appear on Collect, but it stays on the Policy page as a record of what the policy did.
 
 ## Adding to the dataset and retraining
 

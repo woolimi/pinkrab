@@ -623,7 +623,7 @@ def check_gripper_view() -> None:
 def check_redone_corrections() -> None:
     """A rollout's corrections in its dataset: what the hands drove, but for a
     correction thrown away and made again."""
-    from pinkrab_umi.convert import learned_from
+    from pinkrab_umi.episode import learned_from
 
     print("\ncorrections redone")
     readings = ([{"controller": "policy", "correction": None}] * 2
@@ -637,6 +637,44 @@ def check_redone_corrections() -> None:
     check("the policy's and the clutch's stretches are left out", not kept[:3].any() and not kept[6:8].any())
     check("an older rollout's corrections are kept", kept[12:].all())
     check("the redo is counted", redone == 1, str(redone))
+
+
+def check_corrections_listed(root: Path) -> None:
+    """The shelf's corrections of a rollout: one per correction the dataset
+    learns from, with when the hands drove it and for how long - none for a
+    redone one, and none read for a rollout the hands never drove."""
+    import json
+
+    from pinkrab_umi.episode import list_episodes
+
+    print("\ncorrections on the shelf")
+
+    def rollout(name: str, readings: list[tuple[float, str, int | None]], events: list[dict], human: float) -> None:
+        (root / name).mkdir()
+        (root / name / "meta.json").write_text(json.dumps({"kind": "rollout", "seconds": 9.0,
+                                                           "controlled": {"policy": 1.0, "human": human}}))
+        (root / name / "robot.jsonl").write_text("".join(
+            json.dumps({"host_ts": t, "joints": {}, "controller": c, "correction": n}) + "\n" for t, c, n in readings))
+        (root / name / "events.jsonl").write_text("".join(json.dumps(e) + "\n" for e in events))
+
+    tick = 0.05
+    readings = ([(100.0 + i * tick, "policy", None) for i in range(10)]
+                + [(101.0 + i * tick, "human", 1) for i in range(21)]        # 1.0 s, thrown away
+                + [(103.0 + i * tick, "hold", 2) for i in range(5)]
+                + [(103.25 + i * tick, "human", 2) for i in range(41)]       # 2.0 s
+                + [(106.0 + i * tick, "human", 2) for i in range(11)]        # 0.5 s more, after a hole
+                + [(108.0 + i * tick, "policy", None) for i in range(10)])
+    rollout("run", readings, [{"event": "start"}, {"event": "redo", "correction": 1}], human=3.5)
+    rollout("alone", [(100.0 + i * tick, "policy", None) for i in range(10)], [], human=0.0)
+    (root / "alone" / "robot.jsonl").write_text("not read")
+    listed = {e["name"]: e for e in list_episodes(root)}
+    got = listed["run"].get("corrections") or []
+    check("a redone correction is not listed", [c["correction"] for c in got] == [2], str(got))
+    check("a correction runs from its first reading the hands drove to its last",
+          got and got[0]["from_ts"] == 103.25 and abs(got[0]["to_ts"] - 106.5) < 1e-9, str(got))
+    check("its seconds are the hands', a hole in the readings not counted",
+          got and got[0]["seconds"] == 2.5, str(got))
+    check("a rollout the hands never drove lists none, its readings unread", listed["alone"].get("corrections") == [])
 
 
 def check_outcome(root: Path) -> None:
@@ -908,6 +946,8 @@ def main() -> int:
     check_filter()
     check_gripper_view()
     check_redone_corrections()
+    with tempfile.TemporaryDirectory() as tmp:
+        check_corrections_listed(Path(tmp))
     with tempfile.TemporaryDirectory() as tmp:
         check_outcome(Path(tmp))
     check_marker_meta()
