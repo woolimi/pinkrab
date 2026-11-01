@@ -1493,7 +1493,7 @@ def make_handler(state: StudioState, allowed_hosts: frozenset[str] | None = None
                 self._send_json(*live_request("/head/light", payload))
                 return
 
-            if path in ("/rig/live/episode/start", "/rig/live/episode/stop"):
+            if path in ("/rig/live/episode/start", "/rig/live/episode/stop", "/rig/live/episode/cancel"):
                 payload = self._body()
                 if payload is None:
                     return
@@ -1536,8 +1536,10 @@ def make_handler(state: StudioState, allowed_hosts: frozenset[str] | None = None
                         self._send_json({"queued": None, "note": "the correction has this pedal"})
                         return
                     # While the clutch is armed, pedal 2 records rather than
-                    # drives: the same press must not also arm the arms.
-                    if state.clutch.armed and mode == MODE_HANDHELD and payload.get("pedal"):
+                    # drives: the same press must not also arm the arms. And
+                    # while it records, pedal 1 cancels the recording.
+                    if state.clutch.armed and payload.get("pedal") and (
+                            mode == MODE_HANDHELD or state.clutch.recording is not None):
                         self._send_json({"queued": None, "note": "the clutch has this pedal"})
                         return
                     if not state.real.expected:

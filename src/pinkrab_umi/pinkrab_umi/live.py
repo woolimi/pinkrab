@@ -170,6 +170,11 @@ class Live:
         self.head_camera = None
         # The episode being recorded, under the io lock like the take.
         self._episode: EpisodeWriter | None = None
+        # The one being closed - its videos finishing - and the last one
+        # closed, each with whether it was cancelled: what the collect page
+        # says aloud as it happens.
+        self._closing: dict | None = None
+        self._closed: dict | None = None
         # Which solids are looked for in every frame. Both handhelds when the
         # settings name one of them, so the handheld that is in frame is the one
         # that gets solved and nobody has to say which hand they picked up: the
@@ -588,18 +593,30 @@ class Live:
             raise LiveError("no episode is recording")
         episode.event("redo", correction=int(correction))
 
-    def stop_episode(self) -> dict:
+    def stop_episode(self, cancel: bool = False) -> dict:
+        """The episode closed and kept - or, cancelled, closed and deleted."""
         with self._io:
             episode, self._episode = self._episode, None
+            if episode is not None:
+                self._closing = {"name": episode.name, "cancelled": cancel}
         if episode is None:
             raise LiveError("no episode is recording")
-        return episode.close()
+        try:
+            status = episode.close()
+            if cancel:
+                delete_episode(episode.name)
+        finally:
+            with self._io:
+                self._closing = None
+                self._closed = {"name": episode.name, "cancelled": cancel}
+        return status
 
     def episode_status(self) -> dict:
         with self._io:
-            episode = self._episode
+            episode, closing, closed = self._episode, self._closing, self._closed
         return {"active": episode is not None,
                 "kind": episode.kind if episode is not None else None,
+                "closing": closing, "closed": closed,
                 **(episode.status() if episode is not None else {"name": None, "seconds": None, "frames": None})}
 
     def _feed_take(self, frame: Frame, result: SolidPose, stamp: float,
@@ -975,9 +992,9 @@ def make_handler(live: Live):
                 self._send_json({"ok": True, "name": name})
                 return
 
-            if path == "/episode/stop":
+            if path in ("/episode/stop", "/episode/cancel"):
                 try:
-                    status = live.stop_episode()
+                    status = live.stop_episode(cancel=path.endswith("cancel"))
                 except LiveError as exc:
                     self._send_json({"error": str(exc)}, 409)
                     return

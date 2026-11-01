@@ -24,15 +24,16 @@
       <h1><svg class="claw" viewBox="0 0 64 64" aria-hidden="true"><use href="/static/claw.svg#claw"/></svg><span>Collect</span></h1>
       <span class="state" id="live-state"><span class="dot" id="live-dot"></span><span id="live-line">not connected</span></span>
       <!-- Recording, in the bar so it stays in view down the shelf. While
-           this page is in front, pedal 2 starts an episode and pedal 3 stops
-           and saves it - the same board as the floor's, drawn with what the
-           pedals mean on this page; the page's pedals do the same by click. -->
+           this page is in front, pedal 2 starts an episode, pedal 3 stops
+           and saves it and pedal 1 cancels it - the same board as the
+           floor's, drawn with what the pedals mean on this page; the page's
+           pedals do the same by click. -->
       <span class="record-bar">
         <span class="rec-dot" id="rec-dot"></span>
         <span class="rec-line" id="rec-line">not recording</span>
       </span>
       <div class="pedalboard">
-        <button class="pedal" id="pedal-jog" disabled><span class="num">1</span>&mdash;</button>
+        <button class="pedal" id="pedal-cancel" disabled><span class="num">1</span>cancel</button>
         <span class="plate-mark">L</span>
         <button class="pedal" id="pedal-record"><span class="num">2</span>record</button>
         <span class="plate-mark">R</span>

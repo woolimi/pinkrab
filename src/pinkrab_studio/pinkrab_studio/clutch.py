@@ -1,9 +1,11 @@
-"""The clutch: pedal 2 starts an episode, pedal 3 stops and saves it.
+"""The clutch: pedal 2 starts an episode, pedal 3 stops and saves it, and
+pedal 1 cancels it - stopped and deleted.
 
 Which page is in front decides what the pedals mean. The collect page says so
 over its socket once a second while it is visible; for as long as that is recent, the
-"follow the handheld" pedal means record and the stop pedal stops the
-recording rather than the arms - a press each, hands free in between. On the
+"follow the handheld" pedal means record, the stop pedal stops the
+recording rather than the arms, and the jog pedal throws the recording away -
+a press each, hands free in between. On the
 teleop page the pedals are the arms' again. The studio relays the two calls
 and keeps nothing else; what was recorded is the live view's to say.
 """
@@ -17,6 +19,7 @@ import urllib.request
 
 START_PEDAL = "handheld"
 STOP_PEDAL = "stop"
+CANCEL_PEDAL = "jog"
 
 
 # How long the collect page's last word keeps the pedals; it speaks every second.
@@ -46,8 +49,8 @@ class Clutch:
             return time.monotonic() - self._seen < IN_FRONT_S
 
     def pedal(self, name: str, down: bool) -> None:
-        """A press (not a release) of either pedal, while armed."""
-        if not down or name not in (START_PEDAL, STOP_PEDAL):
+        """A press (not a release) of any of the three, while armed."""
+        if not down or name not in (START_PEDAL, STOP_PEDAL, CANCEL_PEDAL):
             return
         if not self.armed:
             return
@@ -57,8 +60,8 @@ class Clutch:
         # remembered, it went stale the moment the page's own button stopped
         # the episode or the live view was started again, and every press of
         # the record pedal after that was a press "while recording" - ignored.
-        threading.Thread(target=self._start if name == START_PEDAL else self._stop,
-                         name="clutch", daemon=True).start()
+        order = {START_PEDAL: self._start, STOP_PEDAL: self._stop, CANCEL_PEDAL: self._cancel}[name]
+        threading.Thread(target=order, name="clutch", daemon=True).start()
 
     def _recording_now(self) -> bool | None:
         """Whether the live view has an episode open, or None when it does not answer."""
@@ -98,18 +101,22 @@ class Clutch:
             else:
                 self.note = answer.get("error", "could not start")
 
-    def _stop(self) -> None:
-        # The stop pedal with nothing recording changes nothing.
+    def _stop(self, cancel: bool = False) -> None:
+        # The stop or cancel pedal with nothing recording changes nothing.
         if self._recording_now() is False:
             return
-        answer, code = self._post("/episode/stop", {})
+        answer, code = self._post("/episode/cancel" if cancel else "/episode/stop", {})
         with self._lock:
             self.recording = None
             if code == 200:
-                self.last = {**(answer.get("episode") or {}), "at": time.time()}
+                if not cancel:
+                    self.last = {**(answer.get("episode") or {}), "at": time.time()}
                 self.note = ""
             else:
                 self.note = answer.get("error", "could not stop")
+
+    def _cancel(self) -> None:
+        self._stop(cancel=True)
 
     def state(self) -> dict:
         armed = self.armed

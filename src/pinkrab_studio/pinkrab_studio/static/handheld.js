@@ -244,18 +244,20 @@ watch('rig', (rig) => { showRig(rig); feedStartup(null, rig); });
 
 
 // --- recording -------------------------------------------------------------------
-// While this page is in front, pedal 2 starts an episode and pedal 3 stops
-// it; the page's own pedals do the same by click. The live view records;
-// this page asks, shows, and beeps.
+// While this page is in front, pedal 2 starts an episode, pedal 3 stops it
+// and pedal 1 cancels it; the page's own pedals do the same by click. The
+// live view records; this page asks, shows, and says each step aloud.
 const recDot = document.getElementById('rec-dot');
 const recLine = document.getElementById('rec-line');
 const recNote = document.getElementById('rec-note');
 const pedalRecord = document.getElementById('pedal-record');
 const pedalStop = document.getElementById('pedal-stop');
-const PEDALS = { handheld: pedalRecord, stop: pedalStop, jog: document.getElementById('pedal-jog') };
+const pedalCancel = document.getElementById('pedal-cancel');
+const PEDALS = { handheld: pedalRecord, stop: pedalStop, jog: pedalCancel };
 const shelfBody = document.querySelector('#episodes tbody');
 const shelfEmpty = document.getElementById('episodes-empty');
 let recording = null;      // the episode name while one records
+let saving = null;         // the episode name stopped and not yet said saved
 let audio = null;
 let pedalSeen = 0;
 
@@ -276,6 +278,18 @@ function beep(kind) {
   } catch { /* no audio here */ }
 }
 
+// Each step said aloud, in Korean, so the person at the handhelds hears it
+// without looking; the tones where the browser has no voice.
+function say(text, kind) {
+  const speech = window.speechSynthesis;
+  if (!speech || !window.SpeechSynthesisUtterance) { beep(kind); return; }
+  const line = new SpeechSynthesisUtterance(text);
+  line.lang = 'ko-KR';
+  const voice = speech.getVoices().find((v) => v.lang.replace('_', '-').startsWith('ko'));
+  if (voice) line.voice = voice;
+  speech.speak(line);
+}
+
 function fmtBytes(n) { return n > 1e9 ? `${(n / 1e9).toFixed(1)} GB` : n > 1e6 ? `${(n / 1e6).toFixed(0)} MB` : `${Math.round(n / 1e3)} kB`; }
 
 function showEpisode(ep) {
@@ -287,6 +301,8 @@ function showEpisode(ep) {
   pedalStop.classList.toggle('on', running && !recording);
   pedalRecord.disabled = !running || !!recording;
   pedalStop.disabled = !running || !recording;
+  pedalCancel.disabled = !running || !recording;
+  pedalCancel.classList.toggle('on', !!recording);
   if (recording) {
     const f = ep.frames || {};
     recLine.textContent = `recording ${ep.seconds}s · head ${f.head ?? 0} · left ${f.gripper_left ?? 0} · right ${f.gripper_right ?? 0}`;
@@ -295,8 +311,18 @@ function showEpisode(ep) {
     recLine.textContent = running ? 'not recording' : 'not connected';
     recLine.title = '';
   }
-  if (was && !recording) beep('stop');
-  if (!was && recording) beep('start');
+  if (!was && recording) say('녹화 시작', 'start');
+  // Stopped: the videos finish (closing) before it is kept; cancelled, it is
+  // closed and deleted instead.
+  if (was && !recording) {
+    const end = [ep?.closing, ep?.closed].find((e) => e?.name === was);
+    if (end?.cancelled) say('녹화 취소', 'stop');
+    else { saving = was; if (ep?.closing?.name === was) say('저장 중', 'stop'); }
+  }
+  if (saving && ep?.closed?.name === saving && ep?.closing?.name !== saving) {
+    say(ep.closed.cancelled ? '녹화 취소' : '저장 완료', 'stop');
+    saving = null;
+  }
 }
 
 // --- the shelf --------------------------------------------------------------------
@@ -553,6 +579,7 @@ async function askEpisode(verb) {
 }
 pedalRecord.addEventListener('click', () => askEpisode('start'));
 pedalStop.addEventListener('click', () => askEpisode('stop'));
+pedalCancel.addEventListener('click', () => askEpisode('cancel'));
 
 // A press on the floor flashes the pedal here, as on the teleop page.
 function showPedal(pedal) {
