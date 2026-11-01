@@ -32,6 +32,7 @@ import fcntl
 import os
 import struct
 import sys
+import threading
 import time
 import weakref
 from multiprocessing import resource_tracker, shared_memory
@@ -50,14 +51,24 @@ class _Lock:
     file is let go when closed, or when nothing holds the lock any more - a
     policy page that asks a checkpoint again and again makes a reader each time."""
 
-    def __init__(self, camera: str) -> None:
+    def __init__(self, camera: str, suffix: str = "") -> None:
         path = SETTINGS.camera_share_lock(camera)
+        path = path.with_name(path.name + suffix)
         path.parent.mkdir(parents=True, exist_ok=True)
         self._fd = os.open(path, os.O_RDWR | os.O_CREAT, 0o600)
         self.close = weakref.finalize(self, os.close, self._fd)
 
     def hold(self, mode: int) -> _Held:
         return _Held(self._fd, mode)
+
+    def claim(self) -> bool:
+        """Take the lock whole and keep it until this is closed, if nobody
+        holds it."""
+        try:
+            fcntl.flock(self._fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            return False
+        return True
 
 
 class _Held:
@@ -71,12 +82,29 @@ class _Held:
         fcntl.flock(self._fd, fcntl.LOCK_UN)
 
 
+class ShareError(RuntimeError):
+    pass
+
+
 class FrameWriter:
-    """One camera's block, written by the thread that reads the camera."""
+    """One camera's block, written by the thread that reads the camera.
+
+    A camera has one writer at a time: the first to write takes a lock on a
+    file of the block's own (kept for as long as the writer lives, and let go
+    by the system when its process dies), and a second finds it held and
+    shares nothing, rather than replace the block under the first's readers.
+    A block found with no writer holding the lock is a dead one's, and is
+    replaced."""
 
     def __init__(self, camera: str) -> None:
         self.name = SETTINGS.camera_share_name.format(camera=camera)
         self._lock = _Lock(camera)
+        self._owner = _Lock(camera, suffix=".owner")
+        self._owning = False
+        # Held across a write and across a close, so a close from another
+        # thread waits for the copy in progress and a write after it finds
+        # the writer closed.
+        self._guard = threading.Lock()
         self._shm: shared_memory.SharedMemory | None = None
         self._pixels: np.ndarray | None = None
         self._count = 0
@@ -85,12 +113,17 @@ class FrameWriter:
 
     def _make(self, shape: tuple[int, int, int]) -> None:
         self._drop()
+        if not self._owning:
+            if not self._owner.claim():
+                raise ShareError(f"another writer is sharing {self.name}")
+            self._owning = True
         size = HEADER.size + int(np.prod(shape))
         try:
             self._shm = shared_memory.SharedMemory(self.name, create=True, size=size)
         except FileExistsError:
-            # Left by a process that did not close it - killed outright.
-            # Readers holding it find it stale and come back to this one.
+            # Left by a process that did not close it - killed outright, for
+            # no writer holds the block. Readers holding it find it stale and
+            # come back to this one.
             old = shared_memory.SharedMemory(self.name)
             old.close()
             old.unlink()
@@ -107,24 +140,25 @@ class FrameWriter:
         recorder, and dies with whatever this raises. Nothing once closed: a
         reading thread left stuck in a read can still come back after its
         camera was stopped."""
-        if self._closed:
-            return
-        try:
-            if self._pixels is None or self._pixels.shape != picture.shape:
-                self._make(picture.shape)
-            self._count += 1
-            with self._lock.hold(fcntl.LOCK_EX):
-                np.copyto(self._pixels, picture)
-                HEADER.pack_into(self._shm.buf, 0, MAGIC, *picture.shape, self._count, stamp)
-        except Exception as exc:  # noqa: BLE001 - sharing a frame never stops the camera
-            if not self._failing:
-                print(f"  {self.name}: frames not shared - {type(exc).__name__}: {exc}", flush=True)
-            self._failing = True
-            self._drop()
-            return
-        if self._failing:
-            print(f"  {self.name}: frames shared again", flush=True)
-            self._failing = False
+        with self._guard:
+            if self._closed:
+                return
+            try:
+                if self._pixels is None or self._pixels.shape != picture.shape:
+                    self._make(picture.shape)
+                self._count += 1
+                with self._lock.hold(fcntl.LOCK_EX):
+                    np.copyto(self._pixels, picture)
+                    HEADER.pack_into(self._shm.buf, 0, MAGIC, *picture.shape, self._count, stamp)
+            except Exception as exc:  # noqa: BLE001 - sharing a frame never stops the camera
+                if not self._failing:
+                    print(f"  {self.name}: frames not shared - {type(exc).__name__}: {exc}", flush=True)
+                self._failing = True
+                self._drop()
+                return
+            if self._failing:
+                print(f"  {self.name}: frames shared again", flush=True)
+                self._failing = False
 
     def _drop(self) -> None:
         if self._shm is None:
@@ -139,11 +173,13 @@ class FrameWriter:
         self._shm = None
 
     def close(self) -> None:
-        if self._closed:
-            return
-        self._closed = True
-        self._drop()
-        self._lock.close()
+        with self._guard:
+            if self._closed:
+                return
+            self._closed = True
+            self._drop()
+            self._lock.close()
+            self._owner.close()
 
 
 class FrameReader:

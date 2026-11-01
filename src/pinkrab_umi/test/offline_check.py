@@ -751,6 +751,153 @@ def check_top_light() -> None:
 
 
 
+def check_recorded_poses() -> None:
+    """What a recording keeps of the stream filter, and how convert reads it."""
+    print("\nrecorded poses")
+    from scipy.spatial.transform import Rotation
+
+    from pinkrab_umi import convert
+
+    dt = 1 / 30
+    still = np.eye(4)
+    f = filtering.PoseFilter()
+    first = pnp.SolidPose(ok=True, pose=still.copy(), faces=(1, 2))
+    f.apply(first, 0.0)
+    moved = np.eye(4)
+    moved[0, 3] = 0.1
+    out = f.apply(pnp.SolidPose(ok=True, pose=moved.copy(), faces=(1, 2)), dt)
+    check("the filter's answer keeps the pose it chose beside the averaged one",
+          np.allclose(out.held, moved) and out.pose[0, 3] < moved[0, 3],
+          f"held {out.held[0, 3]:.3f}, averaged {out.pose[0, 3]:.3f}")
+    bare = pnp.SolidPose(ok=True, pose=moved.copy(), faces=(1, 2))
+    check("an answer nothing was averaged into is its own held pose", bare.held is bare.pose)
+
+    poses = [{"host_ts": 10.0 + i * dt, "jaw": {"left": 0.1 * (i // 3)}, "jaw_ts": {"left": 10.0 + (i // 3) * 3 * dt - 0.2}}
+             for i in range(9)]
+    t, v = convert.jaw_readings(poses, "left")
+    check("a jaw reading is laid at the time it was read, once however many frames carried it",
+          len(t) == 3 and abs(t[0] - (9.8 - SETTINGS.jaw_latency_s)) < 1e-9 and list(np.round(v, 3)) == [0.0, 0.1, 0.2],
+          f"{len(t)} readings, first at {t[0]:.3f}")
+    bare_lines = [{"host_ts": 5.0, "jaw": {"right": 0.4}}]
+    t, _ = convert.jaw_readings(bare_lines, "right")
+    check("a line that names no read time is read at its own", abs(t[0] - (5.0 - SETTINGS.jaw_latency_s)) < 1e-9)
+
+    sweep = np.array([Rotation.from_rotvec(v).as_matrix()
+                      for v in np.cumsum(np.random.default_rng(0).normal(0, 0.01, (3000, 3)), axis=0)
+                      + np.array([np.pi, 0.0, 0.0])])
+    q = convert.continuous_quats(sweep)
+    check("a tool turning about half a turn off the desk's frame has a quaternion with no sign flip",
+          bool((np.einsum("ij,ij->i", q[1:], q[:-1]) > 0).all()))
+
+    flat = {"mean": [0.8], "std": [7e-8], "min": [0.8], "max": [0.8], "q01": [0.8], "q99": [0.8],
+            "q05": [0.8], "q95": [0.8], "q10": [0.8], "q90": [0.8], "q50": [0.8]}
+    out = convert.floored(flat, convert.STATE_STD_FLOOR)
+    widths = {k: out[hi][0] - out[lo][0] for k, (lo, hi) in {"minmax": ("min", "max"), "q01": ("q01", "q99"),
+                                                              "q05": ("q05", "q95"), "q10": ("q10", "q90")}.items()}
+    check("a state number the takes never vary has no spread under the floor in any statistic",
+          out["std"][0] >= convert.STATE_STD_FLOOR and all(w >= convert.STATE_STD_FLOOR - 1e-12 for w in widths.values())
+          and abs((out["min"][0] + out["max"][0]) / 2 - 0.8) < 1e-9 and out["q50"] == [0.8], str(widths))
+    wide = convert.floored({**flat, "std": [0.3], "min": [0.0], "max": [1.0]}, convert.STATE_STD_FLOOR)
+    check("a number that varies is left as it is", wide["std"] == [0.3] and wide["min"] == [0.0] and wide["max"] == [1.0])
+
+    fast = SETTINGS.filter_max_rot_speed_dps
+    spin = np.eye(4)
+    spin[:3, :3] = Rotation.from_euler("z", fast / 30 * 1.5, degrees=True).as_matrix()
+    _, despiked = convert.deltas(np.array([np.eye(4), spin]), np.zeros(2), 30)
+    ok_turn = np.eye(4)
+    ok_turn[:3, :3] = Rotation.from_euler("z", fast / 30 * 0.5, degrees=True).as_matrix()
+    _, kept = convert.deltas(np.array([np.eye(4), ok_turn]), np.zeros(2), 30)
+    check("a turn the stream filter allows is a hand's and one past it a glitch",
+          despiked == 1 and kept == 0, f"filter allows {fast:.0f} deg/s")
+
+    times = np.arange(30) * dt
+    tools = [np.eye(4) for _ in range(30)]
+    for i, T in enumerate(tools):
+        T[0, 3] = 0.01 * i
+    for i in range(10, 13):
+        tools[i] = None
+    at = np.arange(0, times[-1], 1 / 50)
+    laid = convert.on_grid(tools, times, at, 30.0, SETTINGS.convert_max_hole_s)
+    check("a hole short enough is bridged on the grid, as a segment of convert has it",
+          all(T is not None for T in laid), f"{sum(T is None for T in laid)} of {len(laid)} moments empty")
+    for i in range(10, 20):
+        tools[i] = None
+    laid = convert.on_grid(tools, times, at, 30.0, SETTINGS.convert_max_hole_s)
+    inside = [T is None for T, t in zip(laid, at) if times[9] < t < times[20]]
+    check("a longer one is not", all(inside) and len(inside) > 0)
+
+
+def check_failing_recording() -> None:
+    """A video that cannot be written does not leave the close waiting; one
+    that cannot be opened leaves out its take."""
+    print("\nrecording and converting failures")
+    import queue
+    import time
+
+    from pinkrab_umi import convert, episode
+
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        writer = episode.EpisodeWriter("t", root / "t", None, 30.0, 30.0, {})
+
+        class Broken:
+            ok = True
+            codec = "x"
+
+            def write(self, picture) -> None:
+                raise OSError("no space left on device")
+
+            def close(self) -> None:
+                raise OSError("no space left on device")
+
+        video = writer._videos["gripper_left"]
+        video.writer, video.size, video.codec = Broken(), (64, 48), "x"
+        # More frames than the queue holds: a thread gone with the first would leave the rest queued.
+        sent = 0
+        for _ in range(SETTINGS.episode_queue_frames * 2):
+            try:
+                video.queue.put(
+                    (np.zeros((48, 64, 3), np.uint8), time.time(), None, None), timeout=2.0)
+                sent += 1
+            except queue.Full:
+                break
+        started = time.monotonic()
+        status = writer.close()
+        check("a video whose encoder fails does not hold the close", time.monotonic() - started < 10.0,
+              f"{sent} frames sent, closed in {time.monotonic() - started:.1f} s")
+        meta = __import__("json").loads((root / "t" / "meta.json").read_text())
+        stream = meta["streams"]["gripper_left"]
+        check("the take says the video stopped and counts what it lost",
+              "OSError" in stream.get("failure", "") and stream["dropped"] == sent and stream["frames"] == 0,
+              str(stream))
+        check("status reports the same", status["dropped"]["gripper_left"] == sent)
+
+        opened = []
+
+        class Cap:
+            def __init__(self, path) -> None:
+                self.ok = "left" in str(path)
+
+            def isOpened(self) -> bool:
+                return self.ok
+
+            def release(self) -> None:
+                opened.append("released")
+
+        real = convert.cv2.VideoCapture
+        convert.cv2.VideoCapture = Cap
+        try:
+            try:
+                convert.open_videos(root, ("left", "right"), (570, 780), {"left": (0.5, 0.5), "right": (0.5, 0.5)})
+                error = ""
+            except convert.ConvertError as exc:
+                error = str(exc)
+        finally:
+            convert.cv2.VideoCapture = real
+        check("a video that will not open is a ConvertError, with the ones opened before it let go",
+              "cannot open" in error and opened == ["released"], f"{error}; {opened}")
+
+
 def main() -> int:
     check_geometry()
     with tempfile.TemporaryDirectory() as tmp:
@@ -765,6 +912,8 @@ def main() -> int:
         check_outcome(Path(tmp))
     check_marker_meta()
     check_top_light()
+    check_recorded_poses()
+    check_failing_recording()
 
     print()
     if FAILURES:

@@ -212,7 +212,7 @@ class Planner:
         """The blocks somewhere on the desk."""
         s = SETTINGS
         for _ in range(200):
-            spots = [(rng.uniform(*s.block_x), rng.uniform(*s.block_y)) for _ in range(2)]
+            spots = [(rng.uniform(*s.block_x), rng.uniform(*mirrored(s.block_y, self.arm))) for _ in range(2)]
             if math.dist(*spots) >= s.block_gap:
                 yaw = [rng.uniform(-1, 1) * math.radians(s.block_yaw_deg) for _ in range(2)]
                 return Layout({s.carried_block: (*spots[0], yaw[0]), s.target_block: (*spots[1], yaw[1])})
@@ -351,7 +351,7 @@ class Planner:
         if self.world.scene == "bowls":
             xs, ys = s.two_hand_start_x, mirrored(s.two_hand_start_y, self.arm)
         else:
-            xs, ys = s.start_x, s.start_y
+            xs, ys = s.start_x, mirrored(s.start_y, self.arm)
         for _ in range(50):
             sx, sy = rng.uniform(*xs), rng.uniform(*ys)
             if all(math.hypot(x - sx, y - sy) >= s.start_clear for x, y, _ in layout.things.values()):
@@ -653,7 +653,9 @@ def record(world: World, plans: dict[str, Plan], trajectories: dict[str, Traject
             lines["poses"].write(json.dumps({
                 "host_ts": stamp + UMI.jaw_latency_s, "stamp": stamp, "primary": f"handheld_{hands[0]}",
                 "solids": solids, "desk": {"tracking": True, "faces": 3, "reproj_px": 0.0, "reason": ""},
-                "jaw": jaws}) + "\n")
+                "jaw": jaws,
+                # Each opening is read as the frame is taken, and reaches the host's clock a latency later.
+                "jaw_ts": {h: None if v is None else stamp + UMI.jaw_latency_s for h, v in jaws.items()}}) + "\n")
             # Physics until the next frame, the Hermits moving on between.
             for j in range(substeps):
                 tj = t + (j + 1) * dt

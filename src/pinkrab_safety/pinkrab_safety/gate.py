@@ -40,6 +40,16 @@ handheld, the studio's jog and walks, a correction - are shaped the same way
 under the config's teleop limits, unless teleop_smoothing is off; their jaws
 are only ramped.
 
+An arm that holds no torque is not commanded: the driver drops what it is sent,
+and a setpoint walked meanwhile would be where the arm jumps to when the torque
+comes on. The driver says which arms hold torque (`TorqueState`), and the
+gate anchors an arm afresh at the reading whenever that changes.
+
+The emergency stop is this node's `/estop`, and it is the only one: it idles the
+gate at once and asks the driver to let both arms go (`/set_torque`), asking again
+until the driver has said yes - a stop is not dropped because the driver was busy
+or a packet was lost. Coming back is a mode request to idle, which ends the asking.
+
 What an operator is allowed to believe lives here too. Armed, the mode, and why
 the last command did not go through are published as `TeleopState` and nowhere
 else: a page that kept its own copy would go on showing ARM after the stop was
@@ -56,10 +66,11 @@ import math
 from pathlib import Path
 
 import rclpy
-from pinkrab_interfaces.msg import TeleopState
-from pinkrab_interfaces.srv import Estop, SetTeleopMode
+from pinkrab_interfaces.msg import TeleopState, TorqueState
+from pinkrab_interfaces.srv import Estop, SetTeleopMode, SetTorque
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
+from rclpy.qos import DurabilityPolicy, QoSProfile
 from sensor_msgs.msg import JointState
 
 from pinkrab_core import inference
@@ -67,6 +78,11 @@ from pinkrab_core.config import SETTINGS
 from pinkrab_mujoco.scene import Scene, SceneError
 
 from .policy import MODE_CORRECT, MODE_HANDHELD, MODE_IDLE, MODE_POLICY, MODE_STUDIO, Gate
+
+
+# How long an unanswered request to let the arms go waits before it is made
+# again, and how often a stop that is not yet acknowledged is looked at.
+LIMP_RETRY_S = 0.5
 
 
 class GateNode(Node):
@@ -103,8 +119,20 @@ class GateNode(Node):
         self.state = self.create_publisher(TeleopState, "teleop_state", 10)
         self.create_subscription(JointState, "joint_commands", self._on_command, 10)
         self.create_subscription(JointState, "joint_states", self._on_state, 10)
+        self.create_subscription(
+            TorqueState, "torque_state", self._on_torque,
+            QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL),
+        )
         self.create_service(SetTeleopMode, "set_teleop_mode", self._on_mode)
         self.create_service(Estop, "estop", self._on_stop)
+        # The stop's second half: the driver asked to let the arms go. Asked
+        # again while `_limp_due` stands, which only a deliberate return to idle
+        # or the driver's yes ends.
+        self.limp = self.create_client(SetTorque, "set_torque")
+        self._limp_due = False
+        self._limp_call = None
+        self._limp_sent = 0.0
+        self.create_timer(LIMP_RETRY_S / 2, self._limp_retry)
         # Published on a timer rather than on change: a client that has not had a
         # frame for a second has lost the gate, and that is only tellable if the
         # gate speaks when nothing is happening.
@@ -119,6 +147,9 @@ class GateNode(Node):
         pose = {k: v for k, v in _pose(message).items() if math.isfinite(v)}
         if pose:
             self.gate.observe(pose)
+
+    def _on_torque(self, message: TorqueState) -> None:
+        self.gate.hold(dict(zip(message.arms, (bool(e) for e in message.enabled))))
 
     def _on_command(self, message: JointState) -> None:
         # Passed whole: a command with a joint that is not a number is
@@ -153,6 +184,9 @@ class GateNode(Node):
     # --- services ----------------------------------------------------------
     def _on_mode(self, request, response):
         response.success, response.message = self.gate.set_mode(int(request.mode))
+        if response.success:
+            # Out of the stop (or never in one): nothing is left to let go.
+            self._limp_due = False
         self.get_logger().info(f"mode: {response.message}")
         self._publish_state()
         return response
@@ -161,8 +195,43 @@ class GateNode(Node):
         # The request carries nothing: there is one thing to do.
         response.success, response.message = self.gate.stop()
         self.get_logger().warn("emergency stop - nothing passes until idle is asked for")
+        self._limp_due = True
+        self._let_go()
         self._publish_state()
         return response
+
+    def _let_go(self) -> None:
+        """Ask the driver to turn both arms' torque off, unless that is already on
+        its way."""
+        now = self.get_clock().now().nanoseconds / 1e9
+        if self._limp_call is not None:
+            if not self._limp_call.done() and now - self._limp_sent < LIMP_RETRY_S:
+                return
+            if not self._limp_call.done():
+                self.limp.remove_pending_request(self._limp_call)
+            self._limp_call = None
+        if not self.limp.service_is_ready():
+            return
+        self._limp_sent = now
+        self._limp_call = self.limp.call_async(
+            SetTorque.Request(arm=SetTorque.Request.ARM_BOTH, enable=False))
+        self._limp_call.add_done_callback(self._limped)
+
+    def _limped(self, future) -> None:
+        try:
+            answer = future.result()
+        except Exception as exc:  # noqa: BLE001 - a failed call is asked again
+            self.get_logger().warn(f"the driver did not answer the stop: {exc}", throttle_duration_sec=1.0)
+            return
+        if answer.success:
+            self._limp_due = False
+            self.get_logger().info(f"stop: {answer.message}")
+        else:
+            self.get_logger().error(f"stop: the arms did not let go - {answer.message}", throttle_duration_sec=1.0)
+
+    def _limp_retry(self) -> None:
+        if self._limp_due:
+            self._let_go()
 
     # --- what the page draws ------------------------------------------------
     def _publish_state(self) -> None:

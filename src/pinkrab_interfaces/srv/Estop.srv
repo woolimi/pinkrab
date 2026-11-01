@@ -1,5 +1,9 @@
 # Drop torque on both arms at once and refuse further commands.
 #
+# Served by the gate alone. The gate stops at once and asks the driver to let
+# both arms go, asking again until the driver says it has; the answer here is
+# that the gate has stopped, not that the arms are limp.
+#
 # The request carries nothing: there is one thing to do and no argument that
 # could make it do less. Coming back is deliberate and takes the two calls it
 # takes - SetTeleopMode to MODE_IDLE, then SetTorque - so that a single

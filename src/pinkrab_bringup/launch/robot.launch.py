@@ -12,9 +12,9 @@ bands, the scene and a ramp, and puts what survives on
 onto `/joint_states`, and writes only what arrives on that checked topic - so
 there is no route from a command to a servo that misses the gate.
 
-Torque is off when this comes up and stays off until somebody calls
-`/set_torque`. The arms hang on a wall; bringing up a launch file should not
-change what they are doing. Taking it down does: on Ctrl-C the driver walks
+Torque is left as the arms had it, which on a rig that was just powered up is
+off, and a limp arm stays limp until somebody calls `/set_torque`. The arms hang
+on a wall; bringing up a launch file should not change what they are doing. Taking it down does: on Ctrl-C the driver walks
 any arm that is holding torque home, and lets go once it is there. The driver
 is given longer than launch's usual five seconds before SIGTERM for that walk.
 

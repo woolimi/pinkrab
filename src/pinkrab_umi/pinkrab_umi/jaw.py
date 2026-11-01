@@ -26,7 +26,7 @@ class JawReader:
         self.device = f"umi_{side}"
         self.say = say
         self._lock = threading.Lock()
-        self._latest: tuple[float, int, float] | None = None   # (aperture, ticks, monotonic)
+        self._latest: tuple[float, int, float, float] | None = None   # (aperture, ticks, monotonic, wall clock)
         self._note = "not opened yet"
         self._misses = 0
         self._silent = False
@@ -55,6 +55,16 @@ class JawReader:
         if latest is None or time.monotonic() - latest[2] > self.stale_s:
             return None
         return latest[0]
+
+    def reading(self) -> tuple[float, float] | None:
+        """The latest aperture and when it was read, on this host's clock - or
+        None once it is older than `stale_s`. A recording keeps the time with
+        the number: a reader that has missed some reads still holds the last one."""
+        with self._lock:
+            latest = self._latest
+        if latest is None or time.monotonic() - latest[2] > self.stale_s:
+            return None
+        return latest[0], latest[3]
 
     def stats(self) -> dict:
         with self._lock:
@@ -98,6 +108,7 @@ class JawReader:
                 while not self.stopping.is_set() and not self._wake.is_set():
                     started = time.monotonic()
                     ticks = bus.read_raw(link, CORE.handheld_joint, retries=0)
+                    read_at = time.time()
                     if ticks is None:
                         self._misses += 1
                         if self._misses == self.silent_after and not self._silent:
@@ -108,7 +119,7 @@ class JawReader:
                     else:
                         opening = angles.handheld_aperture(self.device, int(ticks), calibration)
                         with self._lock:
-                            self._latest = (float(opening), int(ticks), time.monotonic())
+                            self._latest = (float(opening), int(ticks), time.monotonic(), read_at)
                         if self._silent:
                             self._silent = False
                             self.say(f"  jaw {self.side}: answers again")
@@ -136,6 +147,10 @@ class JawReaders:
 
     def apertures(self) -> dict[str, float | None]:
         return {side: reader.aperture() for side, reader in self.sides.items()}
+
+    def readings(self) -> dict[str, tuple[float, float] | None]:
+        """Each side's latest aperture with the time it was read."""
+        return {side: reader.reading() for side, reader in self.sides.items()}
 
     def stats(self) -> dict:
         return {side: reader.stats() for side, reader in self.sides.items()}

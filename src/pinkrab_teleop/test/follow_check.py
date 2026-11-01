@@ -5,7 +5,8 @@ carried 50 mm along its own approach carries the arm's tool 50 mm along its
 own - either arm, the left's tool frame being the right's turned half a turn
 - and a hand back after a gap longer than the regrab time takes the origin
 again where it is, the arm still. An arm not yet read in full is not taken
-up. A correction's jaws are caught each at its own hand's opening. No servo,
+up, nor a hand whose picture has stopped changing. A correction's jaws are
+caught each at its own hand's opening. No servo,
 no ROS graph.
 
     python src/pinkrab_teleop/test/follow_check.py
@@ -14,6 +15,7 @@ from __future__ import annotations
 
 import math
 import sys
+import time
 
 import numpy as np
 
@@ -62,10 +64,13 @@ def waits_for_readings() -> None:
     node._publish = sent.append
     node._note_timing = lambda *a: None
     node._say_quietly = lambda *a: None
-    chain = ArmKinematics("right")
+    chain = node._chain("right")            # built before the first tick, as `_warm` does
     solid = np.eye(4)
     solid[2, 3] = 0.8
-    node._stats = lambda: {"solids": {"handheld_right": {"solved": True, "pose": solid.tolist()}}}
+    node._solved_seen, node._solved_changed = None, time.monotonic()
+    stats = {"solved_at": time.time(),
+             "solids": {"handheld_right": {"solved": True, "world_pose": solid.tolist()}}}
+    node._stats = lambda: stats
     node.at = {chain.joint_names[0]: 0.0}
     node._tick()
     check("an arm read only in part is not taken up", "right" not in node.followers and not sent,
@@ -73,6 +78,14 @@ def waits_for_readings() -> None:
     node.at = {n: math.radians(v) for n, v in zip(chain.joint_names, ready_joints("right", chain.joint_names))}
     node._tick()
     check("and is once every joint has been read", "right" in node.followers and bool(sent))
+    # The same solve, again and again: the live view is up and its camera is not.
+    sent.clear()
+    node._solved_changed -= CORE.teleop_picture_stale_s + 0.1
+    node._tick()
+    check("a picture that has stopped changing is not followed", not sent, f"{len(sent)} published")
+    stats["solved_at"] = time.time() + 1.0
+    node._tick()
+    check("and is again once the picture changes", bool(sent))
 
 
 def jaws_caught_each_on_their_own() -> None:

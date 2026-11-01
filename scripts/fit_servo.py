@@ -8,7 +8,7 @@ angles over the first second. Every joint is the same servo, so one set serves
 all of them; the damping and force range stay as the model has them.
 
     python scripts/fit_servo.py            # fit, print, write step/fit.json
-    python scripts/fit_servo.py --check    # the model's current values, no search
+    python scripts/fit_servo.py --check    # the model as it runs (delay included), no search
     python scripts/fit_servo.py --integral 8   # the model against the runs at I 8
 
 MuJoCo's position actuator is P and D only; the servos run an integral term as
@@ -68,7 +68,7 @@ class Replay:
         m = self.model
         return {"kp": float(m.actuator_gainprm[0, 0]), "kv": float(-m.actuator_biasprm[0, 2]),
                 "frictionloss": float(m.dof_frictionloss[self.arm_dofs[0]]),
-                "armature": float(m.dof_armature[self.arm_dofs[0]]), "delay_s": 0.0}
+                "armature": float(m.dof_armature[self.arm_dofs[0]]), "delay_s": SETTINGS.servo_delay_s}
 
     def set(self, p: dict) -> None:
         m = self.model
@@ -149,7 +149,7 @@ def main() -> None:
                 return 1e3
             return float(np.mean(replay.errors(traces, p)))
 
-        x0 = [*np.log([base[n] for n in NAMES[:4]]), 0.03]
+        x0 = [*np.log([base[n] for n in NAMES[:4]]), base["delay_s"]]
         res = minimize(cost, x0, method="Nelder-Mead",
                        options={"maxiter": 400, "xatol": 1e-3, "fatol": 1e-3, "disp": True})
         best = dict(zip(NAMES, [*np.exp(res.x[:4]), res.x[4]]))
@@ -165,19 +165,19 @@ def main() -> None:
     print("model:", {k: round(v, 4) for k, v in base.items()})
     print("fit:  ", {k: round(v, 4) for k, v in best.items()})
     if not args.check:
+        print("delay_s is config.py's servo_delay_s; kp, kv, frictionloss and armature are the MJCF's")
+    if not args.check:
         (SETTINGS.workspace / "step" / "fit.json").write_text(json.dumps(
             {"model": base, "fit": best, "rms_before": before, "rms_after": after,
              "traces": [t["name"] for t in traces]}, indent=1))
 
 
 def fit_integral(i_gain: int) -> None:
-    from pinkrab_mujoco.physics import SERVO_DELAY_S
-
     traces = load_traces(i_gain, INTEGRAL_WINDOW_S)
     if not traces:
         raise SystemExit(f"no step runs recorded at I {i_gain} - step_response.py --i {i_gain}")
     replay = Replay()
-    p = {**replay.current(), "delay_s": SERVO_DELAY_S}
+    p = replay.current()
 
     def settled(t, v):
         return float(np.mean(v[t >= INTEGRAL_WINDOW_S - 0.5]))

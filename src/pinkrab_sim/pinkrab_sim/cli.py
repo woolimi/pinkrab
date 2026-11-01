@@ -171,8 +171,6 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"  {hand:5s}: at rest, wandered {rates['wander_mm']} mm")
             else:
                 print(f"  {hand:5s}: held {rates['held']:.0%}  lifted {rates['lifted']:.0%}  placed {rates['placed']:.0%}")
-        if "wrong_thing" in summary:
-            print(f"  wrong thing {summary['wrong_thing']:.0%}  wrong bowl {summary['wrong_bowl']:.0%}")
         if "faces_held" in summary:
             print("  faces of the grasps   " + "  ".join(f"{k} {v}" for k, v in summary["faces_held"].items()))
             print("  faces, every episode  " + "  ".join(f"{k} {v}" for k, v in summary["faces_all"].items()))
@@ -233,14 +231,15 @@ def render_lens(out: Path, solved: dict) -> None:
 
     out.mkdir(parents=True, exist_ok=True)
     T = np.eye(4)
-    T[:3, :3] = tool_rotation(0.3, math.radians(62))
-    T[:3, 3] = [0.30, 0.16, 0.05]
+    side = 1.0 if SETTINGS.arm == "left" else -1.0
+    T[:3, :3] = tool_rotation(side * 0.3, math.radians(62))
+    T[:3, 3] = [0.30, side * 0.16, 0.05]
     poses = {"camera_yaml": (None, None), **{f"solved_{k}": v for k, v in solved.items()
                                               if k == SETTINGS.lens}}
     for label, (pitch, yaw) in poses.items():
         world = World(arms=(), hermits=(SETTINGS.arm,), pitch=pitch, yaw=yaw)
         try:
-            world.lay_out(Layout({"cap": (0.34, 0.17, 0.2), "base": (0.36, 0.27, -0.1)}))
+            world.lay_out(Layout({"cap": (0.34, side * 0.17, side * 0.2), "base": (0.36, side * 0.27, side * -0.1)}))
             world.hold_hermit(SETTINGS.arm, T, 0.0)
             world.forward()
             picture = world.gripper_image(hermit(SETTINGS.arm))

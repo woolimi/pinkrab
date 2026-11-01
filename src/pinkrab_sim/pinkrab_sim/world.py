@@ -16,8 +16,9 @@ change what the gate says. On top of it go
     hands where the rig reckons it, at the operator's chest - and the top
     camera looking down at the work;
   - a cutting mat for a desk, so a camera has something to see move;
-  - the servos as stiff as the bench's, the gripper's squeeze capped where
-    Torque_Limit caps it, and contact friction fit for grasping.
+  - the servos as the description fits them (kp, kv, armature, force range),
+    the gripper's squeeze capped where Torque_Limit caps it, and contact
+    friction fit for grasping.
 
 Frames: the world is the robot's (scene.xml), cameras hand out OpenCV frames.
 """
@@ -217,13 +218,9 @@ def build_spec(arms: tuple[str, ...] = ("left",), hermits: tuple[str, ...] = ("l
         bracket = spec.geom(f"camera_bracket_{arm}")
         if bracket is not None:
             bracket.group = BEHIND_LENS_GROUP
-        for joint in CORE.joint_names:
-            spec.joint(f"{arm}_{joint}").armature = SETTINGS.servo_armature
-            actuator = spec.actuator(f"{arm}_{joint}")
-            actuator.set_to_position(kp=SETTINGS.servo_kp, dampratio=1.0)
-            if joint == "gripper":
-                actuator.forcerange = [-grip, grip]
-                spec.joint(f"{arm}_{joint}").actfrcrange = [-grip, grip]
+        actuator = spec.actuator(f"{arm}_gripper")
+        actuator.forcerange = [-grip, grip]
+        spec.joint(f"{arm}_gripper").actfrcrange = [-grip, grip]
     for arm in arms:
         add_view_cameras(spec.body(f"{arm}_gripper_link"), f"{arm}_gripcam",
                           gripper_camera_in_link(spec, arm, pitch, yaw))
@@ -291,10 +288,12 @@ def build_spec(arms: tuple[str, ...] = ("left",), hermits: tuple[str, ...] = ("l
 
 def head_view(scene: str) -> tuple[tuple[float, float, float], tuple[float, float, float], float]:
     """Where the top camera stands, what it looks at and its vertical field
-    of view: beside the left arm for one hand, wide and in the middle for two."""
+    of view: beside the working arm for one hand, wide and in the middle for two."""
     if scene == "bowls":
         return SETTINGS.two_hand_head_pos, SETTINGS.two_hand_head_target, SETTINGS.two_hand_head_fovy_deg
-    return SETTINGS.head_pos, SETTINGS.head_target, SETTINGS.head_fovy_deg
+    side = 1.0 if SETTINGS.arm == "left" else -1.0
+    (px, py, pz), (tx, ty, tz) = SETTINGS.head_pos, SETTINGS.head_target
+    return (px, side * py, pz), (tx, side * ty, tz), SETTINGS.head_fovy_deg
 
 
 def add_hermit(spec: mujoco.MjSpec, place: str, pitch: float | None, yaw: float | None) -> None:
@@ -366,7 +365,8 @@ def desk_pose(scene: str = "blocks") -> np.ndarray:
     c, s = math.cos(math.radians(SETTINGS.desk_yaw_deg)), math.sin(math.radians(SETTINGS.desk_yaw_deg))
     T = np.eye(4)
     T[:3, :3] = [[c, -s, 0.0], [s, c, 0.0], [0.0, 0.0, 1.0]]
-    T[:3, 3] = SETTINGS.desk_origin
+    x, y, z = SETTINGS.desk_origin
+    T[:3, 3] = [x, y if SETTINGS.arm == "left" else -y, z]
     return T
 
 
@@ -464,6 +464,11 @@ class World:
 
     def block_pose(self, name: str) -> np.ndarray:
         return self.body_pose(name)
+
+    def speed(self, name: str) -> float:
+        """How fast a thing moves, metres a second."""
+        v = self._free_v[name]
+        return float(np.linalg.norm(self.data.qvel[v:v + 3]))
 
     def lay_out(self, layout: Layout) -> None:
         parked = [n for n in self.things if n not in layout.things]

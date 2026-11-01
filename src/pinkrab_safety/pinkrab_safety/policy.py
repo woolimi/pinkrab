@@ -47,6 +47,17 @@ SILENCE_S = 0.25
 # asking: the arm is braked to a standstill where it gets to, not carried on
 # to the last place it was sent.
 SHAPE_SILENCE_S = 0.1
+# Both of those are floors. A source that commands slowly - a policy at a
+# dataset rate of a few Hz - is silent only after several of its own gaps, and
+# the gap is learned from the commands themselves: silence is this many gaps.
+SILENCE_GAPS = 2.5
+# The longest gap between two commands that is still one stream. A longer one
+# starts the count of gaps again.
+MAX_GAP_S = 2.0
+# The farthest, in radians, that a joint moves between two poses the scene is
+# asked about: a step longer than this is checked at the points along it, since
+# the servo travels the whole of it and not only its end.
+PATH_STEP_RAD = math.radians(5.0)
 # A shape taken up again after silence starts from where it stood rather
 # than from the readings, for a joint read within this of it: a servo at rest
 # sits a hair short of its goal, and a setpoint put back at the reading would
@@ -104,9 +115,18 @@ class Gate:
         # is braked on its own (`tick`).
         self._asked_at: dict[str, float] = {}
         self._braking = False
-        self._target_notes: tuple[list[str], list[str]] = ([], [])
+        self._target_notes: tuple[list[str], list[str], list[str]] = ([], [], [])
         self._shape: dict[str, tuple[float, float, float]] = {}
         self._shape_at: float | None = None
+        # How often commands arrive: when the last one did and the gap before
+        # it, so that what counts as silence follows the source (`_silence`).
+        self._cmd_at: float | None = None
+        self._gap = 0.0
+        # Which arms hold torque, as the driver says; empty until it has. A
+        # limp arm is not commanded: its servos drop what they are sent, so a
+        # setpoint walked meanwhile would be the jump the arm makes when torque
+        # comes back.
+        self.torque: dict[str, bool] = {}
         # Where the arms actually are, as last reported. Empty until something
         # says: a gate that guessed would ramp from a pose the arm is not in, and
         # the first command would be exactly the jump the ramp exists to prevent.
@@ -162,6 +182,31 @@ class Gate:
         self.accel = math.radians(float(common["max_joint_accel_dps2"]))
         self.jerk = math.radians(float(common["max_joint_jerk_dps3"]))
 
+    def _silence(self, floor: float) -> float:
+        """How long without a command is silence: `floor`, or several of the
+        gaps this source leaves between its commands when those are longer."""
+        return max(floor, SILENCE_GAPS * self._gap)
+
+    def _arrived(self, now: float) -> None:
+        """A command arrived: the gap since the last, kept from shrinking all
+        at once so that a burst of queued commands does not read as a fast source."""
+        if self._cmd_at is not None and now - self._cmd_at <= MAX_GAP_S:
+            self._gap = max(now - self._cmd_at, 0.5 * self._gap)
+        else:
+            self._gap = 0.0
+        self._cmd_at = now
+
+    def hold(self, held: dict[str, bool]) -> None:
+        """Which arms hold torque, as the driver last said. An arm whose torque
+        changes either way starts afresh: what was walked toward for it is
+        dropped, and its next command is anchored at the reading."""
+        for arm in [a for a, on in held.items() if self.torque.get(a) != on]:
+            prefix = f"{arm}_"
+            for table in (self._ramp, self._target, self._shape, self._asked_at):
+                for name in [k for k in table if k.startswith(prefix)]:
+                    del table[name]
+        self.torque = dict(held)
+
     # --- what the operator asks for ---------------------------------------
     def set_mode(self, mode: int) -> tuple[bool, str]:
         if mode not in MODE_NAMES:
@@ -176,6 +221,7 @@ class Gate:
         self.mode = mode
         # A new mode is a new driver; the ramp starts again from the arm.
         self._ramp, self._ramp_at = {}, None
+        self._cmd_at, self._gap = None, 0.0
         self._let_go()
         if mode == MODE_IDLE:
             self.stopped = False
@@ -193,6 +239,7 @@ class Gate:
         self.mode = MODE_IDLE
         self.stopped = True
         self._ramp, self._ramp_at = {}, None
+        self._cmd_at, self._gap = None, 0.0
         self._let_go()
         self.reason = "stopped"
         return True, "stopped"
@@ -204,22 +251,19 @@ class Gate:
         now = self._clock()
         self._read_at.update(dict.fromkeys(pose, now))
         previous, self._resting, self._off_tip = self._resting, {}, set()
-        fingers = set()
         for c in self.scene.touching(self.at):
             key = (c["a"], c["b"])
             self._resting[key] = max(self._resting.get(key, 0.0), c["depth"])
-            if c.get("hand"):
-                fingers.add(key)
-                if not c.get("fingertip"):
-                    self._off_tip.add(key)
+            if c.get("hand") and not c.get("fingertip"):
+                self._off_tip.add(key)
         self._now = dict(self._resting)
-        # Fingers on the desk are held to the shallowest they have been read
-        # at since they touched it. A reading is not a command: a servo a tick
-        # past its goal, or a link bent by the press, reads a little deeper
-        # than the gate let it go, and a depth taken from each reading would
-        # let each next command that little further in. Kept per pair of
-        # parts, whatever the reading says of the fingertips.
-        for key in fingers & previous.keys():
+        # A contact is held to the shallowest it has been read at since the
+        # parts touched. A reading is not a command: a servo a tick past its
+        # goal, or a link bent by the press, reads a little deeper than the
+        # gate let it go, and a depth taken from each reading would let each
+        # next command that little further in. Kept per pair of parts, whatever
+        # the reading says of the fingertips.
+        for key in self._resting.keys() & previous.keys():
             self._resting[key] = min(self._resting[key], previous[key])
 
     # --- the gate ----------------------------------------------------------
@@ -228,17 +272,19 @@ class Gate:
         accepted = self._accept(pose)
         if accepted is None:
             return None
-        wanted, clamped, unknown = accepted
+        wanted, clamped, unknown, limp = accepted
 
         # How much travel this command is granted: the speed, spent over the time
         # since the last one. A first command, or one after silence, is granted
         # none and only anchors the ramp at the arm.
         now = self._clock()
-        if self._ramp_at is None or now - self._ramp_at > SILENCE_S:
+        # Silence is judged by the gaps before this command, not by this one.
+        if self._ramp_at is None or now - self._ramp_at > self._silence(SILENCE_S):
             self._ramp = {}
             dt = 0.0
         else:
             dt = max(0.0, now - self._ramp_at)
+        self._arrived(now)
         self._ramp_at = now
         rate = self.policy_rate if self.mode == MODE_POLICY else self.rate
         step = rate * dt
@@ -258,7 +304,7 @@ class Gate:
             # of what the arm was sent.
             anchor = self._ramp.get(name, here)
             stepped[name] = anchor + _clamp(value - anchor, step)
-        allowed = self._passes(stepped, clamped, unseen, unknown)
+        allowed = self._passes(stepped, clamped, unseen, unknown, limp)
         if allowed is not None and rate > 0:
             self._ramp.update(allowed)
         return allowed
@@ -272,16 +318,18 @@ class Gate:
             # A refused command is no reason to go on to the last one passed.
             self._braking = True
             return False
-        wanted, clamped, unknown = accepted
+        wanted, clamped, unknown, limp = accepted
         now = self._clock()
-        if not self._target and self._shape_at is not None and now - self._shape_at <= SILENCE_S:
+        if (not self._target and self._shape_at is not None
+                and now - self._shape_at <= self._silence(SILENCE_S)):
             # Asked again soon after every joint came to rest: the shape goes
             # on from rest now, not from the last tick before it stopped.
             self._shape_at = now
+        self._arrived(now)
         self._target.update(wanted)
         self._braking = False
         self._asked_at.update(dict.fromkeys(wanted, now))
-        self._target_notes = (clamped, unknown)
+        self._target_notes = (clamped, unknown, limp)
         return True
 
     def tick(self) -> dict[str, float] | None:
@@ -327,7 +375,8 @@ class Gate:
             here[name] = self._shape.get(name, (self.at[name], 0.0, 0.0))
         # Braked: every joint, after a refused command; otherwise each joint
         # whose own commands stopped coming.
-        braked = {k for k in here if self._braking or now - self._asked_at.get(k, -math.inf) > SHAPE_SILENCE_S}
+        quiet = self._silence(SHAPE_SILENCE_S)
+        braked = {k for k in here if self._braking or now - self._asked_at.get(k, -math.inf) > quiet}
         # A hand's jaws are ramped, not shaped: a jaw taken over on a block
         # starts from the reading - the block's width - and must be back at
         # its squeeze within a tick or two, not the fifth of a second the
@@ -353,8 +402,8 @@ class Gate:
         # Held in the bands: a joint the shaping carries past one stops there.
         pose, held = self.scene.clamp({k: q for k, (q, _, _) in shaped.items()})
         shaped = {k: (pose[k], 0.0, 0.0) if k in held else shaped[k] for k in pose}
-        clamped, unknown = self._target_notes
-        allowed = self._passes(pose, sorted(set(clamped) | set(held)), unseen, unknown)
+        clamped, unknown, limp = self._target_notes
+        allowed = self._passes(pose, sorted(set(clamped) | set(held)), unseen, unknown, limp)
         if allowed is None:
             self._hold()
             return None
@@ -383,18 +432,20 @@ class Gate:
         the next one starts from that pose, not from a reading that may still
         be catching up with it - which would step the arm back."""
         self._shape = {k: (q, 0.0, 0.0) for k, (q, _, _) in self._shape.items()}
-        self._target, self._target_notes = {}, ([], [])
+        self._target, self._target_notes = {}, ([], [], [])
         self._asked_at, self._braking = {}, False
 
     def _let_go(self) -> None:
         self._shape, self._shape_at = {}, None
-        self._target, self._target_notes = {}, ([], [])
+        self._target, self._target_notes = {}, ([], [], [])
         self._asked_at, self._braking = {}, False
 
-    def _accept(self, pose: dict[str, float]) -> tuple[dict[str, float], list[str], list[str]] | None:
+    def _accept(self, pose: dict[str, float]
+                ) -> tuple[dict[str, float], list[str], list[str], list[str]] | None:
         """A command held to everything but the step and the scene: the joints
-        it names within their bands, with those clamped there and the names
-        that are not joints - or None, with `reason`."""
+        it names within their bands, with those clamped there, the names that
+        are not joints and the arms left out for holding no torque - or None,
+        with `reason`."""
         if self.stopped:
             self.reason = "stopped"
             return None
@@ -429,10 +480,19 @@ class Gate:
             self._ramp, self._ramp_at = {}, None
             self._let_go()
             return None
-        return wanted, clamped, unknown
+
+        # An arm known to hold no torque is not commanded at all.
+        limp = sorted({k.split("_", 1)[0] for k in wanted} & {a for a, on in self.torque.items() if not on})
+        if limp:
+            wanted = {k: v for k, v in wanted.items() if k.split("_", 1)[0] not in limp}
+            clamped = [k for k in clamped if k in wanted]
+            if not wanted:
+                self.reason = f"no torque on the {' and '.join(limp)} arm"
+                return None
+        return wanted, clamped, unknown, limp
 
     def _passes(self, stepped: dict[str, float], clamped: list[str], unseen: list[str],
-                unknown: list[str]) -> dict[str, float] | None:
+                unknown: list[str], limp: list[str]) -> dict[str, float] | None:
         """The stepped pose held to the scene: itself, or None - `reason` says why, or what was held."""
         if not stepped:
             self.reason = f"no reading yet for {sorted(unseen)}"
@@ -440,19 +500,27 @@ class Gate:
 
         # The whole robot at the target, not just the joints being commanded: the
         # other arm is where it is, and whether these two meet is a question about
-        # both of them.
-        candidate = dict(self.at)
-        candidate.update(stepped)
+        # both of them. A joint that has not been read stands at the
+        # description's zero, as the scene has it.
         moving = {name.split("_", 1)[0] for name in stepped}
-        new = [c for c in self.scene.touching(candidate) if not self._stands(c, moving)]
-        if new:
-            first = new[0]
-            if first.get("fingertip"):
-                self.reason = (f"the {first['fingertip']} fingers would press {first['depth'] * 1000:.1f} mm "
-                               f"into the desk, past {SETTINGS.fingertip_desk_mm:g}")
-            else:
-                self.reason = f"{first['a']} would meet {first['b']}"
-            return None
+        # The servos travel the whole step, so a long one is asked about at the
+        # points along it from the reading to the target.
+        far = max((abs(v - self.at[k]) for k, v in stepped.items() if k in self.at), default=0.0)
+        points = max(1, math.ceil(far / PATH_STEP_RAD))
+        for i in range(1, points + 1):
+            share = i / points
+            candidate = dict(self.at)
+            candidate.update({k: self.at[k] + share * (v - self.at[k]) if k in self.at else v
+                              for k, v in stepped.items()})
+            new = [c for c in self.scene.touching(candidate) if not self._stands(c, moving)]
+            if new:
+                first = new[0]
+                if first.get("fingertip"):
+                    self.reason = (f"the {first['fingertip']} fingers would press {first['depth'] * 1000:.1f} mm "
+                                   f"into the desk, past {SETTINGS.fingertip_desk_mm:g}")
+                else:
+                    self.reason = f"{first['a']} would meet {first['b']}"
+                return None
 
         notes = []
         if clamped:
@@ -461,13 +529,16 @@ class Gate:
             notes.append(f"no reading yet for {', '.join(sorted(unseen))}")
         if unknown:
             notes.append(f"not joints of this robot: {', '.join(unknown)}")
+        if limp:
+            notes.append(f"no torque on the {' and '.join(limp)} arm")
         self.reason = "; ".join(notes)
         return stepped
 
 
     def _stands(self, contact: dict, moving: set[str]) -> bool:
         """Whether a contact at the target may stand: fingertips on the desk
-        within the allowance, or a contact the arm already makes.
+        within the allowance, or a contact the arm already makes and presses no
+        deeper than it does.
 
         A hand's fingers on the desk past the allowance only as they rest, no
         deeper - not a hair: `observe` holds the depth to the shallowest
@@ -485,7 +556,9 @@ class Gate:
             return False
         arm = contact.get("hand")
         if arm is None:
-            return True
+            # Parts that already touch may come no deeper than they have been
+            # read, and may come back out by any amount.
+            return contact["depth"] <= rest or contact["depth"] < self._now.get(key, 0.0)
         if arm not in moving:
             return contact["depth"] <= self._now.get(key, 0.0)
         if not contact.get("fingertip") and key not in self._off_tip:

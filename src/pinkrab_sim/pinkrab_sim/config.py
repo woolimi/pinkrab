@@ -167,8 +167,10 @@ class Settings:
     # small; nothing learns from it.
     head_size: tuple[int, int] = (640, 360)
     head_fovy_deg: float = 43.3
-    # Standing beside the left arm, looking down at where it works: the person
+    # Standing beside the arm, looking down at where it works: the person
     # demonstrates from the robot's side, facing the way the arm reaches.
+    # Written for the left arm; the right's is across y = 0, as are
+    # desk_origin, block_y and start_y.
     head_pos: tuple[float, float, float] = (0.30, 0.78, 0.62)
     head_target: tuple[float, float, float] = (0.36, 0.18, 0.0)
 
@@ -189,8 +191,9 @@ class Settings:
     carried_block: str = "cap"
     target_block: str = "base"
     # Where blocks are put down, in the robot's frame: the part of the desk the
-    # left arm reaches with its tool pitched down (x from the board, y toward
-    # the left arm). Two blocks at least this far apart, centre to centre.
+    # arm reaches with its tool pitched down (x from the board, y toward the
+    # arm), written for the left arm and across y = 0 for the right. Two blocks
+    # at least this far apart, centre to centre.
     block_x: tuple[float, float] = (0.29, 0.40)
     block_y: tuple[float, float] = (0.10, 0.30)
     block_yaw_deg: float = 20.0
@@ -302,17 +305,10 @@ class Settings:
 
     # --- the arm --------------------------------------------------------------------------
     arm: str = "left"
-    # The servos as the bench has them, in the task scene only: scene.xml's
-    # position gain of 15 N m/rad lets an arm reaching over the desk sag 15 mm
-    # under its own weight, where an STS3215 - stalling near 3 N m and giving
-    # all of it within a couple of degrees - holds to a few. And the gripper
-    # squeezes with the quarter of its stall torque that Torque_Limit leaves it.
-    servo_kp: float = 80.0
+    # The servos are the description's (scene.xml: the fitted kp, kv and
+    # armature); the task scene only caps the gripper's squeeze, at the quarter
+    # of its stall torque that Torque_Limit leaves it.
     servo_stall_nm: float = 3.0
-    # The motor's rotor as the joint feels it through the 1:345 gearbox, kg m^2.
-    # scene.xml has none, and the jaw alone - 12 g - under that gain would
-    # ring faster than the 2 ms step can follow.
-    servo_armature: float = 0.006
     # Contact friction as MuJoCo recommends it for grasping: an elliptic cone,
     # and the friction constraint weighted over the normal one.
     impratio: float = 10.0

@@ -6,7 +6,7 @@ arm that was interrupted, then means sitting through the whole wizard again.
 
 This does the same work through the same ``FeetechMotorsBus.setup_motor`` call, but
 lets the caller pick the arm and the joints. Both arms use the same numbering
-(shoulder_pan..gripper = 1..6) because they sit on separate buses, so the arm only
+(shoulder_pan..gripper = 1..7) because they sit on separate buses, so the arm only
 selects which serial port is written to.
 """
 

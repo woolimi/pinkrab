@@ -30,6 +30,7 @@ from pathlib import Path
 
 import numpy as np
 
+from .config import SETTINGS as CORE
 from .dataset import POSE_NAMES, pose_key
 from .follow import tool_absolute_target
 from .origin import ready_joints
@@ -177,9 +178,10 @@ def start_joints(dataset_root: Path, chains: dict, carry: Callable[[dict], np.nd
     """The joints (degrees, each chain's order) that put each arm's tool where
     its hand began, by arm (the keys of `chains`).
 
-    Solved from the ready pose by the same differential IK teleop uses, and
-    the reach error is returned beside the answer - a start an arm cannot
-    take is worth knowing before the policy is handed arms somewhere else.
+    Solved from the ready pose by the differential IK a policy's solve uses
+    (`policy_orientation_weight`), and the reach error is returned beside the
+    answer - a start an arm cannot take is worth knowing before the policy is
+    handed arms somewhere else.
     """
     start = demo_start(dataset_root, list(chains), carry)
     joints, found = {}, {"episodes": start["episodes"], "unplaced": start["unplaced"], "arms": {}}
@@ -187,7 +189,7 @@ def start_joints(dataset_root: Path, chains: dict, carry: Callable[[dict], np.nd
         target = start["targets"][arm]
         q = np.array(ready_joints(arm, chain.joint_names), dtype=float)
         for _ in range(IK_STEPS):
-            q = chain.track(target, q)
+            q = chain.track(target, q, orientation_weight=CORE.policy_orientation_weight)
         mm, deg = chain.reach_error(target, q)
         lo, hi = chain.limits
         found["arms"][arm] = {"reach_mm": float(mm * 1000.0), "reach_deg": float(deg), "target": target,

@@ -99,7 +99,7 @@ def resolve_take(root: Path, measured: Intrinsics, fit: dict) -> str:
         for line in lines:
             live.consume_markers(line.get("stamp"), line["markers"])
             out.append({"host_ts": line.get("host_ts"), **live.pose_line(), "jaw": line.get("jaw") or {},
-                        "markers": line["markers"]})
+                        "jaw_ts": line.get("jaw_ts") or {}, "markers": line["markers"]})
         return _write(root, meta, meta_file, calibration, solved, out, 0)
     # Which picture each pose line is: the recorder gives a frame's pose line
     # and its picture the same host clock, and frames.jsonl says where in the
@@ -140,7 +140,8 @@ def resolve_take(root: Path, measured: Intrinsics, fit: dict) -> str:
                 out.append(line)
                 as_recorded += 1
                 continue
-            out.append({"host_ts": line.get("host_ts"), **live.pose_line(), "jaw": line.get("jaw") or {}})
+            out.append({"host_ts": line.get("host_ts"), **live.pose_line(), "jaw": line.get("jaw") or {},
+                        "jaw_ts": line.get("jaw_ts") or {}})
     finally:
         video.release()
     if as_recorded == len(out):

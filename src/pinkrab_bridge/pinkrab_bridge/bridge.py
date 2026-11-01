@@ -48,6 +48,14 @@ next walk a pose button asks for, or stopped where it is: an arm that stands
 short of the pose for STUCK_S, or readings that stop coming for
 reading_stale_s and WALK_BLIND_S more.
 
+A stop is not allowed to be lost on the way. The studio keeps a stop - the
+emergency stop, idle, torque off - until it has been taken for good, and says it
+again at every poll; each request carries a token and is made into a call once.
+The call is kept in an outbox in the order it was asked and made again until the
+service answers yes: a stop that the gate or the driver did not hear is asked
+again, and what was asked after it waits behind it. The poll is as fast as the
+page's buttons are expected to feel.
+
     ros2 run pinkrab_bridge bridge
     ros2 run pinkrab_bridge bridge --ros-args -p studio:=http://192.168.1.20:8730
 """
@@ -147,6 +155,14 @@ WALK_BLIND_S = 1.0
 # anywhere: its last ask - a hand since lost, a jog, a stopped policy - is left
 # out of what the page draws as the pose the arm is headed to.
 ASKED_FRESH_S = 0.3
+# A stop whose call has not been answered this long is made again.
+RESEND_S = 0.5
+# What waits behind a stop that is not answered is not worth doing when it is
+# finally heard, as for a request the studio holds for a bridge that is down.
+BEHIND_STOP_TTL_S = 5.0
+# How many tokens of requests already taken are remembered, so that a stop the
+# studio says again is not made into a second call.
+SEEN_TOKENS = 512
 
 
 class Bridge(Node):
@@ -155,7 +171,7 @@ class Bridge(Node):
         self.declare_parameter("studio", "http://127.0.0.1:8730")
         self.declare_parameter("push_hz", 60.0)
         self.declare_parameter("drive_hz", 60.0)
-        self.declare_parameter("poll_hz", 5.0)
+        self.declare_parameter("poll_hz", 20.0)
         # The studio that started this node, by pid: when it is gone, so is
         # this. Started by hand, 0, and nothing is watched.
         self.declare_parameter("parent", 0)
@@ -204,6 +220,10 @@ class Bridge(Node):
         # What a poll fetches is queued for the drive loop, which alone moves
         # the goal and the walk.
         self._requests: collections.deque[dict] = collections.deque()
+        self._seen: dict[str, None] = {}
+        # Calls to make, in the order they were asked: a stop stays at the head
+        # until answered yes, whatever was asked after it waits.
+        self._outbox: collections.deque[dict] = collections.deque()
         self.create_timer(1.0 / push_hz, self._push, callback_group=MutuallyExclusiveCallbackGroup())
         self.create_timer(1.0 / drive_hz, self._drive)
         self.create_timer(1.0 / poll_hz, self._poll, callback_group=MutuallyExclusiveCallbackGroup())
@@ -331,7 +351,14 @@ class Bridge(Node):
     # --- studio -> ROS -----------------------------------------------------
     def _poll(self) -> None:
         answer = self._get("/real/requests")
-        self._requests.extend((answer or {}).get("requests", []))
+        for request in (answer or {}).get("requests", []):
+            token = request.get("token")
+            if token in self._seen:
+                continue
+            self._seen[token] = None
+            while len(self._seen) > SEEN_TOKENS:
+                del self._seen[next(iter(self._seen))]
+            self._requests.append(request)
 
     def _ask(self, request: dict) -> None:
         kind = request.get("kind")
@@ -358,14 +385,54 @@ class Bridge(Node):
             return
         else:
             return
-        if not client.service_is_ready():
-            self.get_logger().warn(f"{kind}: nothing is offering that service")
+        # What came of it arrives as the next TeleopState, which is the only
+        # thing that knows - a reply is not passed on to the page, only used
+        # here to know a stop was heard.
+        stop = (kind == "estop"
+                or (kind == "mode" and call.mode == TeleopState.MODE_IDLE)
+                or (kind == "torque" and not call.enable))
+        self._outbox.append({"kind": kind, "client": client, "call": call, "stop": stop,
+                             "future": None, "sent": -math.inf, "at": time.monotonic()})
+
+    def _flush(self) -> None:
+        """Make the outbox's calls: each once, a stop again until it is answered yes."""
+        while self._outbox:
+            entry = self._outbox[0]
+            now = time.monotonic()
+            if not entry["stop"] and now - entry["at"] > BEHIND_STOP_TTL_S:
+                self.get_logger().warn(f"{entry['kind']}: not heard in time - dropped")
+                self._outbox.popleft()
+                continue
+            pending = entry["future"]
+            if pending is not None:
+                if pending.done():
+                    answer = None if pending.exception() is not None else pending.result()
+                    if answer is not None and answer.success:
+                        self._outbox.popleft()
+                        continue
+                    entry["future"] = None
+                elif now - entry["sent"] >= RESEND_S:
+                    entry["client"].remove_pending_request(pending)
+                    entry["future"] = None
+                else:
+                    return
+            if now - entry["sent"] < RESEND_S:
+                return
+            if not entry["client"].service_is_ready():
+                if entry["stop"]:
+                    self.get_logger().warn(f"{entry['kind']}: nothing is offering that service yet - asked again",
+                                           throttle_duration_sec=2.0)
+                    return
+                self.get_logger().warn(f"{entry['kind']}: nothing is offering that service")
+                self._outbox.popleft()
+                continue
+            entry["future"] = entry["client"].call_async(entry["call"])
+            entry["sent"] = now
+            self.get_logger().info(f"asked for {entry['kind']}")
+            if not entry["stop"]:
+                self._outbox.popleft()
+                continue
             return
-        # Asked and left. What came of it arrives as the next TeleopState, which
-        # is the only thing that knows - a reply held here would be a second
-        # answer for the page to believe.
-        client.call_async(call)
-        self.get_logger().info(f"asked for {kind}")
 
     def _start_walk(self, request: dict) -> None:
         # A walk is a list of poses, the last of them where the arms end up and
@@ -462,10 +529,8 @@ class Bridge(Node):
 
         The gate lets a command through as a step toward it rather than as the
         whole distance, so this repeats. A joint drops out of the goal when the
-        reading says it has arrived - which is also what stops this republishing
-        a pose forever at an arm that has torque off and cannot take it, since
-        nothing arrives and nothing is left to ask for once the page's target
-        stops changing.
+        reading says it has arrived, or when its arm holds no torque and could
+        not go there.
 
         During a walk the command published is not the goal but a step toward
         it, at the walk's speed, from where the arm was last read - and
@@ -477,8 +542,17 @@ class Bridge(Node):
         """
         while self._requests:
             self._ask(self._requests.popleft())
+        self._flush()
         now = time.monotonic()
         with self._lock:
+            # An arm that holds no torque takes nothing, so a page target for
+            # it is not driven toward: republished, it would be asked of the
+            # gate sixty times a second for as long as the arm is limp. A walk
+            # keeps its goal and ends as stuck.
+            limp = {arm for arm, on in (self._torque or {}).items() if not on}
+            if limp and self._walk is None:
+                for name in [k for k in self._goal if k.split("_", 1)[0] in limp]:
+                    del self._goal[name]
             goal, angles = dict(self._goal), dict(self._angles)
             walking = self._walk is not None
             on_the_way = walking and bool(self._legs)

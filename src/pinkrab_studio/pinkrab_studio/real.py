@@ -32,7 +32,13 @@ STALE_S = 1.5
 # Requests wait for the bridge's next poll, not forever. A mode asked for while
 # the bridge was down is not worth acting on when it comes back a minute later -
 # whoever pressed it has moved on, and the robot would arm behind them.
+# The requests that only make the arms safer (`_stops`) are the exception: one
+# is kept until the bridge has been handed it, however long that takes, and is
+# handed over again at every poll after that until the robot's own state shows it
+# done or STOP_KEEP_S has passed since it was first handed over, so that a response lost on the way does not lose
+# the stop. Every request carries a token, which the bridge makes one call of.
 REQUEST_TTL_S = 5.0
+STOP_KEEP_S = 30.0
 
 
 # The gate's modes, as TeleopState.msg numbers them. Copied rather than imported:
@@ -70,6 +76,9 @@ class RealRobot:
         self._at: float | None = None
         self._requests: list[dict] = []
         self._next_id = 1
+        # Tokens are not repeated by a studio started again, whose ids begin at
+        # one: the bridge outlives it and remembers the tokens it has taken.
+        self._epoch = time.time_ns()
         # The last pedal pressed on the floor, numbered so the page can tell a
         # new press from the one it already flashed.
         self._pedal: dict | None = None
@@ -104,12 +113,38 @@ class RealRobot:
             listener(dict(angles))
 
     def take_requests(self) -> list[dict]:
-        """Hand over what the page has asked for, once."""
+        """Hand over what the page has asked for: once, except for the stops,
+        which come again until the robot shows them done."""
         now = time.monotonic()
         with self._lock:
-            waiting = [r for r in self._requests if now - r["at"] <= REQUEST_TTL_S]
-            self._requests = []
-        return [{k: v for k, v in r.items() if k != "at"} for r in waiting]
+            waiting, kept = [], []
+            for r in self._requests:
+                if self._stops(r["kind"], r):
+                    if r["delivered"] is not None and (now - r["delivered"] > STOP_KEEP_S or self._done(r)):
+                        continue
+                    if r["delivered"] is None:
+                        r["delivered"] = now
+                    kept.append(r)
+                    waiting.append(r)
+                elif now - r["at"] <= REQUEST_TTL_S:
+                    waiting.append(r)
+            self._requests = kept
+        return [{k: v for k, v in r.items() if k not in ("at", "delivered")} for r in waiting]
+
+    def _done(self, request: dict) -> bool:
+        """Whether the robot's own state, as last pushed, shows a stop carried
+        out. Called with the lock held."""
+        teleop, torque = self._teleop, self._torque
+        kind = request["kind"]
+        if kind == "estop":
+            return (teleop is not None and not teleop.get("armed") and teleop.get("reason") == "stopped"
+                    and bool(torque) and not any(torque.values()))
+        if kind == "mode":
+            return teleop is not None and not teleop.get("armed") and teleop.get("reason") != "stopped"
+        if torque is None:
+            return False
+        arm = str(request.get("arm", "both"))
+        return not any(torque.values()) if arm == "both" else not torque.get(arm, False)
 
     # --- from the page -----------------------------------------------------
     @staticmethod
@@ -127,7 +162,8 @@ class RealRobot:
         with self._lock:
             if not self.expected and not self._stops(kind, fields):
                 return None
-            entry = {"id": self._next_id, "kind": kind, "at": time.monotonic(), **fields}
+            entry = {"id": self._next_id, "kind": kind, "at": time.monotonic(), "delivered": None,
+                     "token": f"{self._epoch}:{self._next_id}", **fields}
             self._next_id += 1
             self._requests.append(entry)
             return entry["id"]

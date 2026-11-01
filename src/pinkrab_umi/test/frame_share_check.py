@@ -12,6 +12,8 @@ process reads at 50 Hz as a policy does.
 - one killed outright leaves nothing that stops the next;
 - no writer is said as no picture;
 - a frame that cannot be shared is dropped, not raised into the camera's thread;
+- a second writer does not take a live writer's block, and a close from another
+  thread does not break a write in progress;
 - a reader let go of gives its lock file back.
 
     python src/pinkrab_umi/test/frame_share_check.py
@@ -22,6 +24,7 @@ import os
 import signal
 import subprocess
 import sys
+import threading
 import time
 
 import numpy as np
@@ -145,6 +148,42 @@ def main() -> int:
         check("a frame that cannot be shared is dropped, and the next shared", False, f"{type(exc).__name__}: {exc}")
     finally:
         lost.close()
+
+    proc = writer(mode, seconds=4.0)
+    wait_for(reader)
+    other = FrameWriter(CAMERA)
+    odd = (480, 640, 3)
+    try:
+        other.write(np.full(odd, 7, np.uint8), time.monotonic())
+        seen = wait_for(reader, 1.0)
+        check("a second writer does not take the block from a live one",
+              seen is not None and seen.shape == mode, None if seen is None else f"{seen.shape}")
+    finally:
+        other.close()
+    after_close = wait_for(reader, 1.0)
+    check("and the live one's block outlives the other's close", after_close is not None and after_close.shape == mode)
+    proc.wait()
+
+    racer = FrameWriter(CAMERA)
+    errors: list[str] = []
+
+    def hammer() -> None:
+        frame = np.zeros(mode, np.uint8)
+        try:
+            for _ in range(400):
+                racer.write(frame, time.monotonic())
+        except Exception as exc:  # noqa: BLE001 - what is being checked
+            errors.append(f"{type(exc).__name__}: {exc}")
+
+    thread = threading.Thread(target=hammer)
+    thread.start()
+    time.sleep(0.05)
+    try:
+        racer.close()
+    except Exception as exc:  # noqa: BLE001 - what is being checked
+        errors.append(f"{type(exc).__name__}: {exc}")
+    thread.join()
+    check("a close from another thread while frames are written raises nothing", not errors, "; ".join(errors))
 
     reader.close()
     before = len(os.listdir("/dev/fd"))

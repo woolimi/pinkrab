@@ -15,7 +15,7 @@ the rig; every frame has them all. So each episode goes through these steps:
   2. the source clock: the top camera's exposures - its sensor stamps,
      already on this host's clock - are when each pose was. Each gripper
      video and each jaw are laid on them by their own host stamps less the
-     latency each reading is stamped with;
+     latency each reading is stamped with (a jaw's, the time it was read);
   3. the cut: a frame where any hand's solid was not solved, or with no
      picture from any hand's gripper taken within `GRIP_MATCH_FRAMES` of a
      frame period before it, is a hole. One no longer than
@@ -42,7 +42,7 @@ the rig; every frame has them all. So each episode goes through these steps:
      at the start, and at rollout never leaves it;
   5. camera-local deltas, per hand: R_t^T (p_{t+1} - p_t) and R_t^T R_{t+1},
      the latter as the first two columns of the matrix (6D, continuous);
-  6. despike: a delta faster than `DESPIKE_MM_S` or `DESPIKE_DPS` over its
+  6. despike: a delta faster than `DESPIKE_MM_S` or `filter_max_rot_speed_dps` over its
      frame is a tracking glitch, not a hand, and becomes zero;
   7. each gripper's action is the NEXT frame's measured opening, 0..1: the
      width is replayed as the hand made it, never projected to shut - a jaw
@@ -60,7 +60,8 @@ the rig; every frame has them all. So each episode goes through these steps:
      the take records - the dataset's account keeps that, the solid's size
      and which way it faced, per episode;
  10. the state's spread in the dataset's statistics, which a policy is
-     normalised by, is no narrower than `STATE_STD_FLOOR`.
+     normalised by - its std and the width between its min and max and between
+     each pair of quantiles - is no narrower than `STATE_STD_FLOOR`.
 
 A rollout (a policy's run, the handhelds taking the arms over to put them
 right - DAgger) goes through the same steps from the robot's side instead:
@@ -88,6 +89,7 @@ import json
 import math
 import shutil
 import time
+import zipfile
 from pathlib import Path
 
 import cv2
@@ -111,9 +113,10 @@ from .trajectory import matrix_to_quat, quat_to_matrix
 
 # About a second: thirty frames at 30 fps span 0.97 s.
 MIN_SEGMENT_S = 0.95
-# 80 mm and 5 degrees in a frame at 30 fps.
+# 80 mm in a frame at 30 fps. A turn is a glitch past the speed the stream
+# filter takes for a flip (filter_max_rot_speed_dps), the one limit on how fast
+# a hand may turn.
 DESPIKE_MM_S = 2400.0
-DESPIKE_DPS = 150.0
 # A hand holding still still wanders a millimetre or two; past this it has
 # set off.
 STILL_MM = 4.0
@@ -217,11 +220,43 @@ class _Video:
         self.cap.release()
 
 
+def open_videos(src: Path, hands, size: tuple[int, int], centre: dict, labels: dict | None = None,
+                backdrop: np.ndarray | None = None) -> dict[str, _Video]:
+    """Each hand's gripper video of the take at `src`, opened - or ConvertError
+    for the first that will not open, with the others let go."""
+    videos: dict[str, _Video] = {}
+    try:
+        for hand in hands:
+            videos[hand] = _Video(src / f"gripper_{hand}.mp4", size, tuple(centre[hand]),
+                                  (labels or {}).get(hand), backdrop)
+    except ConvertError:
+        for video in videos.values():
+            video.close()
+        raise
+    return videos
+
+
 def placed(pose: dict, hand: str) -> bool:
     """Whether this frame has the hand: its solid solved, and its jaw read."""
     solid = pose["solids"].get(f"handheld_{hand}") or {}
     return bool(solid.get("solved")) and solid.get("pose") is not None \
         and (pose.get("jaw") or {}).get(hand) is not None
+
+
+def jaw_readings(poses: list[dict], hand: str) -> tuple[np.ndarray, np.ndarray]:
+    """One hand's jaw readings over a take - when each was taken, on this
+    host's clock less the latency it is stamped with, and its opening - each
+    reading once, however many frames carried it. A line that names no read
+    time (`jaw_ts`) is read at its own."""
+    seen = {}
+    for p in poses:
+        opening = (p.get("jaw") or {}).get(hand)
+        if opening is not None:
+            taken = (p.get("jaw_ts") or {}).get(hand)
+            seen[p["host_ts"] if taken is None else taken] = float(opening)
+    stamps = sorted(seen)
+    return (np.array(stamps, dtype=float) - SETTINGS.jaw_latency_s,
+            np.array([seen[t] for t in stamps], dtype=float))
 
 
 def bridged(present: np.ndarray, times: np.ndarray, max_s: float) -> np.ndarray:
@@ -274,6 +309,29 @@ def segments(usable: np.ndarray, times: np.ndarray, min_s: float) -> list[tuple[
     return out
 
 
+def on_grid(tools: list[np.ndarray | None], times: np.ndarray, at: np.ndarray, rate: float,
+            max_hole_s: float) -> list[np.ndarray | None]:
+    """A hand's tool poses at the head frames' `times` read at the moments `at`
+    of the dataset's clock, as a segment of a take is: each hole of `max_hole_s`
+    at most bridged (fill_holes), each run of frames the hand was placed in
+    smoothed (smooth) and splined through (resample), and read at the moments
+    inside it. A moment outside every run - the hand lost for longer, or a run
+    of a single frame - is None."""
+    filled = fill_holes(tools, times, max_hole_s)
+    out: list[np.ndarray | None] = [None] * len(at)
+    for start, end in segments(np.array([T is not None for T in filled]), times, 0.0):
+        if end - start < 2:
+            continue
+        t = times[start:end]
+        inside = np.nonzero((at >= t[0]) & (at <= t[-1]))[0]
+        if len(inside):
+            # Splined from the run's start: absolute stamps lose digits.
+            for k, T in zip(inside, resample(smooth(np.array(filled[start:end]), rate), t - t[0],
+                                             at[inside] - t[0])):
+                out[k] = T
+    return out
+
+
 def cameras_on_desk(poses: list[dict], hands) -> list[np.ndarray | None]:
     """world_T_cam for each frame of the episode, off that frame's desk
     solve - None where the desk solid was not seen with a hand."""
@@ -301,6 +359,17 @@ def smooth_frames(rate: float) -> int:
     return n if n % 2 else n + 1
 
 
+def continuous_quats(R: np.ndarray) -> np.ndarray:
+    """Rotations (n,3,3) as unit quaternions (n,4), each on the side of the
+    sphere nearest the one before: q and -q are one rotation, and kept on one
+    side neighbours average and interpolate as turns."""
+    q = np.array([matrix_to_quat(r) for r in R])
+    for i in range(1, len(q)):
+        if np.dot(q[i], q[i - 1]) < 0:
+            q[i] = -q[i]
+    return q
+
+
 def smooth(T: np.ndarray, rate: float) -> np.ndarray:
     """A segment of tool poses (n,4,4) `rate` frames a second, smoothed without lag."""
     frames = smooth_frames(rate)
@@ -308,12 +377,7 @@ def smooth(T: np.ndarray, rate: float) -> np.ndarray:
         return T
     out = T.copy()
     out[:, :3, 3] = savgol_filter(T[:, :3, 3], frames, SMOOTH_ORDER, axis=0)
-    q = np.array([matrix_to_quat(R) for R in T[:, :3, :3]])
-    # q and -q are one rotation; kept on one side, neighbours average as turns.
-    for i in range(1, len(q)):
-        if np.dot(q[i], q[i - 1]) < 0:
-            q[i] = -q[i]
-    q = savgol_filter(q, frames, SMOOTH_ORDER, axis=0)
+    q = savgol_filter(continuous_quats(T[:, :3, :3]), frames, SMOOTH_ORDER, axis=0)
     out[:, :3, :3] = np.array([quat_to_matrix(x) for x in q])
     return out
 
@@ -359,7 +423,7 @@ def deltas(T: np.ndarray, aperture: np.ndarray, fps: int):
         step = delta_of(T[t], T[t + 1])
         dR = delta_to_matrix(step)[:3, :3]
         angle = math.degrees(math.acos(max(-1.0, min(1.0, (np.trace(dR) - 1.0) / 2.0))))
-        if np.linalg.norm(step[:3]) * 1000.0 * fps > DESPIKE_MM_S or angle * fps > DESPIKE_DPS:
+        if np.linalg.norm(step[:3]) * 1000.0 * fps > DESPIKE_MM_S or angle * fps > SETTINGS.filter_max_rot_speed_dps:
             step = NO_STEP
             despiked += 1
         action[t, :9] = step
@@ -394,9 +458,10 @@ def _frames(segment: dict[str, dict], state_names: list[str], task: str, picture
     second; `pictures(hand, k)` its k-th gripper picture, read as its frame
     is. Each hand's despiked count is left in `segment`."""
     hands = list(segment)
-    actions = {}
+    actions, quats = {}, {}
     for hand in hands:
         actions[hand], segment[hand]["despiked"] = deltas(segment[hand]["T"], segment[hand]["aperture"], fps)
+        quats[hand] = continuous_quats(segment[hand]["T"][:, :3, :3])
     for k in range(len(actions[hands[0]])):
         relative = (relative_pose(segment[hands[0]]["T"][k], segment[hands[1]]["T"][k])
                     if len(hands) == 2 else None)
@@ -409,7 +474,7 @@ def _frames(segment: dict[str, dict], state_names: list[str], task: str, picture
         for hand in hands:
             T = segment[hand]["T"][k]
             frame[image_key(hand)] = pictures(hand, k)
-            frame[pose_key(hand)] = np.concatenate([T[:3, 3], matrix_to_quat(T[:3, :3])]).astype(np.float32)
+            frame[pose_key(hand)] = np.concatenate([T[:3, 3], quats[hand][k]]).astype(np.float32)
         yield frame
 
 
@@ -512,7 +577,7 @@ def convert(episodes: list[str], out: str, task: str, hands: tuple[str, ...] = A
                      "robot_state_latency_s": SETTINGS.robot_state_latency_s, "gap_s": ROBOT_GAP_S,
                      "kept": "the corrections: frames whose readings say the hands drove the arms (controller human)"},
         "action": {"names": STEP_NAMES, "frame": "tool (camera-local): R_t^T (p_{t+1}-p_t), R_t^T R_{t+1} as two columns",
-                   "despike_mm_s": DESPIKE_MM_S, "despike_dps": DESPIKE_DPS,
+                   "despike_mm_s": DESPIKE_MM_S, "despike_dps": SETTINGS.filter_max_rot_speed_dps,
                    "gripper": "next frame's measured opening 0..1"},
         "relative": {"note": "with two hands: the right tool in the left tool's frame, as a step is written"},
         "state_std_floor": STATE_STD_FLOOR,
@@ -520,13 +585,35 @@ def convert(episodes: list[str], out: str, task: str, hands: tuple[str, ...] = A
     return report
 
 
+# The statistics that bound a number from either side, widest pair first: a
+# policy normalised by min/max or by quantiles divides by the width of one.
+STATE_BOUNDS = (("min", "max"), ("q01", "q99"), ("q05", "q95"), ("q10", "q90"))
+
+
+def floored(stats: dict, floor: float) -> dict:
+    """A feature's statistics (as LeRobot writes them, a list per statistic)
+    with no number's spread under `floor`, whichever normalisation reads them:
+    the std at least `floor`, and each bounding pair at least `floor` apart,
+    widened evenly about its middle."""
+    out = dict(stats)
+    out["std"] = [max(float(v), floor) for v in stats["std"]]
+    for low, high in STATE_BOUNDS:
+        if low in stats and high in stats:
+            lows, highs = [], []
+            for lo, hi in zip(stats[low], stats[high]):
+                middle, half = (float(lo) + float(hi)) / 2, max(float(hi) - float(lo), floor) / 2
+                lows.append(middle - half)
+                highs.append(middle + half)
+            out[low], out[high] = lows, highs
+    return out
+
+
 def _floor_state_std(root: Path) -> None:
     """The dataset's statistics with no state number's spread under
     `STATE_STD_FLOOR`."""
     path = root / "meta" / "stats.json"
     stats = json.loads(path.read_text())
-    state = stats["observation.state"]
-    state["std"] = [max(float(v), STATE_STD_FLOOR) for v in state["std"]]
+    stats["observation.state"] = floored(stats["observation.state"], STATE_STD_FLOOR)
     path.write_text(json.dumps(stats, indent=4))
 
 
@@ -580,8 +667,13 @@ def _episode(dataset, src: Path, task: str, hands: tuple[str, ...], fps: int, mi
     name = src.name
     if not (src / "meta.json").is_file():
         raise ConvertError(f"no episode {name!r} at {src}")
-    meta = json.loads((src / "meta.json").read_text())
-    frames = _lines(src / "frames.jsonl")
+    try:
+        meta = json.loads((src / "meta.json").read_text())
+        frames = _lines(src / "frames.jsonl")
+        poses = _lines(src / "poses.jsonl")
+    except ValueError as exc:
+        say(f"  {name}: skipped - its files do not read ({exc})")
+        return {"episode": name, "kind": "demo", "frames": 0, "segments": [], "skipped": f"its files do not read ({exc})"}
     kind = meta.get("kind", "demo")
     if kind == "rollout" and background is not None:
         say(f"  {name}: skipped - a rollout has no keep labels, so no randomised background")
@@ -592,7 +684,6 @@ def _episode(dataset, src: Path, task: str, hands: tuple[str, ...], fps: int, mi
     if kind != "demo":
         say(f"  {name}: skipped - a {kind} is not converted")
         return {"episode": name, "kind": kind, "frames": 0, "segments": [], "skipped": f"a {kind} is not converted"}
-    poses = _lines(src / "poses.jsonl")
     entry = {"episode": name, "kind": "demo", "task": task, "hands": list(hands), "frames": len(poses), "segments": [],
              "seconds": meta.get("seconds")}
     # The solid the poses are in, as the take recorded it: pose.tcp's z is
@@ -608,7 +699,11 @@ def _episode(dataset, src: Path, task: str, hands: tuple[str, ...], fps: int, mi
     try:
         if background is not None:
             for hand in hands:
-                labels[hand] = read_labels(src, f"gripper_{hand}")
+                try:
+                    labels[hand] = read_labels(src, f"gripper_{hand}")
+                except (OSError, ValueError, zipfile.BadZipFile) as exc:
+                    raise ConvertError(f"the {hand} gripper video's keep labels do not read ({exc}) - "
+                                       "make them again on the Curate page") from exc
                 if labels[hand] is None:
                     raise ConvertError(f"the {hand} gripper video has no keep labels - make them on the Curate page")
         world_T_cams = cameras_on_desk(poses, hands)
@@ -620,11 +715,9 @@ def _episode(dataset, src: Path, task: str, hands: tuple[str, ...], fps: int, mi
                 solid_T_tcp[hand] = SETTINGS.recorded_solid_T_tcp(key, meta)
             except KeyError:
                 raise ConvertError(f"the take does not record where {key} was on the handheld") from None
-            readings = [(p["host_ts"] - SETTINGS.jaw_latency_s, p["jaw"][hand])
-                        for p in poses if (p.get("jaw") or {}).get(hand) is not None]
-            if not readings:
+            jaw_t, jaw_v = jaw_readings(poses, hand)
+            if not len(jaw_t):
                 raise ConvertError(f"no reading from the {hand} jaw")
-            jaw_t, jaw_v = (np.array(v, dtype=float) for v in zip(*readings))
             opening[hand] = np.interp(exposed, jaw_t, jaw_v).astype(np.float32)
             grip_t[hand] = np.array([f["host_ts"] for f in frames if f["stream"] == f"gripper_{hand}"]) \
                 - SETTINGS.gripper_camera_latency_s
@@ -662,8 +755,12 @@ def _episode(dataset, src: Path, task: str, hands: tuple[str, ...], fps: int, mi
         & np.array([all(tools[hand][i] is not None for hand in hands) for i in range(len(poses))])
     rate = rate_of(exposed)
     backdrop = None if background is None else pattern(background, size)
-    videos = {hand: _Video(src / f"gripper_{hand}.mp4", size, centre[hand], labels.get(hand), backdrop)
-              for hand in hands}
+    try:
+        videos = open_videos(src, hands, size, centre, labels, backdrop)
+    except ConvertError as exc:
+        entry["skipped"] = str(exc)
+        say(f"  {name}: skipped - {exc}")
+        return entry
     try:
         _add_segments(
             dataset, entry, segments(usable, exposed, min_segment_s), exposed,
@@ -774,7 +871,12 @@ def _rollout(dataset, src: Path, meta: dict, frames: list[dict], task: str, hand
         n = len(chains[hand].joint_names)
         columns[hand] = (at, at + n)
         at += n + 1
-    videos = {hand: _Video(src / f"gripper_{hand}.mp4", size, tuple(centre[hand])) for hand in hands}
+    try:
+        videos = open_videos(src, hands, size, centre)
+    except ConvertError as exc:
+        entry["skipped"] = str(exc)
+        say(f"  {name}: skipped - {exc}")
+        return entry
     rate = rate_of(exposed)
 
     def poses_of(hand: str, start: int, end: int) -> np.ndarray:

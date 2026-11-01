@@ -138,6 +138,12 @@ class Converter:
         with self._lock:
             self._result = result
 
+    def writing(self, name: str) -> bool:
+        """Whether the running conversion is making the dataset `name`."""
+        with self._lock:
+            running = self._thread is not None and self._thread.is_alive()
+            return running and (self._asked or {}).get("out") == name
+
     def state(self) -> dict:
         with self._lock:
             running = self._thread is not None and self._thread.is_alive()

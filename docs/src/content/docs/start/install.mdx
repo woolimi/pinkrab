@@ -113,7 +113,7 @@ source install/setup.bash
 서보 보드와 카메라는 별도 설정 없이 열립니다. 풋 페달은 root 권한이 있어야 열리기 때문에 studio 가 `sudo -n` 으로 실행하는데, 이때 비밀번호를 묻지 않도록 **sudoers 에 허용 규칙**을 한 줄 넣어 둡니다. 아래 명령은 **conda 환경을 활성화한 상태**에서 실행합니다.
 
 ```bash
-echo "$USER ALL=(root) NOPASSWD: $CONDA_PREFIX/bin/pinkrab-footswitch*" | sudo tee /etc/sudoers.d/pinkrab-footswitch
+echo "$USER ALL=(root) NOPASSWD: $CONDA_PREFIX/bin/pinkrab-footswitch" | sudo tee /etc/sudoers.d/pinkrab-footswitch
 sudo chmod 440 /etc/sudoers.d/pinkrab-footswitch
 sudo visudo -c
 ```

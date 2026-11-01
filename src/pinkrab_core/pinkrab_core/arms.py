@@ -16,8 +16,10 @@ one sync read for the same reason - seven round trips held the port seven
 times as long as one.
 
 Writing is deliberate in three ways, and each is a way this has been got wrong
-before. Torque is off until somebody asks for it, because a process that opens a
-port should not change what the metal is doing. Enabling torque writes the present
+before. Torque is left as the port found it - off on a rig that was just powered
+up, because a process that opens a port should not change what the metal is
+doing, and holding on an arm that was already holding, which is then reported as
+holding so that it can be parked and let go. Enabling torque writes the present
 position as the goal FIRST - a servo remembers the last goal it was given, and
 enabling torque on a stale one is an arm snapping to a pose nobody asked for just
 now. And a pose for an arm whose torque is off is dropped rather than stored, for
@@ -89,8 +91,16 @@ class Arms:
 
         self.arms = tuple(self._buses)
         # Which arms are holding torque. Nothing is written to an arm that is not
-        # in here, and nothing is in here until somebody asked.
-        self._torque: dict[str, bool] = dict.fromkeys(self._buses, False)
+        # in here. Configuring the servos puts torque back on the motors that had
+        # it, so what is in here is what the bus says, not a guess that the rig
+        # was limp.
+        self._torque: dict[str, bool] = {}
+        for arm, bus in self._buses.items():
+            try:
+                self._torque[arm] = self._holding(bus)
+            except Exception as exc:
+                self.close()
+                raise ArmsError(f"{arm} arm: {type(exc).__name__}: {exc}") from exc
         self._latest: dict[str, float] = {}
         self._trouble: str | None = None
         # Reads that failed since `failed_reads` was last asked, per arm: how
@@ -107,6 +117,18 @@ class Arms:
         }
         self._thread: threading.Thread | None = None
         self._stop = threading.Event()
+
+    def _holding(self, bus) -> bool:
+        """Whether an arm holds torque. An arm with only some of its motors holding
+        is let go whole: a pose written to the limp ones would sit in them as a
+        goal waiting for the torque."""
+        on = [bool(int(bus.read("Torque_Enable", motor, normalize=False, num_retry=2)))
+              for motor in bus.motors]
+        if all(on):
+            return True
+        if any(on):
+            bus.disable_torque(num_retry=self._settings.torque_off_retries)
+        return False
 
     # --- what the page asks for ------------------------------------------
     def latest(self) -> dict:
@@ -144,6 +166,7 @@ class Arms:
         from lerobot.motors.feetech import OperatingMode
 
         changed: list[str] = []
+        failed: list[str] = []
         for name, bus in self._buses.items():
             if arm not in (None, name):
                 continue
@@ -162,11 +185,19 @@ class Arms:
                         bus.sync_write("Goal_Position", here, normalize=False)
                         bus.enable_torque()
                     else:
-                        bus.disable_torque()
+                        bus.disable_torque(num_retry=self._settings.torque_off_retries)
             except Exception as exc:
-                raise ArmsError(f"{name} arm: {type(exc).__name__}: {exc}") from exc
+                if on:
+                    raise ArmsError(f"{name} arm: {type(exc).__name__}: {exc}") from exc
+                # A stop reaches every arm it can: one bus that will not answer
+                # must not leave the other arm rigid. The arm that failed stays
+                # recorded as holding, which is what it may still be doing.
+                failed.append(f"{name} arm: {type(exc).__name__}: {exc}")
+                continue
             self._torque[name] = on
             changed.append(name)
+        if failed:
+            raise ArmsError("; ".join(failed) + (f" (let go: {', '.join(changed)})" if changed else ""))
         return changed
 
     def write(self, pose: dict[str, float]) -> list[str]:
@@ -201,7 +232,8 @@ class Arms:
     def park(self, pose: dict[str, float], speed_dps: float, timeout_s: float,
              tolerance_deg: float | None = None, ease_s: float | None = None,
              slow_deg: float | None = None, progress=None,
-             settle_deg: float | None = None, settle_s: float | None = None) -> list[str]:
+             settle_deg: float | None = None, settle_s: float | None = None,
+             poll=None) -> list[str]:
         """Walk every arm that is holding torque to `pose`, ramped, and wait.
 
         Returns the arms that did not get there in time. The walk is `Walk`'s
@@ -210,6 +242,9 @@ class Arms:
         settled below where it was sent is not first snapped back up.
         `progress`, if given, is called about once a second with how far the
         furthest joint still has to go, in degrees. Needs the reader running.
+        `poll`, if given, is called every cycle so that whoever owns the walk
+        can serve requests meanwhile; the walk ends the moment no arm is
+        holding torque any more, which is how a stop made in `poll` ends it.
 
         The walk ends within `tolerance_deg` of the pose, and the pose
         is then held as sent - no ramp, no lead - for up to `settle_s`, until
@@ -235,6 +270,11 @@ class Arms:
         spoke = started
         settling_since: float | None = None
         while True:
+            if poll is not None:
+                poll()
+            held = [arm for arm in held if self._torque.get(arm)]
+            if not held:
+                return []
             now = time.monotonic()
             with self._lock:
                 at = dict(self._latest)

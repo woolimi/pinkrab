@@ -20,6 +20,8 @@ from pathlib import Path
 SRC = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(SRC / "pinkrab_core"))
 
+import time as _time  # noqa: E402
+
 from pinkrab_core import arms as arms_module  # noqa: E402
 from pinkrab_core.config import SETTINGS  # noqa: E402
 from pinkrab_core.angles import degrees_to_ticks  # noqa: E402
@@ -52,10 +54,15 @@ def check(label: str, condition: bool, detail: str = "") -> None:
 class FakeBus:
     """A servo bus that answers and remembers, on a desk with no servos."""
 
+    # Whether a bus is opened with its servos already holding, as one left by a
+    # driver that was killed, and whether letting go fails with a bus error.
+    initial_torque = False
+
     def __init__(self, port) -> None:
         self.port = port
         self.calls: list[tuple] = []
-        self.torque = False
+        self.torque = FakeBus.initial_torque
+        self.deaf = False
         self.present = dict.fromkeys(
             ("shoulder_pan", "shoulder_lift", "elbow_flex", "wrist_flex",
              "wrist_yaw", "wrist_roll", "gripper"), 2048)
@@ -91,8 +98,10 @@ class FakeBus:
         self.calls.append(("enable_torque",))
 
     def disable_torque(self, motors=None, num_retry=0):
+        self.calls.append(("disable_torque", num_retry))
+        if self.deaf:
+            raise ConnectionError("no status packet")
         self.torque = False
-        self.calls.append(("disable_torque",))
 
     def goals(self) -> list[dict]:
         return [c[2] for c in self.calls if c[0] == "sync_write" and c[1] == "Goal_Position"]
@@ -202,7 +211,6 @@ def main() -> int:
     buses["left"].present["elbow_flex"] = degrees_to_ticks(
         "left", {"elbow_flex": 90.0}, OFFSETS)["elbow_flex"]
     arms.start()
-    import time as _time
     _time.sleep(0.1)  # a reading or two
     left_home = {f"left_{j}": 0.0 for j in buses["left"].present}
     right_home = {f"right_{j}": 0.0 for j in buses["right"].present}
@@ -223,6 +231,65 @@ def main() -> int:
           f"{degrees[-1] if degrees else None}")
     check("and the port is only closed afterwards",
           buses["left"].calls[-1][0] == "disconnect")
+
+    print("\nthe stop reaches every arm it can")
+    buses.clear()
+    arms = arms_module.Arms()
+    arms.torque(True)
+    buses["left"].deaf = True
+    try:
+        arms.torque(False)
+        raised = False
+    except arms_module.ArmsError as exc:
+        raised = "left arm" in str(exc)
+    check("an arm that does not answer is reported", raised)
+    check("and the other arm was still let go", not buses["right"].torque
+          and arms.torque_held() == {"left": True, "right": False}, str(arms.torque_held()))
+    check("the servos were asked more than once per try",
+          buses["left"].calls[-1] == ("disable_torque", SETTINGS.torque_off_retries),
+          str(buses["left"].calls[-1]))
+    buses["left"].deaf = False
+    arms.torque(False)
+    check("and the arm that was still holding can be let go again",
+          arms.torque_held() == {"left": False, "right": False})
+    arms.close()
+
+    print("\na port opened on servos that already hold")
+    buses.clear()
+    FakeBus.initial_torque = True
+    try:
+        arms = arms_module.Arms()
+    finally:
+        FakeBus.initial_torque = False
+    check("the arms are reported as holding, as the bus has them",
+          arms.torque_held() == {"left": True, "right": True}, str(arms.torque_held()))
+    check("and are still holding", buses["left"].torque and buses["right"].torque)
+    arms.write({"left_elbow_flex": 0.3})
+    check("a pose is written to them", bool(buses["left"].goals()))
+    arms.close()
+
+    print("\nthe walk home can be stopped")
+    buses.clear()
+    arms = arms_module.Arms()
+    arms.torque(True)
+    buses["left"].present["elbow_flex"] = degrees_to_ticks(
+        "left", {"elbow_flex": 90.0}, OFFSETS)["elbow_flex"]
+    arms.start()
+    _time.sleep(0.1)
+    cycles = []
+
+    def serve() -> None:
+        cycles.append(1)
+        if len(cycles) == 4:
+            arms.torque(False)       # what a /set_torque answered between steps does
+
+    zeros = {f"{arm}_{j}": 0.0 for arm in ("left", "right") for j in buses["left"].present}
+    late = arms.park(zeros, speed_dps=20.0, timeout_s=5.0, poll=serve)
+    walked = len(buses["left"].goals())
+    arms.stop()
+    check("the walk ends the moment the arms are let go", late == [] and len(cycles) == 4,
+          f"{len(cycles)} cycles")
+    check("and no more is sent to them", walked <= 4 + 2, f"{walked} goals")
 
 
     if FAILURES:

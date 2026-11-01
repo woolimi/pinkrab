@@ -755,6 +755,119 @@ def main() -> int:
     finally:
         object.__setattr__(SETTINGS, "teleop_smoothing", real_hand)
 
+    print("\na source that commands slowly")
+    # A policy at a dataset rate of a few Hz asks for a place every half
+    # second, and the place is further than the arm can get in that time: the
+    # arm must go on toward it between commands, not brake after a tenth of a
+    # second of each gap.
+    joint = "left_elbow_flex"
+    lo, hi = scene.limits[joint]
+    slow = shaped_gate(rate_dps=15.0, accel_dps2=400.0, jerk_dps3=8000.0)
+    reach = lambda t: min(hi, ready[joint] + math.radians(30.0) * t)  # noqa: E731
+    trace = drive(slow, joint, reach, 3.0, every=hz // 2)
+    speeds, _, _ = rates(trace, hz)
+    settled = speeds[int(1.5 * hz):]
+    check("an arm asked every half second goes on between the commands",
+          bool(settled) and min(settled) > math.radians(10.0),
+          f"slowest {math.degrees(min(settled)):.1f} deg/s of {math.degrees(slow.policy_rate):g}" if settled else "no trace")
+    # The same source gone: brought to rest, after a few of its gaps and not
+    # at once.
+    last = len(trace)
+    for i in range(int(4.0 * hz)):
+        clock[0] = 3.0 + i / hz
+        slow.observe({**ready, joint: trace[-1]})
+        allowed = slow.tick()
+        if allowed is not None:
+            trace.append(allowed[joint])
+    speeds, _, _ = rates(trace, hz)
+    check("and once the source is gone it is braked to rest",
+          abs(speeds[-1]) < math.radians(1.0), f"{math.degrees(speeds[-1]):.2f} deg/s")
+    check("not the instant a command is a tenth of a second late",
+          abs(speeds[last - 1 + int(0.15 * hz)]) > math.radians(10.0),
+          f"{math.degrees(speeds[last - 1 + int(0.15 * hz)]):.1f} deg/s a tenth and a half after the last")
+    # One command a second, the dataset rate of 1 Hz.
+    one = shaped_gate(rate_dps=15.0, accel_dps2=400.0, jerk_dps3=8000.0)
+    trace = drive(one, joint, lambda t: min(hi, ready[joint] + math.radians(30.0) * t), 4.0, every=hz)
+    speeds, _, _ = rates(trace, hz)
+    settled = speeds[int(2.0 * hz):]
+    check("one command a second is followed without stopping between them",
+          bool(settled) and min(settled) > math.radians(10.0),
+          f"slowest {math.degrees(min(settled)):.1f} deg/s" if settled else "no trace")
+
+    print("\nan arm that holds no torque")
+    limp = Gate(scene, clock=lambda: clock[0])
+    clock[0] = 0.0
+    limp.set_mode(MODE_HANDHELD)
+    limp.observe(ready)
+    limp.hold({"left": False, "right": True})
+    far_left = ready["left_elbow_flex"] + math.radians(60)
+    check("a command for the limp arm alone is refused, and says why",
+          not limp.aim({"left_elbow_flex": far_left}) and "no torque" in limp.reason, limp.reason)
+    both = {"left_elbow_flex": far_left, "right_elbow_flex": ready["right_elbow_flex"] + math.radians(20)}
+    check("a command for both goes on for the arm that holds", limp.aim(both), limp.reason)
+    sent = {}
+    for i in range(int(1.0 * hz)):
+        clock[0] = i / hz
+        limp.observe(ready)
+        allowed = limp.tick()
+        if allowed is not None:
+            sent = allowed
+    check("only the holding arm is sent anything", sent and all(k.startswith("right_") for k in sent), str(sorted(sent)))
+    check("and the limp arm's setpoint was not walked meanwhile",
+          not any(k.startswith("left_") for k in limp._shape) and not any(k.startswith("left_") for k in limp._target))
+    limp.hold({"left": True, "right": True})
+    clock[0] += 1 / hz
+    limp.observe(ready)
+    check("torque back: the arm's next command starts at the reading",
+          limp.aim({"left_elbow_flex": far_left}), limp.reason)
+    first = limp.tick()
+    check("and its first tick holds it there", first is not None
+          and abs(first["left_elbow_flex"] - ready["left_elbow_flex"]) < 1e-9, str(first))
+    unshaped = Gate(scene, max_speed_dps=0.0, clock=STILL)
+    unshaped.set_mode(MODE_STUDIO)
+    unshaped.observe(ready)
+    unshaped.hold({"left": False, "right": True})
+    check("an unshaped command for a limp arm is refused too",
+          unshaped.check({"left_elbow_flex": far_left}) is None and "no torque" in unshaped.reason,
+          unshaped.reason)
+
+    print("\ncontact that is already there")
+    import types
+    held = Gate(scene, clock=STILL)
+    key = ("left_forearm", "board")
+    contact = lambda depth: {"a": key[0], "b": key[1], "depth": depth}  # noqa: E731
+    reading = [[contact(0.0010)]]
+    real_scene = held.scene
+    held.scene = types.SimpleNamespace(touching=lambda pose: reading[0])
+    held.observe(ready)
+    check("a part resting against another may not press deeper",
+          not held._stands(contact(0.0030), {"left"}))
+    check("may stay as it is", held._stands(contact(0.0010), {"left"}))
+    check("and may come back out", held._stands(contact(0.0004), {"left"}))
+    check("a contact that is new is still refused", not held._stands({"a": "x", "b": "y", "depth": 0.0001}, {"left"}))
+    reading[0] = [contact(0.0015)]
+    held.observe(ready)
+    check("read deeper than the gate let it go, it is still held to the shallowest",
+          not held._stands(contact(0.0015), {"left"}) and held._stands(contact(0.0012), {"left"}))
+    held.scene = real_scene
+
+    print("\nthe way between two poses")
+    swing_from = {"right_shoulder_pan": -46.2, "right_shoulder_lift": 183.3, "right_elbow_flex": -75.6,
+                  "right_wrist_flex": 49.8, "right_wrist_yaw": 166.5, "right_wrist_roll": 1.9}
+    swing_to = {"right_shoulder_pan": 64.9, "right_shoulder_lift": 9.3, "right_elbow_flex": -187.2,
+                "right_wrist_flex": -38.5, "right_wrist_yaw": 185.3, "right_wrist_roll": 174.5}
+    start = {**ready, **{k: math.radians(v) for k, v in swing_from.items()}}
+    end = {**ready, **{k: math.radians(v) for k, v in swing_to.items()}}
+    check("both ends of the swing are clear", not scene.touching(start) and not scene.touching(end))
+    flat = Gate(scene, max_speed_dps=0.0, clock=STILL)
+    flat.set_mode(MODE_STUDIO)
+    flat.observe(start)
+    flat.hold({})
+    check("a step whose ends are clear but whose way is not is refused",
+          flat.check({k: end[k] for k in swing_to}) is None and "would meet" in flat.reason, flat.reason)
+    check("a short step along it passes",
+          flat.check({k: start[k] + 0.2 * (end[k] - start[k]) * 0.01 for k in swing_to}) is not None, flat.reason)
+
     print("\nthe stop")
     gate.stop()
     check("nothing passes after the stop", gate.check({"left_elbow_flex": near}) is None,

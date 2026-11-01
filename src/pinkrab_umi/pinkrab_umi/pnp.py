@@ -77,6 +77,9 @@ class SolidPose:
 
     ok: bool
     pose: np.ndarray | None = None            # 4x4 cam_T_solid, metres
+    # The pose before the stream filter blended it toward the frames before: the
+    # solution it chose, un-averaged. None where nothing was blended.
+    unblended: np.ndarray | None = None
     faces: tuple[int, ...] = ()               # marker ids that contributed
     reproj_px: float = float("nan")           # RMS over the contributing corners
     detected: tuple[int, ...] = ()            # ids seen at all, including rejected ones
@@ -92,6 +95,12 @@ class SolidPose:
     alternate: np.ndarray | None = None
     alternate_reproj_px: float = float("nan")
     reason: str = ""
+
+    @property
+    def held(self) -> np.ndarray | None:
+        """The pose as the stream filter chose it, not averaged with the frames
+        before: what a recording keeps, for a later pass to smooth without lag."""
+        return self.pose if self.unblended is None else self.unblended
 
 
 # The AprilTag library names its families for the payload and the code distance:

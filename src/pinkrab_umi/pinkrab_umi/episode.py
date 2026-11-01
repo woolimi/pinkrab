@@ -156,6 +156,9 @@ class _Video:
     dropped: int = 0
     size: tuple[int, int] | None = None
     codec: str = ""
+    # What stopped the encoder, if it stopped: the frames after it are counted
+    # as dropped, and the video is not whole.
+    failure: str | None = None
 
 
 KINDS = ("demo", "rollout")
@@ -302,30 +305,47 @@ class EpisodeWriter:
 
     # --- the encoder threads ---------------------------------------------------------
     def _encode(self, video: _Video) -> None:
+        """Drain the video's queue into its encoder until the closing None. An
+        encoder that fails (a full disk) stops writing but keeps draining, so
+        the queue never fills behind a thread that is gone and the close that
+        follows is never left waiting."""
         while True:
             item = video.queue.get()
             if item is None:
                 break
-            picture, host_ts, sensor_ts, frame_number = item
-            if picture.ndim == 2:
-                picture = cv2.cvtColor(picture, cv2.COLOR_GRAY2BGR)
-            if video.writer is None:
-                w, h = kept_size(picture.shape[1], picture.shape[0])
-                video.size = (w, h)
-                encoder = Encoder(video.path, video.fps, w, h)
-                if not encoder.ok:
-                    with self._lock:
-                        video.dropped += 1
-                    continue
-                video.writer, video.codec = encoder, encoder.codec
-            if picture.shape[1] != video.size[0]:
-                picture = cv2.resize(picture, video.size, interpolation=cv2.INTER_AREA)
-            video.writer.write(picture)
-            line = self._frame_line(video, host_ts, sensor_ts, frame_number)
-            with self._lock:
-                video.written += 1
-                if not self._closed:
-                    self._frames.write(json.dumps(line) + "\n")
+            if video.failure is not None:
+                with self._lock:
+                    video.dropped += 1
+                continue
+            try:
+                self._write(video, *item)
+            except Exception as exc:  # noqa: BLE001 - the recording goes on without this video
+                with self._lock:
+                    video.failure = f"{type(exc).__name__}: {exc}"
+                    video.dropped += 1
+                print(f"  {video.stream}: video stopped - {video.failure}", flush=True)
+
+    def _write(self, video: _Video, picture: np.ndarray, host_ts: float, sensor_ts: float | None,
+               frame_number: int | None) -> None:
+        if picture.ndim == 2:
+            picture = cv2.cvtColor(picture, cv2.COLOR_GRAY2BGR)
+        if video.writer is None:
+            w, h = kept_size(picture.shape[1], picture.shape[0])
+            video.size = (w, h)
+            encoder = Encoder(video.path, video.fps, w, h)
+            if not encoder.ok:
+                with self._lock:
+                    video.dropped += 1
+                return
+            video.writer, video.codec = encoder, encoder.codec
+        if picture.shape[1] != video.size[0]:
+            picture = cv2.resize(picture, video.size, interpolation=cv2.INTER_AREA)
+        video.writer.write(picture)
+        line = self._frame_line(video, host_ts, sensor_ts, frame_number)
+        with self._lock:
+            video.written += 1
+            if not self._closed:
+                self._frames.write(json.dumps(line) + "\n")
 
     @staticmethod
     def _frame_line(video: _Video, host_ts: float, sensor_ts: float | None, frame_number: int | None) -> dict:
@@ -355,12 +375,23 @@ class EpisodeWriter:
         self.ended = time.monotonic()
         for video in self._videos.values():
             if video.thread is not None:
-                video.queue.put(None)
+                try:
+                    video.queue.put(None, timeout=30.0)
+                except queue.Full:
+                    video.failure = "the encoder did not finish in time"
         for video in self._videos.values():
+            running = False
             if video.thread is not None:
                 video.thread.join(timeout=30.0)
-            if video.writer is not None:
-                video.writer.close()
+                running = video.thread.is_alive()
+                if running:
+                    video.failure = "the encoder did not finish in time"
+            # An encoder still writing is not closed under its thread.
+            if video.writer is not None and not running:
+                try:
+                    video.writer.close()
+                except Exception as exc:  # noqa: BLE001 - the meta.json below is still written
+                    video.failure = video.failure or f"{type(exc).__name__}: {exc}"
         with self._lock:
             self._closed = True
             self._frames.close()
@@ -374,7 +405,8 @@ class EpisodeWriter:
             self.meta["controlled"] = {k: round(v, 3) for k, v in self._controlled.items()}
         self.meta["streams"] = {
             name: {"file": None if v.path is None else v.path.name, "fps": v.fps, "codec": v.codec, "size": v.size,
-                   "frames": v.written, "dropped": v.dropped}
+                   "frames": v.written, "dropped": v.dropped,
+                   **({"failure": v.failure} if v.failure else {})}
             for name, v in self._videos.items()
         }
         # A gripper video also says where its lens axis lands in the frame,

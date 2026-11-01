@@ -82,6 +82,11 @@ from pinkrab_core.kinematics import ArmKinematics
 from pinkrab_core.parent import watch_parent
 from pinkrab_umi.config import SETTINGS as UMI
 
+# How long a poll of the live view may take. The node answers its services and
+# its topics between ticks, so a view that has stopped answering must not hold
+# it for longer than a few ticks.
+STATS_TIMEOUT_S = 0.25
+
 # Which arm a solid belongs to. The solid's name says it, and the ids under that
 # name are what the live server told apart to name it.
 ARM_OF_SOLID = {"handheld_left": "left", "handheld_right": "right",
@@ -117,6 +122,10 @@ class TeleopNode(Node):
         # which a corrected jaw is caught at (see `_catch_jaw`).
         self.create_subscription(JointState, "joint_commands_checked", self._on_sent, 10)
         self.sent: dict[str, float] = {}
+        # The live view's newest solve counted as a picture only while it keeps
+        # changing: the stamp last seen, and when it changed (`_fresh`).
+        self._solved_seen: float | None = None
+        self._solved_changed = time.monotonic()
 
         self.at: dict[str, float] = {}
         self.driving = False
@@ -217,6 +226,7 @@ class TeleopNode(Node):
         if last is None:
             return
         tick_started = time.monotonic()
+        picture = self._fresh(last, tick_started)
         # The pose to follow, as the live view reports it: each solid against
         # the desk solid, which holds still while the head turns, so the
         # solid's motion in it is the hand's.
@@ -225,6 +235,11 @@ class TeleopNode(Node):
         for solid_name, entry in (last.get("solids") or {}).items():
             arm = ARM_OF_SOLID.get(solid_name)
             if arm is None or not entry.get("solved"):
+                continue
+            if not picture:
+                # The camera behind the solve has stopped. The hand it shows is
+                # not followed, and is taken up afresh when pictures return.
+                unfollowed.append(f"{solid_name}: the picture is not changing")
                 continue
             pose = entry.get("world_pose")
             if pose is None:
@@ -272,6 +287,15 @@ class TeleopNode(Node):
         self._quiet = 0
         self._publish(wanted)
         self._note_timing(last, tick_started, wanted)
+
+    def _fresh(self, last: dict, now: float) -> bool:
+        """Whether the live view's solve is a new one lately: its stamp has
+        changed within `teleop_picture_stale_s`. Judged on this clock, by
+        change, so a live view on another machine needs no synchronised one."""
+        stamp = last.get("solved_at")
+        if stamp != self._solved_seen:
+            self._solved_seen, self._solved_changed = stamp, now
+        return stamp is not None and now - self._solved_changed <= CORE.teleop_picture_stale_s
 
     def _note_timing(self, last: dict, tick_started: float, wanted: dict[str, float]) -> None:
         now = time.monotonic()
@@ -351,7 +375,7 @@ class TeleopNode(Node):
 
     def _stats(self) -> dict | None:
         try:
-            with urllib.request.urlopen(f"{self.live}/stats", timeout=1.0) as answer:
+            with urllib.request.urlopen(f"{self.live}/stats", timeout=STATS_TIMEOUT_S) as answer:
                 stats = json.load(answer)
         except (urllib.error.URLError, OSError, json.JSONDecodeError) as exc:
             self._say_quietly(f"{self.live} is not answering ({type(exc).__name__})")

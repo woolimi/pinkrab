@@ -27,7 +27,8 @@ arm walks to where its hand began the takes (pinkrab_core.demo_start).
 The solve keeps every joint limit_margin_deg inside its band: that is the
 stop a policy drives against. The run ends - nothing more published, the gate
 holding the last pose - when an arm cannot follow: a step the solve falls
-well short of, or a policy that goes on asking past a joint's stop. A joint at
+well short of, a policy that goes on asking past a joint's stop, or an arm that
+does not get to where it was sent (`Tracking`). A joint at
 its stop is no end by itself: the takes, replayed through the arms, hold
 wrist_yaw at its stop for long stretches. What ends it is the motion asked
 for there and not made, summed while a joint stays at its stop. How fast the
@@ -83,6 +84,59 @@ PACE_SLOW = 0.95
 class DriveStopped(RuntimeError):
     """The run ends here: an arm cannot follow the policy without leaving the
     reach the takes were made in. The arms hold where they were last put."""
+
+
+class Tracking:
+    """Whether the arms are where the policy last put them.
+
+    Each step is composed onto the pose the one before it asked for, so a step
+    taken while the arm is not following - the gate refusing the pose, holding
+    the arm at a contact, the readings gone - carries the command further from
+    the arm with every tick, and the arm then sets off after it. So no step is
+    taken while a joint of the last pose sent reads further from it than
+    `lag_deg` or has not been read for `stale_s`; the gate is sent nothing and
+    brakes the arm. A wait that lasts `hold_s` ends the run.
+    """
+
+    def __init__(self, stale_s: float, lag_deg: float, hold_s: float) -> None:
+        self.stale_s, self.lag, self.hold_s = stale_s, math.radians(lag_deg), hold_s
+        self.read_at: dict[str, float] = {}
+        # The joints of the last pose sent, radians; the jaws are left out, a
+        # jaw closed on a block never reads where it was sent.
+        self.sent: dict[str, float] = {}
+        self.waiting_since: float | None = None
+
+    def read(self, names, now: float) -> None:
+        self.read_at.update(dict.fromkeys(names, now))
+
+    def unread(self, names, now: float) -> list[str]:
+        """The joints among `names` not read within `stale_s`."""
+        return sorted(n for n in names if now - self.read_at.get(n, -math.inf) > self.stale_s)
+
+    def start(self) -> None:
+        self.sent, self.waiting_since = {}, None
+
+    def put(self, wanted: dict[str, float]) -> None:
+        self.sent = {n: v for n, v in wanted.items() if not n.endswith("_gripper")}
+
+    def wait(self, at: dict[str, float], now: float) -> str | None:
+        """Why the next step has to wait, or None. DriveStopped once it has
+        waited `hold_s`."""
+        why = None
+        if quiet := self.unread(self.sent, now):
+            why = f"no reading of {', '.join(quiet)}"
+        else:
+            worst = max(self.sent, key=lambda n: abs(at[n] - self.sent[n]), default=None)
+            if worst is not None and abs(at[worst] - self.sent[worst]) > self.lag:
+                why = f"{worst} reads {math.degrees(abs(at[worst] - self.sent[worst])):.0f} deg from where it was sent"
+        if why is None:
+            self.waiting_since = None
+            return None
+        if self.waiting_since is None:
+            self.waiting_since = now
+        if now - self.waiting_since > self.hold_s:
+            raise DriveStopped(f"the arms do not follow the policy: {why}")
+        return why
 
 
 def checkpoint_state_names(checkpoint: str, dim: int, hands) -> list[str]:
@@ -547,6 +601,7 @@ def node_main() -> None:
             self.last_mode: int | None = None
             # Why the run stopped at an arm's reach, until a correction lifts it.
             self.halted = ""
+            self.tracking = Tracking(CORE.reading_stale_s, CORE.policy_follow_lag_deg, CORE.policy_follow_hold_s)
             self.approach: Approach | None = None
             self.at_start = False      # ready reached, the demo start is the leg after
             self.started = False
@@ -589,6 +644,7 @@ def node_main() -> None:
         def _on_state(self, message: JointState) -> None:
             if message.name and len(message.name) == len(message.position):
                 self.at.update(dict(zip(message.name, (float(v) for v in message.position))))
+                self.tracking.read(message.name, time.monotonic())
 
         def _on_teleop(self, message: TeleopState) -> None:
             mode = int(message.mode) if message.armed else TeleopState.MODE_IDLE
@@ -608,6 +664,7 @@ def node_main() -> None:
                 self.approach = Approach(ready_pose(), self.driver.brain.common["ready_tol_deg"])
                 self.at_start = False
                 self.started = False
+                self.halted = ""   # a new run is not the one that stopped
                 self.get_logger().info(f"policy mode: walking to the ready pose first, {CORE.park_speed_dps:g} deg/s")
             else:
                 self.approach = None
@@ -649,11 +706,30 @@ def node_main() -> None:
                 if command:
                     self._publish(command)
                 return
+            now = time.monotonic()
             if not self.started:
-                self.driver.start({hand: [math.degrees(self.at.get(n, 0.0)) for n in chain.joint_names]
+                # From the arms as they read, every joint of them: a joint
+                # that has not been read is not at zero.
+                names = [n for chain in self.driver.chains.values() for n in chain.joint_names]
+                if quiet := self.tracking.unread(names, now):
+                    self.get_logger().info(f"waiting for a reading of {', '.join(quiet)}",
+                                           throttle_duration_sec=1.0)
+                    return
+                self.driver.start({hand: [math.degrees(self.at[n]) for n in chain.joint_names]
                                    for hand, chain in self.driver.chains.items()})
+                self.tracking.start()
                 self.started = True
-                self._pace = (time.monotonic(), self.driver.steps)
+                self._pace = (now, self.driver.steps)
+            try:
+                why = self.tracking.wait(self.at, now)
+            except DriveStopped as exc:
+                self._halt(exc)
+                return
+            if why is not None:
+                # Nothing is published and no step is taken: the gate brakes the
+                # arm, and the next step is composed onto the pose last put.
+                self.get_logger().info(f"holding - {why}", throttle_duration_sec=1.0)
+                return
             began = time.monotonic()
             try:
                 images = self.observer.observe()
@@ -664,15 +740,9 @@ def node_main() -> None:
             try:
                 wanted, info = self.driver.step(images, grippers)
             except DriveStopped as exc:
-                # Nothing more is published: the gate holds the last pose it
-                # passed - shaped, it starts braking once the commands have
-                # stopped for a tenth of a second, and the arm stands short of
-                # the last one passed. Said again every two seconds by the
-                # branch above, until a correction hands the arm back.
-                self.halted = f"stopped - {exc}"
-                self.get_logger().error(f"not driving: {self.halted}")
-                self._report({"phase": "refused", "reason": self.halted})
+                self._halt(exc)
                 return
+            self.tracking.put(wanted)
             self._publish(wanted)
             # Each tick applies one of the dataset's frame steps, so steps
             # slower than its rate are arms slower than the takes. Said from
@@ -696,6 +766,16 @@ def node_main() -> None:
                     f"step {self.driver.steps}: " + ", ".join(
                         f"{hand} dp {said['dp_mm']:.1f} mm opening {said['opening']:.2f}"
                         + (f" - {said['held']}" if "held" in said else "") for hand, said in info["arms"].items()))
+
+        def _halt(self, exc: DriveStopped) -> None:
+            # Nothing more is published: the gate holds the last pose it
+            # passed - shaped, it starts braking once the commands have
+            # stopped for a tenth of a second, and the arm stands short of
+            # the last one passed. Said again every two seconds by the
+            # branch above, until a correction hands the arm back.
+            self.halted = f"stopped - {exc}"
+            self.get_logger().error(f"not driving: {self.halted}")
+            self._report({"phase": "refused", "reason": self.halted})
 
         def _report(self, body: dict) -> None:
             """One line to the studio, handed to the reporting thread.

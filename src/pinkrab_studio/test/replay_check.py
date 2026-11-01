@@ -163,6 +163,25 @@ if __name__ == "__main__":
               abs(last["t"] - (n - 1) // 3 * 3 / FPS) < 1e-6 and last["head"] == (n - 1) // 3,
               f"ends at {last['t']:.2f} s on head frame {last['head']}")
 
+        check("an answer is written whole, nothing left beside it",
+              replay.replay_file(tmp / "skipping").is_file() and not list((tmp / "skipping").glob("*.partial")))
+
+        # A hand lost for a few frames, as often as one in a second or two: convert
+        # bridges that, so the replay does not call the arm held.
+        write_take(tmp / "hole", resting(n), "chest")
+        lines = [json.loads(line) for line in (tmp / "hole" / "poses.jsonl").read_text().splitlines()]
+        for k in (20, 21, 22):
+            lines[k]["solids"]["handheld_left"].update(solved=False, pose=None, world_pose=None)
+        (tmp / "hole" / "poses.jsonl").write_text("".join(json.dumps(p) + "\n" for p in lines))
+        answer = replay.solved(tmp / "hole")
+        lost = answer["summary"]["flags"]["left"].get("lost", 0)
+        check("a hole short enough for convert to bridge is not a frame lost", lost == 0, f"{lost} frames lost")
+        for k in range(20, 40):
+            lines[k]["solids"]["handheld_left"].update(solved=False, pose=None, world_pose=None)
+        (tmp / "hole" / "poses.jsonl").write_text("".join(json.dumps(p) + "\n" for p in lines))
+        answer = replay.solved(tmp / "hole")
+        check("a longer one is", answer["summary"]["flags"]["left"].get("lost", 0) > 0)
+
         # The same take not saying how big its hand solids were: no tool centre to place.
         write_take(tmp / "unsized", resting(n), "chest", sizes=False)
         answer = replay.solved(tmp / "unsized")

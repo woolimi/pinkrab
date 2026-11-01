@@ -402,6 +402,13 @@ class Live:
                    if answer.ok and not answer.reason and answer.pose is not None}
                   if placed else {})
         world_pose = worlds.get(primary)
+        # What the recording keeps: the same composition of the poses as the
+        # filter chose them, not averaged with the frames before.
+        held_cam = np.linalg.inv(desk.held) if placed else None
+        held_worlds = ({name: compose(held_cam, answer.held)
+                        for name, answer in hands.items()
+                        if answer.ok and not answer.reason and answer.pose is not None}
+                       if placed else {})
         encoded = False
         if picture is not None:
             encoded, jpeg = cv2.imencode(".jpg", self._draw(picture, result, answers),
@@ -432,6 +439,10 @@ class Live:
                                 [[float(v) for v in row] for row in answer.pose],
                         "world_pose": None if name not in worlds else
                                       [[float(v) for v in row] for row in worlds[name]],
+                        "held_pose": None if answer.pose is None else
+                                     [[float(v) for v in row] for row in answer.held],
+                        "held_world_pose": None if name not in held_worlds else
+                                           [[float(v) for v in row] for row in held_worlds[name]],
                     }
                     for name, answer in hands.items()
                 },
@@ -484,7 +495,11 @@ class Live:
             return
         host_ts = time.time()
         line = {"host_ts": host_ts, **self.pose_line()}
-        line["jaw"] = self.jaws.apertures() if self.jaws is not None else {}
+        readings = self.jaws.readings() if self.jaws is not None else {}
+        # Each jaw's opening with the host time it was read, which is not this
+        # frame's: a reading is held for up to the reader's stale limit.
+        line["jaw"] = {side: None if r is None else r[0] for side, r in readings.items()}
+        line["jaw_ts"] = {side: None if r is None else r[1] for side, r in readings.items()}
         line["markers"] = {str(marker_id): [round(float(v), 2) for v in np.asarray(quad).reshape(-1)]
                            for answer in raws.values()
                            for marker_id, quad in zip(answer.detected, answer.corners)}
@@ -498,14 +513,17 @@ class Live:
 
     def pose_line(self) -> dict:
         """What the last frame said about the solids and the desk, as an
-        episode's poses.jsonl keeps it - less the host's clock and the jaws,
+        episode's poses.jsonl keeps it - the poses as the stream filter chose
+        them, not averaged (`SolidPose.held`) - less the host's clock and the jaws,
         which are the recorder's (`pinkrab-umi resolve` makes these again)."""
         with self._state:
             last = self._last
             return {
                 "stamp": last.get("stamp"),
                 "primary": last.get("solid"),
-                "solids": {name: {k: c.get(k) for k in ("solved", "faces", "reproj_px", "pose", "world_pose")}
+                "solids": {name: {"solved": c.get("solved"), "faces": c.get("faces"),
+                                  "reproj_px": c.get("reproj_px"), "pose": c.get("held_pose"),
+                                  "world_pose": c.get("held_world_pose")}
                            for name, c in (last.get("solids") or {}).items()},
                 "desk": last.get("world"),
             }

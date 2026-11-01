@@ -17,7 +17,9 @@ the anchor is too old to vouch for anything, the frame is refused rather than
 guessed at. Refused frames become holes, and holes are visible downstream;
 solid_track already drops them rather than interpolating across them.
 
-Then the accepted pose is smoothed. A solved pose is a measurement, and at arm's
+Then the accepted pose is smoothed, and the answer keeps the pose it chose beside
+the smoothed one (`SolidPose.held`): a recording keeps the chosen one, which is
+smoothed again without lag. A solved pose is a measurement, and at arm's
 length the measurement is about a millimetre and half a degree of noise frame to
 frame - and half a degree at the marker is more than a millimetre at the tool
 centre, 139 mm away on its lever. An exponential average takes a fixed fraction
@@ -66,13 +68,14 @@ class PoseFilter:
     def _accept(self, result: SolidPose, t: float, pose: np.ndarray) -> SolidPose:
         # The anchor is the smoothed pose: it is the better estimate of where
         # the solid is, which is what the next frame's judgement wants.
+        chosen = pose
         if self._anchor is not None and t - self._anchor_t <= SETTINGS.filter_anchor_max_age_s:
             pose = _blend(self._anchor, pose, SETTINGS.filter_ema_alpha)
         self._anchor = pose
         self._anchor_t = t
         if pose is result.pose:
             return result
-        return replace(result, pose=pose)
+        return replace(result, pose=pose, unblended=chosen)
 
     def apply(self, result: SolidPose, t: float) -> SolidPose:
         """One frame in, one frame out - possibly the other solution, possibly refused."""

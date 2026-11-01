@@ -20,8 +20,11 @@ Root, on macOS, for the foot switch alone. The studio runs as whoever opened
 it, and a web server cannot type a password; a keyboard's HID interface opens
 for root on macOS, so `pinkrab-footswitch` is launched through `sudo -n`,
 which either runs it or refuses at once, and a refusal is reported on the page
-with the one line of sudoers that would allow this command and nothing else.
-It posts the presses to this studio over localhost.
+with the line of sudoers that would allow it. The line names that one file, and
+sudoers then lets it run with any arguments. The file sits in the environment
+the user installed into, so whoever can write it runs as root through the
+rule; a copy installed where only root can write closes that. The reader posts
+the presses to this studio over localhost.
 """
 from __future__ import annotations
 
@@ -457,7 +460,7 @@ def _last_said(proc: subprocess.Popen | None) -> str:
 
 
 def footswitch_sudoers_line() -> str:
-    return f"{getpass.getuser()} ALL=(root) NOPASSWD: {FOOTSWITCH}*"
+    return f"{getpass.getuser()} ALL=(root) NOPASSWD: {FOOTSWITCH}"
 
 
 def start_footswitch(port: int) -> tuple[subprocess.Popen | None, str]:
@@ -607,6 +610,10 @@ class Rig:
         # The rollout node, while the page is driving with a policy.
         self._policy: subprocess.Popen | None = None
         self._policy_options: dict = {}
+        # One start or stop of it at a time. Waiting for the node to go or to
+        # stay up takes seconds, and `_lock` is not held for that: every page's
+        # poll of `state()` would wait with it.
+        self._policy_turn = threading.Lock()
 
     # --- what the page reads ----------------------------------------------
 
@@ -629,23 +636,27 @@ class Rig:
     def start_policy(self, checkpoint: str, task: str = "") -> dict:
         """The rollout node with this checkpoint and command; a running one is
         stopped first, because the page may have chosen differently."""
-        # `state()` takes the same lock, and the lock does not re-enter: asked
-        # for inside this block it waited on itself, and the page's Drive
-        # never came back - "the rollout node is starting" for good.
-        with self._lock:
-            if self._policy is not None and self._policy.poll() is None:
-                stop_bridge(self._policy)
-            self._policy = start_policy_node(checkpoint, self.studio_port or CORE.studio_port, task)
-            self._policy_options = {"checkpoint": checkpoint, "task": task}
-            if self._policy is None:
+        with self._policy_turn:
+            with self._lock:
+                old = self._policy
+            if old is not None and old.poll() is None:
+                stop_bridge(old)
+            proc = start_policy_node(checkpoint, self.studio_port or CORE.studio_port, task)
+            with self._lock:
+                self._policy = proc
+                self._policy_options = {"checkpoint": checkpoint, "task": task}
+            if proc is None:
                 raise RigError("the rollout node did not start - see the studio's terminal")
         return self.state()["policy"]
 
     def stop_policy(self) -> dict:
-        with self._lock:
-            stop_bridge(self._policy)
-            self._policy = None
-            self._policy_options = {}
+        with self._policy_turn:
+            with self._lock:
+                proc = self._policy
+            stop_bridge(proc)
+            with self._lock:
+                self._policy = None
+                self._policy_options = {}
         return self.state()["policy"]
 
     # --- the foot switch: the studio's own, up for as long as the page is ------
@@ -765,8 +776,7 @@ class Rig:
         if thread is not None and thread.is_alive():
             thread.join(timeout=15.0)
         with self._lock:
-            for proc in self._robot.values():
-                stop_bridge(proc)
+            going = list(self._robot.values())
             self._robot = {}
             # The foot switch is the server's, not the robot side's: it stays,
             # and the page goes on hearing its presses. A stop pressed now
@@ -774,6 +784,10 @@ class Rig:
             # started within REQUEST_TTL_S - the one stopped here takes nothing.
             self._robot_steps = {}
             self._robot_thread = None
+        # Waited for with the lock free, as in `stop`.
+        for proc in going:
+            stop_bridge(proc)
+        with self._lock:
             return self._robot_state()
 
     def _robot_state(self) -> dict:
@@ -857,7 +871,10 @@ class Rig:
             proc = self._procs.get(which)
             if proc is None or proc.poll() is not None:
                 raise RigError(f"{which} is not running")
-            self._leave(proc)
+        # Left with the lock free: the process takes up to GRACE_S + TERM_S to
+        # go, and every poll of `state()` would wait for it.
+        self._leave(proc)
+        with self._lock:
             return self._one(which)
 
     def restart(self, which: str) -> dict | None:
@@ -879,7 +896,7 @@ class Rig:
             proc = self._procs.get(which)
             if proc is None or proc.poll() is not None:
                 return   # gone on its own, or stopped by a Disconnect meanwhile
-            self._leave(proc)
+        self._leave(proc)
         try:
             proc.wait(timeout=GONE_S)
         except subprocess.TimeoutExpired as exc:
@@ -887,16 +904,16 @@ class Rig:
 
     def stop_all(self) -> None:
         with self._lock:
-            for proc in self._procs.values():
-                if proc.poll() is None:
-                    self._leave(proc)
-            for proc in self._robot.values():
-                stop_bridge(proc)
+            procs = list(self._procs.values())
+            bridges = [*self._robot.values(), self._policy, self._footswitch]
             self._robot = {}
-            stop_bridge(self._policy)
             self._policy = None
-            stop_bridge(self._footswitch)
             self._footswitch = None
+        for proc in procs:
+            if proc.poll() is None:
+                self._leave(proc)
+        for proc in bridges:
+            stop_bridge(proc)
 
     @staticmethod
     def _leave(proc: subprocess.Popen) -> None:

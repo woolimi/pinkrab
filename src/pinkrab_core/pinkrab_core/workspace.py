@@ -145,6 +145,9 @@ class DeskReach:
                 # follow from the description, in the key already.
                 "grasp_above_m": GRASP_ABOVE_DESK_M, "cells_tried": "reach_ball",
                 "landed": [LAND_M, LAND_DEG, STOP_DEG],
+                # The solver's own settings: what a step costs, the tick it
+                # is spent over, and the speed it is limited to.
+                "ik": [SETTINGS.ik_regularization, SETTINGS.ik_rate_hz, SETTINGS.max_joint_speed_dps],
                 "ready": {arm: dict(READY_DEG[arm]) for arm in ARMS},
                 "tool_turn": {arm: np.asarray(TOOL_TURN[arm]).tolist() for arm in ARMS},
                 "desk_z": round(desk_z, 4), "board_x": round(board_x, 4)}

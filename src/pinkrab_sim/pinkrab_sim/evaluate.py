@@ -56,6 +56,16 @@ HOLD_BOX_M = (0.008, 0.012, 0.010)
 SHUT = 0.32
 OPEN = 0.40
 LET_GO = 0.06
+# A thing counts as put down once it is let go and has come to rest: it moves
+# slower than this after the arms have had half a second to settle.
+SETTLED_MPS = 0.01
+
+
+def physics_steps(k: int, rate: float, timestep: float) -> int:
+    """How many physics steps tick `k` of a clock at `rate` runs: the ticks
+    together span exactly 1/rate seconds each, whatever `rate` is, however
+    many steps of the model's timestep a tick comes to."""
+    return round((k + 1) / (rate * timestep)) - round(k / (rate * timestep))
 
 
 class Carry:
@@ -148,18 +158,24 @@ class Carry:
         elif opening > (self._shut_at + LET_GO if self.by_touch else OPEN):
             self._let_go()
 
+    def _restore(self, geoms) -> None:
+        m = self.world.model
+        for g in geoms:
+            m.geom_contype[g], m.geom_conaffinity[g] = self.bits[g]
+
     def _let_go(self) -> None:
-        w = self.world
+        # Only what this arm holds: another arm's weld keeps its thing out of
+        # the claw's collisions.
         if self.held is not None:
-            w.data.eq_active[self.eqs[self.held]] = 0
-        for g, (contype, conaffinity) in self.bits.items():
-            w.model.geom_contype[g], w.model.geom_conaffinity[g] = contype, conaffinity
+            self.world.data.eq_active[self.eqs[self.held]] = 0
+            self._restore(self.world.things[self.held].geoms)
         self.held = None
 
     def reset(self) -> None:
         for eq in self.eqs.values():
             self.world.data.eq_active[eq] = 0
-        self._let_go()
+        self._restore(self.bits)
+        self.held = None
         self.first = None
 
 
@@ -242,6 +258,9 @@ class Evaluation:
         # A step a tick of the simulation's clock: the checkpoint's dataset's
         # rate unless another is asked.
         self.rate = rate or self.driver.brain.fps
+        if self.rate * self.world.model.opt.timestep > 1.0:
+            raise EvaluateError(f"{self.rate} steps a second is faster than the model's "
+                                f"{1.0 / self.world.model.opt.timestep:.0f} physics steps a second")
         self.seconds = seconds
         self.start = start
         self.physics = physics
@@ -339,7 +358,6 @@ class Evaluation:
         wander = {h: 0.0 for h in resting}
         # The gate's speed under a policy.
         ceiling = math.radians(inference.policy_dps(CORE.max_joint_speed_dps)) * w.model.opt.timestep
-        substeps = max(1, int(round(1.0 / (self.rate * w.model.opt.timestep))))
         from pinkrab_policy.rollout import DriveStopped
 
         held = {h: False for h in working}
@@ -378,7 +396,7 @@ class Evaluation:
                 target.update(wanted)
                 ids = [w.model.actuator(n).id for n in target]
                 goal = np.array([target[n] for n in target])
-                for _ in range(substeps):
+                for _ in range(physics_steps(k, self.rate, w.model.opt.timestep)):
                     now = w.data.ctrl[ids]
                     w.data.ctrl[ids] = now + np.clip(goal - now, -ceiling, ceiling)
                     for carry in carries.values():
@@ -418,6 +436,13 @@ class Evaluation:
                 writer.release()
         w.step(0.5)
         outcomes = {h: placed(w, mine[h]) for h in working}
+        # Put down is let go and at rest, not held in the air over the target.
+        for h in working:
+            carry = carries[h]
+            let_go = (not self._held(h, mine[h].carried)) if carry is None else carry.held is None
+            outcomes[h]["released"] = let_go
+            outcomes[h]["placed"] = bool(outcomes[h]["placed"] and let_go
+                                         and w.speed(mine[h].carried) < SETTLED_MPS)
         for carry in carries.values():
             if carry is not None:
                 # A thing still welded at the end would stay out of the claw's
@@ -520,7 +545,6 @@ def oracle(episodes: int = 20, seed: int = 2000, videos: Path | None = None, say
     results = []
     # The speed a policy is walked at, so this stays the ceiling of one.
     ceiling = math.radians(inference.policy_dps(CORE.max_joint_speed_dps)) * m.opt.timestep
-    substeps = max(1, int(round(1.0 / (SETTINGS.fps * m.opt.timestep))))
     started = time.monotonic()
     try:
         for i in range(episodes):
@@ -569,7 +593,7 @@ def oracle(episodes: int = 20, seed: int = 2000, videos: Path | None = None, say
                         band = world.bands[h]
                         pose[f"{h}_gripper"] = band[0] + aperture * (band[1] - band[0])
                     goal = np.array([pose[nm] for nm in pose])
-                    for _ in range(substeps):
+                    for _ in range(physics_steps(k - 1, SETTINGS.fps, m.opt.timestep)):
                         now = world.data.ctrl[ids]
                         world.data.ctrl[ids] = now + np.clip(goal - now, -ceiling, ceiling)
                         for carry in carries.values():
@@ -600,6 +624,15 @@ def oracle(episodes: int = 20, seed: int = 2000, videos: Path | None = None, say
                     writer.release()
             world.step(0.5)
             outcomes = {h: placed(world, plans[h].layout) for h in working}
+            for h in working:
+                carry = carries[h]
+                touching = {int(c.geom2 if c.geom1 in thing_geoms[h] else c.geom1)
+                            for c in (world.data.contact[j] for j in range(world.data.ncon))
+                            if c.dist < 0 and {c.geom1, c.geom2} & thing_geoms[h]}
+                let_go = (not (touching & claw[h] and touching & jaw[h])) if carry is None else carry.held is None
+                outcomes[h]["released"] = let_go
+                outcomes[h]["placed"] = bool(outcomes[h]["placed"] and let_go
+                                             and world.speed(carried[h]) < SETTLED_MPS)
             for carry in carries.values():
                 if carry is not None:
                     carry.reset()

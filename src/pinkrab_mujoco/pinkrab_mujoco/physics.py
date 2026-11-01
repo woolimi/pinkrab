@@ -30,11 +30,6 @@ from .scene import Scene, SceneError
 # (500 Hz for this model); nothing on a screen needs to be told about all of them.
 STREAM_HZ = 60
 
-# A command reaches the real servo's motion this long after it is sent. Fitted with
-# the model's servo values by scripts/fit_servo.py to step responses recorded on the
-# arm; MJCF has no way to state it, so the loop holds each command back instead.
-SERVO_DELAY_S = 0.04
-
 PhysicsError = SceneError
 
 
@@ -76,7 +71,7 @@ class Physics:
         self.rate = math.radians(SETTINGS.max_joint_speed_dps)
         self._target = self.data.ctrl.copy()
         # What has been sent toward the target so far, and the commands still on
-        # their way to the servos (SERVO_DELAY_S of them).
+        # their way to the servos (servo_delay_s of them).
         self._sent = self.data.ctrl.copy()
         self._in_flight: deque = deque()
 
@@ -243,13 +238,13 @@ class Physics:
         step = self.model.opt.timestep
         clock = time.perf_counter()
         ceiling = self.rate * step
-        lag = max(0, round(SERVO_DELAY_S / step))
+        lag = max(0, round(SETTINGS.servo_delay_s / step))
         while not self._stop.is_set():
             if not self.placed_only:
                 with self._lock:
                     # Walk the command toward the target, never further than the
                     # ceiling allows in one step's worth of time, and hand the
-                    # servos the one sent SERVO_DELAY_S ago.
+                    # servos the one sent servo_delay_s ago.
                     gap = self._target - self._sent
                     self._sent += gap.clip(-ceiling, ceiling) if ceiling > 0 else gap
                     self._in_flight.append(self._sent.copy())

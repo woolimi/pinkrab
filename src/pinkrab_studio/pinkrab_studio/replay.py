@@ -46,6 +46,7 @@ from __future__ import annotations
 
 import json
 import math
+import os
 import threading
 import time
 from pathlib import Path
@@ -67,10 +68,10 @@ from pinkrab_umi.convert import (
     cameras_on_desk,
     exposures,
     grid,
+    jaw_readings,
     latest,
+    on_grid,
     rate_of,
-    resample,
-    smooth,
 )
 from pinkrab_umi.convert import placed as has_hand
 from pinkrab_umi.desk_solid import PlacementError, carried
@@ -234,7 +235,10 @@ def solved(root: Path) -> dict:
             poses = (root / "poses.jsonl").stat().st_mtime
             answer = solve(root)
             answer["poses_mtime"], answer["model_mtime"] = poses, model
-            replay_file(root).write_text(json.dumps(answer))
+            # Written beside and moved over, so a reader never meets half a file.
+            partial = replay_file(root).with_suffix(".json.partial")
+            partial.write_text(json.dumps(answer))
+            os.replace(partial, replay_file(root))
     return answer
 
 
@@ -320,9 +324,8 @@ NOT_THE_HAND = {"policy": "policy", "hold": "held", "none": "idle"}
 
 
 def _rollout(root: Path, meta: dict) -> dict:
-    """A rollout played back from the robot's readings, by the top
-    camera's clock (the arm's camera's, with no head video); the other arm
-    waits at ready."""
+    """A rollout played back from the robot's readings, by the first arm's
+    camera's clock, as convert has it; the other arm waits at ready."""
     started = time.monotonic()
     arms = [arm for arm in ARMS if arm in (meta.get("arms") or [])]
     if not arms:
@@ -331,8 +334,12 @@ def _rollout(root: Path, meta: dict) -> dict:
         raise ValueError(OTHER_BUILD)
     frames = _lines(root / "frames.jsonl")
     readings = sorted(_lines(root / "robot.jsonl"), key=lambda r: r["host_ts"])
-    by_stream = {name: np.array([f["host_ts"] for f in frames if f["stream"] == name]) for name in STREAMS}
-    clock = "head" if len(by_stream["head"]) else f"gripper_{arms[0]}"
+    # Each gripper frame is when it was exposed, as convert has it; the first
+    # arm's camera is the clock.
+    by_stream = {name: np.array([f["host_ts"] for f in frames if f["stream"] == name])
+                 - (UMI.gripper_camera_latency_s if name.startswith("gripper_") else 0.0)
+                 for name in STREAMS}
+    clock = f"gripper_{arms[0]}"
     fps = float((meta.get("streams") or {}).get(clock, {}).get("fps") or UMI.fps)
     still: dict[str, float] = {}
     for other in ARMS:
@@ -395,31 +402,6 @@ def _exposed(poses: list[dict]) -> np.ndarray:
         return np.array([p["host_ts"] for p in poses], dtype=float)
 
 
-def _on_grid(tools: list[np.ndarray | None], times: np.ndarray, at: np.ndarray, rate: float) -> list:
-    """A hand's tool poses at the head frames' `times` laid on the dataset's
-    clock `at`, as convert lays them: each run of frames the hand was placed
-    in smoothed and splined through, and read at the moments inside it. A
-    moment outside every run - the hand lost, or a run of a single frame - is
-    None."""
-    out: list[np.ndarray | None] = [None] * len(at)
-    start = None
-    for i in range(len(tools) + 1):
-        usable = i < len(tools) and tools[i] is not None
-        if start is not None and (not usable or times[i] <= times[i - 1]):
-            if i - start >= 2:
-                t = times[start:i]
-                inside = np.nonzero((at >= t[0]) & (at <= t[-1]))[0]
-                if len(inside):
-                    # Splined from the run's start: absolute stamps lose digits.
-                    for k, T in zip(inside, resample(smooth(np.array(tools[start:i]), rate), t - t[0],
-                                                     at[inside] - t[0])):
-                        out[k] = T
-            start = None
-        if usable and start is None:
-            start = i
-    return out
-
-
 def solve(root: Path) -> dict:
     meta = json.loads((root / "meta.json").read_text())
     kind = meta.get("kind", "demo")
@@ -463,10 +445,8 @@ def solve(root: Path) -> dict:
         arms[arm] = {"chain": chain, "ready": ready, "joints": ready, "targets": None, "present": False,
                      "solved_at": -math.inf}
         arms[arm]["lo"], arms[arm]["hi"] = chain.limits
-        readings = [(p["host_ts"] - UMI.jaw_latency_s, p["jaw"][arm])
-                    for p in poses if (p.get("jaw") or {}).get(arm) is not None]
-        arms[arm]["jaw"] = (np.interp(at, *(np.array(v, dtype=float) for v in zip(*readings)))
-                            if readings else None)
+        readings = jaw_readings(poses, arm)
+        arms[arm]["jaw"] = np.interp(at, *readings) if len(readings[0]) else None
         if world_T_cams is None:
             unplaced[arm] = unseen
             continue
@@ -483,7 +463,8 @@ def solve(root: Path) -> dict:
         except KeyError:
             unplaced[arm] = "the take does not record where its solid was on the handheld"
             continue
-        tools = _on_grid([None if T is None else T @ solid_T_tcp for T in placed], times, at, rate)
+        tools = on_grid([None if T is None else T @ solid_T_tcp for T in placed], times, at, rate,
+                        UMI.convert_max_hole_s)
         targets = [None if T is None else tool_absolute_target(arm, desk, T) for T in tools]
         first = next((T for T in targets if T is not None), None)
         if first is None:

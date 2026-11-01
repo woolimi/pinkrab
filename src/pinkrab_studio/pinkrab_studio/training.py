@@ -39,6 +39,9 @@ PATTERNS = ("*/metrics.jsonl", "*/*/metrics.jsonl")
 # whole history; this lets it arrive over a few polls rather than one stall.
 CHUNK_BYTES = 4 << 20
 SSH_TIMEOUT_S = 60.0
+# ssh asks a silent peer this often, and gives up after this many unanswered.
+SSH_ALIVE_S = 15
+SSH_ALIVE_MAX = 4
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS sources (
@@ -92,6 +95,16 @@ def keep_key(name: str, text: str) -> str:
     return str(path)
 
 
+def plain(what: str, value: str) -> str:
+    """`value` for ssh to be handed as a user, host or key path: one that
+    starts with '-' would be read as an option (-oProxyCommand=... runs a
+    command here), and whitespace or control characters have no place in any
+    of the three."""
+    if value.startswith("-") or any(c.isspace() or not c.isprintable() for c in value):
+        raise TrainError(f"{what} {value!r}: no leading '-', no spaces or control characters")
+    return value
+
+
 def parse_ssh_line(text: str) -> dict:
     """Host, port, user and key out of a pasted ssh, sftp or scp command -
     the lines a cloud console hands out for a session."""
@@ -117,6 +130,9 @@ def parse_ssh_line(text: str) -> dict:
         i += 1
     if not found.get("host"):
         raise TrainError("no user@host in that line")
+    for what in ("user", "host", "key"):
+        if what in found:
+            plain(what, found[what])
     return found
 
 
@@ -204,16 +220,23 @@ def _read_local(root: Path, offsets: dict[str, int]) -> dict[str, dict]:
 def ssh_base(source: dict) -> list[str]:
     """ssh to a source, up to and including user@host: a command to run there
     goes after it."""
+    user, host = source["user"] or "root", source["host"]
+    plain("user", user)
+    plain("host", host)
     command = ["ssh", "-p", str(source["port"] or 22),
                "-o", "BatchMode=yes", "-o", "ConnectTimeout=10",
+               # A connection that goes quiet is dropped after about a minute,
+               # not left to hold a poll or a launch for good.
+               "-o", f"ServerAliveInterval={SSH_ALIVE_S}", "-o", f"ServerAliveCountMax={SSH_ALIVE_MAX}",
                "-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null",
                "-o", "LogLevel=ERROR",
                # One connection per poll, not a shared master: a socket left by an
                # earlier session to the same host:port is a session that ended.
                "-o", "ControlMaster=no", "-o", "ControlPath=none"]
     if source.get("key"):
-        command += ["-i", str(Path(source["key"]).expanduser())]
-    return command + [f"{source['user'] or 'root'}@{source['host']}"]
+        command += ["-i", str(Path(plain("key", str(source["key"]))).expanduser())]
+    # After `--`, whatever the destination is can only be one.
+    return command + ["--", f"{user}@{host}"]
 
 
 def _ssh_command(source: dict) -> list[str]:
@@ -319,10 +342,15 @@ class TrainStore:
         port = int(payload.get("port") or found.get("port") or 22)
         user = str(payload.get("user") or found.get("user") or "").strip() or None
         key = str(payload.get("key") or "").strip() or None
+        plain("host", host)
+        if user:
+            plain("user", user)
+        if key:
+            plain("key", key)
         if key is None and found.get("key") and Path(found["key"]).expanduser().is_file():
             # A pasted line's -i is often relative to wherever its console
             # expects the key; it is taken only when it names a file here.
-            key = found["key"]
+            key = plain("key", found["key"])
         if key and Path(key).expanduser().parent != CORE.keys_dir:
             source = Path(key).expanduser()
             if not source.is_file():
@@ -545,13 +573,18 @@ class TrainStore:
 
 
 class TrainWatch:
-    """The store, kept up to date on a thread of its own while the studio is up."""
+    """The store, kept up to date while the studio is up: a thread watches the
+    clock, and each source is read on a thread of its own, so a machine that
+    does not answer holds up its own reading and nobody else's."""
 
     def __init__(self, store: TrainStore | None = None) -> None:
         self.store = store or TrainStore()
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
+        self._lock = threading.Lock()
         self._due: dict[str, float] = {}
+        # Sources being read now: one is not read again until the last read is over.
+        self._reading: set[str] = set()
         self._kick = threading.Event()
         # Called after every pass that read something: what reacts to new
         # lines (a checkpoint to copy home) hangs here.
@@ -568,30 +601,39 @@ class TrainWatch:
 
     def now(self) -> None:
         """Every source read on the next turn, not when its interval comes round."""
-        self._due.clear()
+        with self._lock:
+            self._due.clear()
         self._kick.set()
 
     def _run(self) -> None:
         while not self._stop.is_set():
-            read = False
             for source in self.store.sources():
                 name = source["name"]
-                if time.monotonic() < self._due.get(name, 0.0):
-                    continue
                 every = CORE.train_poll_s if source["kind"] == "local" else CORE.train_remote_poll_s
-                self._due[name] = time.monotonic() + every
-                try:
-                    self.store.sync(name)
-                    read = True
-                except TrainError:
-                    pass  # kept on the source row, where the page shows it
-                except Exception as exc:  # noqa: BLE001 - one bad file must not stop the watch
-                    print(f"  training page: reading {name} failed: {exc!r}", flush=True)
-            if read:
-                for hook in self.after_sync:
-                    try:
-                        hook()
-                    except Exception as exc:  # noqa: BLE001
-                        print(f"  training page: {exc!r}", flush=True)
+                with self._lock:
+                    if name in self._reading or time.monotonic() < self._due.get(name, 0.0):
+                        continue
+                    self._due[name] = time.monotonic() + every
+                    self._reading.add(name)
+                threading.Thread(target=self._read, args=(name,), name=f"train-read {name}", daemon=True).start()
             self._kick.wait(1.0)
             self._kick.clear()
+
+    def _read(self, name: str) -> None:
+        read = False
+        try:
+            self.store.sync(name)
+            read = True
+        except TrainError:
+            pass  # kept on the source row, where the page shows it
+        except Exception as exc:  # noqa: BLE001 - one bad file must not stop the watch
+            print(f"  training page: reading {name} failed: {exc!r}", flush=True)
+        finally:
+            with self._lock:
+                self._reading.discard(name)
+        if read:
+            for hook in self.after_sync:
+                try:
+                    hook()
+                except Exception as exc:  # noqa: BLE001
+                    print(f"  training page: {exc!r}", flush=True)

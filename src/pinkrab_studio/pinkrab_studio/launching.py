@@ -39,6 +39,7 @@ import queue
 import re
 import shlex
 import shutil
+import signal
 import subprocess
 import sys
 import tarfile
@@ -78,6 +79,9 @@ MIN_DRIVER = 580
 MIN_COMPUTE = 7.5
 MIN_GPU_MEMORY_GB = 8
 LOCK_STAMP = ".lock.sha256"
+# A checkpoint that could not be copied home is not tried again by itself for
+# this long; the Fetch button asks at once.
+FETCH_RETRY_S = 300.0
 
 SETUP_SH = r"""#!/bin/bash
 # A venv for training, from the lock beside this file. Everything is kept
@@ -185,17 +189,34 @@ def _run(source: dict, command: str, *, stdin: bytes | None = None, timeout: flo
 def _stream(source: dict, command: str, say, timeout: float) -> None:
     """A long shell command on the source, each line it prints said as it comes."""
     argv = ["bash", "-c", command] if source["kind"] == "local" else ssh_base(source) + [command]
-    started = time.monotonic()
-    with subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True) as proc:
+    # Its own group, so the watchdog takes down what a local shell started too:
+    # a child holding the pipe open would keep the read below waiting.
+    with subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+                          start_new_session=True) as proc:
+        overdue = threading.Event()
+
+        def expire() -> None:
+            overdue.set()
+            try:
+                os.killpg(proc.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+        # The time limit runs whether or not the command prints anything.
+        watchdog = threading.Timer(timeout, expire)
+        watchdog.daemon = True
+        watchdog.start()
         last = ""
-        for line in proc.stdout:
-            last = line.strip() or last
-            say(last)
-            if time.monotonic() - started > timeout:
-                proc.kill()
-                raise LaunchError(f"{source['name']}: still going after {timeout / 60:.0f} min - stopped")
-        if proc.wait() != 0:
-            raise LaunchError(f"{source['name']}: {last or f'exit {proc.returncode}'}")
+        try:
+            for line in proc.stdout:
+                last = line.strip() or last
+                say(last)
+            code = proc.wait()
+        finally:
+            watchdog.cancel()
+        if overdue.is_set():
+            raise LaunchError(f"{source['name']}: still going after {timeout / 60:.0f} min - stopped")
+        if code != 0:
+            raise LaunchError(f"{source['name']}: {last or f'exit {code}'}")
 
 
 def _send_tar(source: dict, remote_dir: str, add, total: int, say) -> None:
@@ -293,6 +314,10 @@ class Jobs:
         self._state = {"launch": self._idle(), "fetch": self._idle()}
         self._queues = {"launch": queue.Queue(), "fetch": queue.Queue()}
         self._queued_fetches: set[tuple[int, int]] = set()
+        # Checkpoints whose copy failed: when the automatic fetch may try again.
+        self._fetch_retry: dict[tuple[int, int], float] = {}
+        # Datasets a launch is holding, queued or running, with how many.
+        self._holding: dict[str, int] = {}
         for kind in self._queues:
             threading.Thread(target=self._work, args=(kind,), name=f"train-{kind}", daemon=True).start()
 
@@ -303,7 +328,7 @@ class Jobs:
     def state(self) -> dict:
         with self._lock:
             return {k: {**v, "lines": v["lines"][-8:]} for k, v in self._state.items()} | {
-                "probes": self.probes, "queued_fetches": len(self._queued_fetches)}
+                "probes": dict(self.probes), "queued_fetches": len(self._queued_fetches)}
 
     def _work(self, kind: str) -> None:
         while True:
@@ -343,12 +368,34 @@ class Jobs:
 
     def launch(self, payload: dict) -> dict:
         plan = self._plan(payload)
-        self._submit("launch", f"start {plan['run']} on {plan['source']}", lambda say: self._launch(plan, say))
+        self._hold(plan["dataset"])
+        self._submit("launch", f"start {plan['run']} on {plan['source']}", lambda say: self._launch_held(plan, say))
         return plan
 
     # The same, done now on the caller's thread: what the command line uses.
     def launch_now(self, payload: dict, say=print) -> dict:
-        return self._launch(self._plan(payload), say)
+        plan = self._plan(payload)
+        self._hold(plan["dataset"])
+        return self._launch_held(plan, say)
+
+    def _hold(self, dataset: str) -> None:
+        with self._lock:
+            self._holding[dataset] = self._holding.get(dataset, 0) + 1
+
+    def _launch_held(self, plan: dict, say) -> dict:
+        try:
+            return self._launch(plan, say)
+        finally:
+            with self._lock:
+                self._holding[plan["dataset"]] -= 1
+                if not self._holding[plan["dataset"]]:
+                    del self._holding[plan["dataset"]]
+
+    def holds(self, dataset: str) -> bool:
+        """Whether a launch is waiting to send or reading this dataset: it is
+        not to be deleted from under it."""
+        with self._lock:
+            return dataset in self._holding
 
     def stop_now(self, run_id: int, say=print) -> dict:
         return self._stop(self.store.run(run_id), say)
@@ -371,16 +418,20 @@ class Jobs:
 
     def fetch(self, run_id: int, step: int) -> None:
         run = self.store.run(run_id)
-        if (run_id, step) in self._queued_fetches:
-            return
         with self._lock:
+            if (run_id, step) in self._queued_fetches:
+                return
             self._queued_fetches.add((run_id, step))
         self._submit("fetch", f"{run['name']} step {step}", lambda say: self._fetch(run, step, say))
 
     def fetch_due(self) -> None:
         """Every checkpoint of a run that fetches its own, not yet here."""
+        now = time.monotonic()
         for c in self.store.to_fetch():
-            self.fetch(c["run_id"], c["step"])
+            with self._lock:
+                waiting = self._fetch_retry.get((c["run_id"], c["step"]), 0.0) > now
+            if not waiting:
+                self.fetch(c["run_id"], c["step"])
 
     # --- doing ------------------------------------------------------------
     def _plan(self, payload: dict) -> dict:
@@ -558,39 +609,50 @@ class Jobs:
 
     def _fetch(self, run: dict, step: int, say) -> dict:
         try:
-            source = self.store.source(run["source"])
-            c = next((c for c in run["checkpoints"] if c["step"] == step), None)
-            if c is None or not c.get("path"):
-                raise LaunchError(f"{run['name']} has no checkpoint at step {step}")
-            where = Path(c["path"]).name
-            dest = CORE.train_dir / run["name"] / "checkpoints" / where
-            if source["kind"] == "local":
-                self.store.mark_fetched(run["id"], step, c["path"])
-                return {"local": c["path"]}
-            size = int(_run(source, f"du -sb {shlex.quote(c['path'])}/pretrained_model | cut -f1").strip() or 0)
-            say(f"copying {run['name']} step {step} ({size / 1e6:.0f} MB)")
-            part = dest.parent / f".{where}.part"
-            shutil.rmtree(part, ignore_errors=True)
-            part.mkdir(parents=True)
-            argv = ssh_base(source) + [f"tar -C {shlex.quote(c['path'])} -cf - pretrained_model"]
-            with subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE) as proc, \
-                    subprocess.Popen(["tar", "-C", str(part), "-xf", "-"], stdin=subprocess.PIPE) as untar:
-                got, told = 0, time.monotonic()
-                while chunk := proc.stdout.read(1 << 20):
-                    untar.stdin.write(chunk)
-                    got += len(chunk)
-                    if time.monotonic() - told > 2.0:
-                        told = time.monotonic()
-                        say(f"copying {got / 1e6:.0f} / {size / 1e6:.0f} MB")
-                untar.stdin.close()
-                if proc.wait() != 0 or untar.wait() != 0:
-                    raise LaunchError(f"copy failed: {proc.stderr.read().decode('utf-8', 'replace').strip()[-200:]}")
-            shutil.rmtree(dest, ignore_errors=True)
-            part.rename(dest)
-            local = str(dest / "pretrained_model")
-            self.store.mark_fetched(run["id"], step, local)
-            say(f"here: {local}")
-            return {"local": local}
+            try:
+                found = self._copy_home(run, step, say)
+            except Exception:
+                with self._lock:
+                    self._fetch_retry[(run["id"], step)] = time.monotonic() + FETCH_RETRY_S
+                raise
+            with self._lock:
+                self._fetch_retry.pop((run["id"], step), None)
+            return found
         finally:
             with self._lock:
                 self._queued_fetches.discard((run["id"], step))
+
+    def _copy_home(self, run: dict, step: int, say) -> dict:
+        source = self.store.source(run["source"])
+        c = next((c for c in run["checkpoints"] if c["step"] == step), None)
+        if c is None or not c.get("path"):
+            raise LaunchError(f"{run['name']} has no checkpoint at step {step}")
+        where = Path(c["path"]).name
+        dest = CORE.train_dir / run["name"] / "checkpoints" / where
+        if source["kind"] == "local":
+            self.store.mark_fetched(run["id"], step, c["path"])
+            return {"local": c["path"]}
+        size = int(_run(source, f"du -sb {shlex.quote(c['path'])}/pretrained_model | cut -f1").strip() or 0)
+        say(f"copying {run['name']} step {step} ({size / 1e6:.0f} MB)")
+        part = dest.parent / f".{where}.part"
+        shutil.rmtree(part, ignore_errors=True)
+        part.mkdir(parents=True)
+        argv = ssh_base(source) + [f"tar -C {shlex.quote(c['path'])} -cf - pretrained_model"]
+        with subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE) as proc, \
+                subprocess.Popen(["tar", "-C", str(part), "-xf", "-"], stdin=subprocess.PIPE) as untar:
+            got, told = 0, time.monotonic()
+            while chunk := proc.stdout.read(1 << 20):
+                untar.stdin.write(chunk)
+                got += len(chunk)
+                if time.monotonic() - told > 2.0:
+                    told = time.monotonic()
+                    say(f"copying {got / 1e6:.0f} / {size / 1e6:.0f} MB")
+            untar.stdin.close()
+            if proc.wait() != 0 or untar.wait() != 0:
+                raise LaunchError(f"copy failed: {proc.stderr.read().decode('utf-8', 'replace').strip()[-200:]}")
+        shutil.rmtree(dest, ignore_errors=True)
+        part.rename(dest)
+        local = str(dest / "pretrained_model")
+        self.store.mark_fetched(run["id"], step, local)
+        say(f"here: {local}")
+        return {"local": local}

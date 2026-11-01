@@ -412,10 +412,48 @@ def hermit_parts() -> dict:
     return hands
 
 
-def make_handler(state: StudioState):
+# The names a browser reaches a studio bound to this machine only by. A page
+# from another site can be made to resolve its own name to 127.0.0.1 (DNS
+# rebinding) and then talk to the studio as its own origin; the Host it sends
+# stays the attacker's name, which is how it is told from the studio's own page.
+LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "[::1]"})
+
+
+def host_name(netloc: str) -> str:
+    """The host part of a Host header, port and case dropped."""
+    host = netloc.strip().lower()
+    if host.startswith("["):
+        return host.split("]", 1)[0] + "]"
+    return host.rsplit(":", 1)[0] if ":" in host else host
+
+
+def refusal(headers, allowed_hosts: frozenset[str] | None, writes: bool) -> str | None:
+    """Why a request is not served, or None. Bound beyond this machine
+    (`allowed_hosts` None) any Host name is the studio's own. An Origin, when
+    the browser sends one, has to be the page's own host. A request that
+    writes has to say it is JSON, which a page of another site cannot send
+    without a preflight the studio never answers."""
+    host = headers.get("Host", "")
+    if allowed_hosts is not None and host_name(host) not in allowed_hosts:
+        return "not this studio's address"
+    origin = headers.get("Origin")
+    if origin is not None and urlparse(origin).netloc != host:
+        return "a page from another site"
+    if writes and headers.get_content_type() != "application/json":
+        return "expected application/json"
+    return None
+
+
+def make_handler(state: StudioState, allowed_hosts: frozenset[str] | None = None):
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, fmt, *args):  # quieter than the default
             pass
+
+        def _refused(self, writes: bool) -> bool:
+            why = refusal(self.headers, allowed_hosts, writes)
+            if why is not None:
+                self._send_json({"error": why}, 403)
+            return why is not None
 
         def _send(self, body: bytes, content_type: str, code: int = 200) -> None:
             # A client that has gone - a poll the page abandoned, a tab closed
@@ -477,6 +515,8 @@ def make_handler(state: StudioState):
                     remaining -= len(chunk)
 
         def do_GET(self) -> None:  # noqa: N802
+            if self._refused(writes=False):
+                return
             path = urlparse(self.path).path
 
             if path == "/ws":
@@ -629,8 +669,9 @@ def make_handler(state: StudioState):
 
             if path == "/real/requests":
                 # The bridge's side of a button. What the page asked for is
-                # handed over once and made into a service call over there,
-                # because a page cannot call one and should not pretend to.
+                # handed over and made into a service call over there, because
+                # a page cannot call one and should not pretend to. A stop is
+                # handed over again at every poll until the robot shows it done.
                 self._send_json({"requests": state.real.take_requests()})
                 return
 
@@ -840,6 +881,8 @@ def make_handler(state: StudioState):
                 return None
 
         def do_POST(self) -> None:  # noqa: N802
+            if self._refused(writes=True):
+                return
             path = urlparse(self.path).path
 
             if path == "/rig/footswitch/start":
@@ -1405,8 +1448,16 @@ def make_handler(state: StudioState):
                 payload = self._body()
                 if payload is None:
                     return
+                name = str(payload.get("name") or "")
+                if state.converter.writing(name):
+                    self._send_json({"error": f"{name} is being converted - delete it when that is done"}, 409)
+                    return
+                if state.train_jobs.holds(name):
+                    self._send_json({"error": f"{name} is waiting to be sent to a training machine, or being "
+                                              "sent - delete it when the launch is done"}, 409)
+                    return
                 try:
-                    Converter.delete_dataset(str(payload.get("name") or ""))
+                    Converter.delete_dataset(name)
                 except ValueError as exc:
                     self._send_json({"error": str(exc)}, 404)
                     return
@@ -1501,7 +1552,8 @@ def make_handler(state: StudioState):
 
 def serve(state: StudioState, host: str, port: int) -> None:
     try:
-        httpd = ThreadingHTTPServer((host, port), make_handler(state))
+        httpd = ThreadingHTTPServer(
+            (host, port), make_handler(state, LOOPBACK_HOSTS if host in ("127.0.0.1", "localhost", "::1") else None))
     except OSError as exc:
         if exc.errno != errno.EADDRINUSE:
             raise
@@ -1527,15 +1579,6 @@ def serve(state: StudioState, host: str, port: int) -> None:
     if host != "127.0.0.1":
         print("  Anyone who can reach this port can see the robot. There is no auth.")
     print("  Ctrl+C to stop.\n")
-    state.physics.start()
-    state.rig.studio_port = port
-    state.clutch.live_url = live_url().rstrip("/")
-    # The pedals, for as long as the page is up: they record on the collect
-    # page with no robot, so they are not the robot switch's to start.
-    state.rig.start_footswitch(port)
-    # The training page's reader: runs keep training whether the page is open
-    # or not, and a page opened later should find them already read.
-    state.training.start()
     # A kill, or the terminal closing, is Ctrl+C too. Python's default for
     # SIGTERM is to die on the spot, and a studio that dies on the spot leaves
     # the bridge, the loop and the camera it started running with nobody to
@@ -1545,10 +1588,23 @@ def serve(state: StudioState, host: str, port: int) -> None:
     for signum in (signal.SIGTERM, signal.SIGHUP):
         signal.signal(signum, interrupt)
     try:
+        state.physics.start()
+        state.rig.studio_port = port
+        state.clutch.live_url = live_url().rstrip("/")
+        # The pedals, for as long as the page is up: they record on the collect
+        # page with no robot, so they are not the robot switch's to start.
+        state.rig.start_footswitch(port)
+        # The training page's reader: runs keep training whether the page is open
+        # or not, and a page opened later should find them already read.
+        state.training.start()
         httpd.serve_forever()
     except KeyboardInterrupt:
-        print("\n  stopped\n")
+        print("\n  stopping\n")
     finally:
+        # Taking things down takes seconds, and a second signal in the middle
+        # would leave the rest of them running: it is ignored from here.
+        for signum in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
+            signal.signal(signum, signal.SIG_IGN)
         # The event first: it is what lets the open streams return, and a stream
         # still writing while the socket closes is a traceback per open tab.
         state.stopping.set()

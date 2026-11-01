@@ -54,7 +54,7 @@ from pinkrab_core.jaw import gripper_band, shut_wide
 from . import sam_track
 from .backgrounds import MASKS, write
 from .config import SETTINGS
-from .convert import cameras_on_desk, exposures, fill_holes, placed
+from .convert import cameras_on_desk, exposures, fill_holes, jaw_readings, placed
 from .gripper_model import Gripper, gripper
 
 OWN, OTHER = 1, 2
@@ -206,9 +206,8 @@ class Scene:
             turn[:3, :3] = TOOL_TURN[side]
             self.tools[side] = [None if T is None else T @ turn
                                 for T in fill_holes(hand, self.times, SETTINGS.convert_max_hole_s)]
-            readings = [(p["host_ts"] - SETTINGS.jaw_latency_s, p["jaw"][side])
-                        for p in poses if (p.get("jaw") or {}).get(side) is not None]
-            self.openings[side] = tuple(np.array(v, dtype=float) for v in zip(*readings)) if readings else None
+            readings = jaw_readings(poses, side)
+            self.openings[side] = readings if len(readings[0]) else None
         self.lenses = {side: Lens(streams[f"gripper_{side}"]) for side in self.sides}
         # Each gripper frame's moment, on the head camera's clock.
         self.stamps = {side: [f["host_ts"] - SETTINGS.gripper_camera_latency_s

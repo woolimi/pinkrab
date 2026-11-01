@@ -201,6 +201,11 @@ class Settings:
     # starts, and without this the arm closes that gap in a single frame - Pinkrab
     # hangs on a wall, and a frame that large swings into it. 0 disables.
     max_joint_speed_dps: float = 300.0
+    # How long after a command is sent the servo starts to move, seconds: the
+    # fit of scripts/fit_servo.py to step responses recorded on the arm. The
+    # MJCF has no way to state it, so the simulation holds each command back by
+    # this much, and fit_servo scores the model with it.
+    servo_delay_s: float = 0.04
 
     # --- the desk under the fingers ---------------------------------------
     # The one contact that is wanted: a thin object - a card, a coin - lies flat
@@ -259,6 +264,12 @@ class Settings:
     # motion, so its origin is taken again where the hand is, and the arm
     # does not jump after the move it made unseen.
     teleop_regrab_s: float = 0.5
+    # The live view's newest solve counts as a picture only while it keeps
+    # changing: a solve that stays the same this long is a camera that has
+    # stopped, however alive the server still is, and the hand it shows is
+    # not followed. Compared on this side's clock, so a live view on another
+    # machine needs no synchronised one.
+    teleop_picture_stale_s: float = 0.3
     # Correcting a policy (MODE_CORRECT) the handheld takes the arm over where
     # it stands. The jaw is not taken at once - an arm holding a block would
     # drop it to an open hand. It is taken when the hand's opening reaches what
@@ -281,6 +292,10 @@ class Settings:
     # that stopped coming moves while every check is made against where it
     # was. Fifteen polls at arm_poll_hz.
     reading_stale_s: float = 0.25
+    # How many times turning an arm's torque off is tried again after a bus
+    # error before it is reported failed: a dropped status packet on the stop
+    # must not leave an arm rigid.
+    torque_off_retries: int = 5
 
     # --- a trained policy driving ------------------------------------------
     # Each of these is Pinkrab's own value, run unless the workspace's
@@ -342,6 +357,13 @@ class Settings:
     # once that passes the slip below: the policy pushing past the reach the
     # takes were made in, the solver bending the other joints after it.
     policy_limit_margin_deg: float = 1.0
+    # A policy's next step waits while an arm's joints read further than this
+    # from the pose it was last sent, or are not being read: the gate is
+    # refusing, or holding the arm at a contact, and a step composed onto a
+    # pose the arm never reached walks the command away from it. The run ends
+    # when the wait lasts policy_follow_hold_s.
+    policy_follow_lag_deg: float = 15.0
+    policy_follow_hold_s: float = 2.0
     # How far one tick's solve may fall short of the pose the policy asked for
     # before the run ends: further is a step the arm could not take. A replay
     # of the takes misses by 8 mm at most. Also how far the misses may add up
