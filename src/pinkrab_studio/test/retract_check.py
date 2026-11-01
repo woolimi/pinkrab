@@ -47,9 +47,9 @@ def tool(x: float, y: float, z: float) -> list[list[float]]:
 
 def take(path: list[tuple[float, float, float]], jaws: list[float], hand: str = "right") -> list[dict]:
     lines = []
-    for (x, y, z), jaw in zip(path, jaws):
+    for i, ((x, y, z), jaw) in enumerate(zip(path, jaws)):
         pose = tool(x, y, z)
-        lines.append({"solids": {f"handheld_{hand}": {"solved": True, "pose": pose, "world_pose": pose}},
+        lines.append({"stamp": i / 30, "solids": {f"handheld_{hand}": {"solved": True, "pose": pose, "world_pose": pose}},
                       "jaw": {hand: jaw}})
     return lines
 
@@ -113,7 +113,7 @@ def main() -> int:
     ready = desk_tool("right", desk, chain.forward(np.array([READY_DEG["right"][n.removeprefix("right_")]
                                                              for n in chain.joint_names])))
     answer = {"desk": desk.tolist()}
-    back_home = stay + [{"solids": {"handheld_right": {"solved": True, "pose": ready.tolist(),
+    back_home = stay + [{"stamp": len(stay) / 30, "solids": {"handheld_right": {"solved": True, "pose": ready.tolist(),
                                                       "world_pose": ready.tolist()}}, "jaw": {"right": 0.9}}]
     home = end_from_ready(back_home, META, "right", answer)
     check("a hand back on the ready pose's tool ends at ready", home is not None and home["mm"] < 0.1

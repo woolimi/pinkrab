@@ -92,7 +92,7 @@ FAR_START_DEG = 20.0
 FAR_START_MM = 50.0
 # Bumped when what this writes changes, so a cached answer from an older
 # solver is remade rather than trusted.
-VERSION = 16
+VERSION = 17
 
 
 def _rules() -> list[float]:

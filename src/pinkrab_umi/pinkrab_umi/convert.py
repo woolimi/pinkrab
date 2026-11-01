@@ -10,8 +10,9 @@ the other is. A dataset is of the hands its takes were made with, both on
 the rig; every frame has them all. So each episode goes through these steps:
 
   1. the camera on the desk: the top camera is worn on the operator's head
-     and moves with it, so each frame is placed by its own desk solve, and a
-     frame that has none has no hand;
+     and moves with it, so each frame is placed by its own desk solve -
+     smoothed over `CAMERA_SMOOTH_S`, as the head turns slower than the
+     solve wanders - and a frame that has none has no hand;
   2. the source clock: the top camera's exposures - its sensor stamps,
      already on this host's clock - are when each pose was. Each gripper
      video and each jaw are laid on them by their own host stamps less the
@@ -128,6 +129,13 @@ STILL_APERTURE = 0.03
 # enough to bring the tracker's noise down about threefold.
 SMOOTH_S = 7 / 30
 SMOOTH_ORDER = 2
+# The camera's place on the desk, smoothed on its own and longer: it comes off
+# the desk solid, half a metre from a head-worn camera, whose turn read frame
+# by frame wanders 2.4 deg (median) - 6 mm at a hand a third of a metre from
+# the solid's origin, against 0.6-1.3 mm for the hand read off the camera. A
+# head turns slower than a hand, and over 0.4 s the hand on the desk came
+# down to what the camera reads of it (2026-11-01).
+CAMERA_SMOOTH_S = 0.4
 # A gripper picture taken more than this many of its frame periods before the
 # moment it stands for is a hole in the video, not a late frame: the segment
 # ends there.
@@ -323,14 +331,26 @@ def on_grid(tools: list[np.ndarray | None], times: np.ndarray, at: np.ndarray, r
 
 
 def cameras_on_desk(poses: list[dict], hands) -> list[np.ndarray | None]:
-    """world_T_cam for each frame of the episode, off that frame's desk
-    solve - None where the desk solid was not seen with a hand."""
-    out = [next((np.array(c["world_pose"]) @ np.linalg.inv(np.array(c["pose"]))
-                 for c in ((p["solids"].get(f"handheld_{hand}") or {}) for hand in hands)
-                 if c.get("world_pose") is not None and c.get("pose") is not None), None)
-           for p in poses]
-    if all(W is None for W in out):
+    """world_T_cam for each frame of the episode, off the desk solves and
+    smoothed over `CAMERA_SMOOTH_S` - None where the desk solid was not seen
+    with a hand. Holes of `convert_max_hole_s` at most are bridged for the
+    smoothing and stay holes."""
+    solved = [next((np.array(c["world_pose"]) @ np.linalg.inv(np.array(c["pose"]))
+                    for c in ((p["solids"].get(f"handheld_{hand}") or {}) for hand in hands)
+                    if c.get("world_pose") is not None and c.get("pose") is not None), None)
+              for p in poses]
+    if all(W is None for W in solved):
         raise ConvertError("the desk solid was never seen with a hand")
+    times = np.array([p["stamp"] for p in poses], dtype=float)
+    filled = fill_holes(solved, times, SETTINGS.convert_max_hole_s)
+    out: list[np.ndarray | None] = [None] * len(poses)
+    for start, end in segments(np.array([W is not None for W in filled]), times, 0.0):
+        run = np.array(filled[start:end])
+        if end - start > 1:
+            run = smooth(run, rate_of(times[start:end]), CAMERA_SMOOTH_S)
+        for i, W in zip(range(start, end), run):
+            if solved[i] is not None:
+                out[i] = W
     return out
 
 
@@ -343,9 +363,9 @@ def exposures(poses: list[dict]) -> np.ndarray:
     return stamps
 
 
-def smooth_frames(rate: float) -> int:
-    """SMOOTH_S at `rate` frames a second, as the odd window the filter takes."""
-    n = max(SMOOTH_ORDER + 1, round(SMOOTH_S * rate))
+def smooth_frames(rate: float, seconds: float = SMOOTH_S) -> int:
+    """`seconds` at `rate` frames a second, as the odd window the filter takes."""
+    n = max(SMOOTH_ORDER + 1, round(seconds * rate))
     return n if n % 2 else n + 1
 
 
@@ -360,9 +380,10 @@ def continuous_quats(R: np.ndarray) -> np.ndarray:
     return q
 
 
-def smooth(T: np.ndarray, rate: float) -> np.ndarray:
-    """A segment of tool poses (n,4,4) `rate` frames a second, smoothed without lag."""
-    frames = smooth_frames(rate)
+def smooth(T: np.ndarray, rate: float, seconds: float = SMOOTH_S) -> np.ndarray:
+    """A segment of poses (n,4,4) `rate` frames a second, smoothed without
+    lag over `seconds`."""
+    frames = smooth_frames(rate, seconds)
     if len(T) < frames:
         return T
     out = T.copy()
@@ -548,7 +569,8 @@ def convert(episodes: list[str], out: str, task: str, hands: tuple[str, ...] = A
                          "policy takes it as input; a rollout's is the arm's tool in the robot's base frame. Each "
                          "demonstration's own desk is the solid its take recorded: its face size, how far above the "
                          "desk its origin stood and which way it faced",
-                 "camera": "each frame's own world_T_cam, off its desk solve; a frame without one is a hole"},
+                 "camera": "each frame's world_T_cam off its desk solve, smoothed over camera_savgol_s; a frame "
+                           "without a solve is a hole"},
         "clock": {"grid": f"a frame every 1/{fps} s from each segment's first exposure",
                   "source": "top camera exposure (sensor stamp, host clock)",
                   "pose": "a cubic spline (place) and a rotation spline (turn) through the smoothed poses",
@@ -559,7 +581,9 @@ def convert(episodes: list[str], out: str, task: str, hands: tuple[str, ...] = A
                     "note": "a window of each frame about its camera's lens axis (each episode's centre, by hand), "
                             "then scaled"},
         "smoothing": {"savgol_s": round(SMOOTH_S, 4), "order": SMOOTH_ORDER,
-                      "note": "on the source poses, before they are laid on the dataset's clock"},
+                      "camera_savgol_s": CAMERA_SMOOTH_S,
+                      "note": "on the source poses, before they are laid on the dataset's clock; the camera's "
+                              "place on the desk on its own, before the hands are placed by it"},
         "still": {"mm": STILL_MM, "aperture": STILL_APERTURE,
                   "note": "frames before any hand first moves and after the last one last moves are left out"},
         "rollouts": {"clock": f"the {hands[0]} arm's camera exposures (host clock)",
