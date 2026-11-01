@@ -552,7 +552,7 @@ def write(arm: str, started: str, records: list[dict]) -> None:
     print_fit(result)
     out = {"arm": arm, "started": started, "approach_deg": APPROACH_DEG,
            "gains": {"p": SETTINGS.servo_p_coefficient, "i": SETTINGS.servo_i_coefficient,
-                     "d": SETTINGS.servo_d_coefficient},
+                     "i_zero": list(SETTINGS.servo_i_unloaded), "d": SETTINGS.servo_d_coefficient},
            "records": records, "fit": result}
     path = SETTINGS.workspace / "pose_error" / f"{arm}_{started}.json"
     path.parent.mkdir(parents=True, exist_ok=True)

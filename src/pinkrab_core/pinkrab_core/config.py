@@ -179,8 +179,18 @@ class Settings:
     # shoulder_lift stopped 3 deg short going down with gravity and elbow_flex
     # 1.4. At I 8 the same steps end within 0.5 deg and settle in 0.25-0.4 s;
     # 16 overshot by 2 deg (step_response.py --i, 2026-09-26).
+    #
+    # A joint whose axis carries none of the arm's weight - shoulder_pan
+    # turns about the vertical - has nothing for I to hold against, only the
+    # gears' stiction and backlash: I builds behind it until it breaks loose
+    # and overshoots, and the joint hunts by itself. Standing still at ready
+    # with nothing commanded, the right shoulder_pan swung 0.9 deg every 2.8 s
+    # at I 8. Held at ready and given goals 3 to 11 ticks off, it hunted 0.8 to
+    # 0.9 deg after three of six at I 8 and after none at I 0, which stopped
+    # up to 0.6 deg short (2026-11-01). Those joints keep LeRobot's 0.
     servo_p_coefficient: int = 16
     servo_i_coefficient: int = 8
+    servo_i_unloaded: tuple[str, ...] = ("shoulder_pan",)
     servo_d_coefficient: int = 32
     gripper_max_torque_limit: int = 500
     gripper_protection_current: int = 250

@@ -30,8 +30,9 @@ GRIPPER = "gripper"
 @dataclass
 class PinkrabArmConfig(SOFollowerConfig):
     """One arm's knobs: the stock follower's, with the position gains taken from
-    this project's config (its I is not the SO-101's 0) and one more default: a
-    step ceiling.
+    this project's config (its I is not the SO-101's 0, and is set per joint
+    while `position_i_coefficient` is None) and one more default: a step
+    ceiling.
 
     The commanded pose and the arm's pose are never identical when a run starts,
     and without a ceiling the arm closes that gap in a single frame. On a desk that
@@ -42,7 +43,7 @@ class PinkrabArmConfig(SOFollowerConfig):
         SETTINGS.max_joint_speed_dps / SETTINGS.teleop_fps
     )
     position_p_coefficient: int = SETTINGS.servo_p_coefficient
-    position_i_coefficient: int = SETTINGS.servo_i_coefficient
+    position_i_coefficient: int | None = None
     position_d_coefficient: int = SETTINGS.servo_d_coefficient
 
 

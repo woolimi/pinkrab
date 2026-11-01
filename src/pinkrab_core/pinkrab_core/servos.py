@@ -22,13 +22,14 @@ def configure(bus, p: int | None = None, i: int | None = None, d: int | None = N
               torque_after: bool | None = None, settings=SETTINGS) -> None:
     """Write the servo registers on every motor of `bus`.
 
-    `p`, `i`, `d` default to the settings. `torque_after` None leaves each motor's
-    torque as it was; True switches every motor on, False leaves them all off.
+    `p`, `i`, `d` default to the settings - `i` per joint, 0 on the joints that
+    carry no weight (`servo_i_unloaded`); one given is written to every motor.
+    `torque_after` None leaves each motor's torque as it was; True switches
+    every motor on, False leaves them all off.
     """
     from lerobot.motors.feetech import OperatingMode
 
     p = settings.servo_p_coefficient if p is None else p
-    i = settings.servo_i_coefficient if i is None else i
     d = settings.servo_d_coefficient if d is None else d
     was_on = [m for m in bus.motors
               if int(bus.read("Torque_Enable", m, normalize=False, num_retry=2))]
@@ -40,7 +41,8 @@ def configure(bus, p: int | None = None, i: int | None = None, d: int | None = N
     for motor in bus.motors:
         bus.write("Operating_Mode", motor, OperatingMode.POSITION.value)
         bus.write("P_Coefficient", motor, p)
-        bus.write("I_Coefficient", motor, i)
+        bus.write("I_Coefficient", motor, i if i is not None
+                  else 0 if motor in settings.servo_i_unloaded else settings.servo_i_coefficient)
         bus.write("D_Coefficient", motor, d)
         if motor == "gripper":
             bus.write("Max_Torque_Limit", motor, settings.gripper_max_torque_limit)
