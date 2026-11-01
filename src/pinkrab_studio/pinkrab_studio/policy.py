@@ -91,6 +91,10 @@ def checkpoints() -> list[dict]:
             # offer the same checkpoint twice under two names.
             if step.parent.is_symlink():
                 continue
+            # .<step>.part is a checkpoint still being copied home from
+            # where it trained; it is renamed to <step> once whole.
+            if step.parent.name.startswith("."):
+                continue
             # What it was trained to look at, so the page can say which camera
             # a run cannot start without. Read from the config, not the
             # weights: the weights take seconds and this is a listing.
