@@ -202,7 +202,13 @@ document.getElementById('takes-next').addEventListener('click', () => { takesPag
 
 watch('episodes', (answer) => {
   got.add('episodes');
-  takes = (answer?.episodes || []).filter((e) => e.complete).sort((a, b) => b.name.localeCompare(a.name));
+  // A rollout is here for its corrections - what a dataset learns from it -
+  // its seconds theirs; one with none has nothing to label or convert.
+  takes = (answer?.episodes || [])
+    .filter((e) => e.complete && (e.kind !== 'rollout' || (e.corrections || []).length))
+    .map((e) => (e.kind === 'rollout'
+      ? { ...e, seconds: e.corrections.reduce((s, c) => s + (c.seconds || 0), 0) } : e))
+    .sort((a, b) => b.name.localeCompare(a.name));
   drawTakes();
 });
 watch('verdicts', (answer) => {

@@ -22,6 +22,13 @@ hand's tool off its solid, as convert places it. A camera sees its own
 gripper the same way in every frame but for its jaw, so its own is drawn
 from the jaw alone; the other is drawn only where both hands were placed.
 
+A rollout's pictures are the arms' own cameras, so its grippers are the
+arms': each tool where the arm's forward kinematics put it from the joints
+read off the robot, each jaw at the angle read off it - as convert takes a
+correction's poses. Its things are tracked only where its dataset learns
+from it, the corrections (tracked_spans): a run is minutes of video, and
+what the policy drove is never kept.
+
 The labels go beside the raw take, in masks/, one compressed array per
 gripper video: frame by frame of the video, as convert picks its frames.
 """
@@ -54,7 +61,8 @@ from pinkrab_core.jaw import gripper_band, shut_wide
 from . import sam_track
 from .backgrounds import MASKS, write
 from .config import SETTINGS
-from .convert import cameras_on_desk, exposures, fill_holes, jaw_readings, placed
+from .convert import OTHER_BUILD, cameras_on_desk, exposures, fill_holes, jaw_readings, placed
+from .episode import _lines, learned_from
 from .gripper_model import Gripper, gripper
 
 OWN, OTHER = 1, 2
@@ -88,6 +96,13 @@ BEHIND_PX = 12
 # A gripper frame this far outside the head camera's frames takes the hands
 # from the nearest one: about a frame at 30 fps.
 EDGE_S = 0.04
+# A rollout's things are tracked over its corrections and this much either
+# side - convert keeps a frame the other camera took up to a frame and a half
+# from a correction's - in pieces no longer than TRACK_PIECE_S, each tracked
+# on its own as a demonstration is: SAM 3 holds a whole piece's frames in
+# memory, some 1.2 GB a thing for 7 s at 672.
+TRACK_PAD_S = 0.5
+TRACK_PIECE_S = 8.0
 
 
 def decimated(tris: np.ndarray, cell: float = CELL_M) -> np.ndarray:
@@ -185,19 +200,40 @@ def _at(tools: list[np.ndarray | None], times: np.ndarray, t: float) -> np.ndarr
 
 class Scene:
     """A take's grippers, ready to be drawn into any frame of its gripper
-    videos: each hand's tool, the robot's tool frame, in the desk's at each
-    head frame - as convert places it - and each jaw's opening at any moment."""
+    videos: each hand's tool, the robot's tool frame, at each moment it was
+    placed, and each jaw's angle at any moment. A demonstration's hands are
+    where the top camera placed them in the desk's frame, as convert places
+    them; a rollout's are the arms' forward kinematics of the joints read off
+    the robot, in its base frame, as convert takes a correction's."""
 
     def __init__(self, root: Path) -> None:
         meta = json.loads((root / "meta.json").read_text())
-        poses = [json.loads(line) for line in (root / "poses.jsonl").read_text().splitlines() if line.strip()]
-        frames = [json.loads(line) for line in (root / "frames.jsonl").read_text().splitlines() if line.strip()]
+        frames = _lines(root / "frames.jsonl")
         streams = meta.get("streams") or {}
         self.sides = [side for side in ARMS if f"gripper_{side}" in streams]
         self.models, self.link_T_cam = grippers()
+        self.lenses = {side: Lens(streams[f"gripper_{side}"]) for side in self.sides}
+        # Each gripper frame's moment, on the host clock the hands' are on,
+        # in the video's order.
+        self.stamps = {}
+        for side in self.sides:
+            shots = sorted((f for f in frames if f["stream"] == f"gripper_{side}"), key=lambda f: f["index"])
+            if [f["index"] for f in shots] != list(range(len(shots))):
+                raise ValueError(f"the gripper_{side} frame list skips frames of its video")
+            self.stamps[side] = [f["host_ts"] - SETTINGS.gripper_camera_latency_s for f in shots]
+        # Each hand's tool at self.times, None where it has no place, and its
+        # jaw's angles (times, radians) - None where it was never read.
+        self.tools: dict[str, list[np.ndarray | None]] = {}
+        self.jaws: dict[str, tuple[np.ndarray, np.ndarray] | None] = {}
+        if meta.get("kind") == "rollout":
+            self._read_arms(root, meta)
+        else:
+            self._read_hands(root, meta)
+
+    def _read_hands(self, root: Path, meta: dict) -> None:
+        poses = _lines(root / "poses.jsonl")
         self.times = exposures(poses)
         world_T_cams = cameras_on_desk(poses, ARMS)
-        self.tools, self.openings = {}, {}
         for side in ARMS:
             solid_T_tcp = np.array(SETTINGS.recorded_solid_T_tcp(f"handheld_{side}", meta), dtype=float)
             hand = [W @ np.array(p["solids"][f"handheld_{side}"]["pose"]) @ solid_T_tcp
@@ -206,16 +242,33 @@ class Scene:
             turn[:3, :3] = TOOL_TURN[side]
             self.tools[side] = [None if T is None else T @ turn
                                 for T in fill_holes(hand, self.times, SETTINGS.convert_max_hole_s)]
-            readings = jaw_readings(poses, side)
-            self.openings[side] = readings if len(readings[0]) else None
-        self.lenses = {side: Lens(streams[f"gripper_{side}"]) for side in self.sides}
-        # Each gripper frame's moment, on the head camera's clock.
-        self.stamps = {side: [f["host_ts"] - SETTINGS.gripper_camera_latency_s
-                              for f in frames if f["stream"] == f"gripper_{side}"] for side in self.sides}
+            t, opening = jaw_readings(poses, side)
+            self.jaws[side] = (t, np.array([_jaw_angle(side, o) for o in opening])) if len(t) else None
 
-    def _opening(self, side: str, t: float) -> float | None:
-        o = self.openings[side]
-        return None if o is None else float(np.interp(t, *o))
+    def _read_arms(self, root: Path, meta: dict) -> None:
+        from pinkrab_core.kinematics import ArmKinematics, arm_fingerprint
+
+        if sorted(meta.get("arms") or []) != sorted(ARMS):
+            raise ValueError(f"a rollout of the {' and '.join(meta.get('arms') or ['no'])} arm(s), not of both")
+        if any((meta.get("description") or {}).get(side) != arm_fingerprint(side) for side in ARMS):
+            raise ValueError(OTHER_BUILD)
+        readings = sorted(_lines(root / "robot.jsonl"), key=lambda r: r["host_ts"])
+        if len(readings) < 2:
+            raise ValueError("no readings of the robot")
+        self.times = np.array([r["host_ts"] for r in readings], dtype=float) - SETTINGS.robot_state_latency_s
+        for side in ARMS:
+            chain = ArmKinematics(side)
+            names = [*chain.joint_names, f"{side}_gripper"]
+            table = np.array([[r["joints"].get(n, np.nan) for n in names] for r in readings], dtype=float)
+            # The arm's tool frame is the robot's tool frame these are drawn in.
+            self.tools[side] = [chain.forward(np.degrees(row[:-1])) if np.isfinite(row[:-1]).all() else None
+                                for row in table]
+            read = np.isfinite(table[:, -1])
+            self.jaws[side] = (self.times[read], table[read, -1]) if read.any() else None
+
+    def _angle(self, side: str, t: float) -> float:
+        jaw = self.jaws[side]
+        return _jaw_angle(side, None) if jaw is None else float(np.interp(t, *jaw))
 
     def draw(self, side: str, k: int) -> np.ndarray:
         """Frame `k` of `side`'s gripper video's labels, (height, width)
@@ -232,11 +285,45 @@ class Scene:
         if mine is not None and theirs is not None:
             desk_T_cam = mine @ np.linalg.inv(models[side].link_T_tcp) @ link_T_cam[side]
             cam_T_other = np.linalg.inv(desk_T_cam) @ theirs @ np.linalg.inv(models[other].link_T_tcp)
-            lens.draw(labels, _moved(models[other].triangles(_jaw_angle(other, self._opening(other, t))),
-                                     cam_T_other), OTHER)
-        lens.draw(labels, _moved(models[side].triangles(_jaw_angle(side, self._opening(side, t))),
-                                 np.linalg.inv(link_T_cam[side])), OWN)
+            lens.draw(labels, _moved(models[other].triangles(self._angle(other, t)), cam_T_other), OTHER)
+        lens.draw(labels, _moved(models[side].triangles(self._angle(side, t)), np.linalg.inv(link_T_cam[side])), OWN)
         return labels
+
+
+def tracked_spans(root: Path, name: str) -> list[tuple[int, int]] | None:
+    """The frames of a gripper video its things are tracked over, as
+    [start, end) spans: None - every frame - for a demonstration; for a
+    rollout, the frames taken while the hands drove the arms in a correction
+    its dataset learns from (episode.learned_from), TRACK_PAD_S wider either
+    side, cut into pieces of at most TRACK_PIECE_S."""
+    meta = json.loads((root / "meta.json").read_text())
+    if meta.get("kind") != "rollout":
+        return None
+    readings = sorted(_lines(root / "robot.jsonl"), key=lambda r: r["host_ts"])
+    driven, _ = learned_from(readings, _lines(root / "events.jsonl"))
+    robot_t = np.array([r["host_ts"] for r in readings], dtype=float) - SETTINGS.robot_state_latency_s
+    shots = sorted((f for f in _lines(root / "frames.jsonl") if f["stream"] == name), key=lambda f: f["index"])
+    stamps = np.array([f["host_ts"] for f in shots], dtype=float) - SETTINGS.gripper_camera_latency_s
+    after = np.searchsorted(robot_t, stamps)
+    inside = (after > 0) & (after < len(robot_t))
+    wanted = np.zeros(len(stamps), dtype=bool)
+    wanted[inside] = driven[after[inside] - 1] & driven[after[inside]]
+    fps = float((meta.get("streams") or {}).get(name, {}).get("fps") or 30)
+    pad, piece = round(TRACK_PAD_S * fps), max(1, round(TRACK_PIECE_S * fps))
+    if pad and wanted.any():
+        wanted = cv2.dilate(wanted.astype(np.uint8)[None], np.ones((1, 2 * pad + 1), np.uint8))[0].astype(bool)
+    spans = []
+    k = 0
+    while k < len(wanted):
+        if not wanted[k]:
+            k += 1
+            continue
+        end = k
+        while end < len(wanted) and wanted[end]:
+            end += 1
+        spans += [(a, min(a + piece, end)) for a in range(k, end, piece)]
+        k = end
+    return spans
 
 
 def geometry(root: Path) -> dict[str, np.ndarray]:
@@ -404,11 +491,13 @@ class Sam:
             raise
 
 
-def tracked(root: Path, name: str, things: list[str], sam: Sam, say=lambda **_: None) -> np.ndarray:
+def tracked(root: Path, name: str, things: list[str], sam: Sam, say=lambda **_: None,
+            spans: list[tuple[int, int]] | None = None) -> np.ndarray:
     """A gripper video's labels for the task's `things`, by words - each the
     label FIRST_THING + its place in the list where SAM 3 found it - from
-    `sam`. `say` is told each line of its progress; an exception out of it
-    stops SAM 3 too."""
+    `sam`: over every frame, or with `spans`, over those [start, end) spans of
+    frames only, each tracked on its own, the rest left 0. `say` is told each
+    line of its progress; an exception out of it stops SAM 3 too."""
     meta = json.loads((root / "meta.json").read_text())
     stream = meta["streams"][name]
     lens = Lens(stream)
@@ -420,6 +509,8 @@ def tracked(root: Path, name: str, things: list[str], sam: Sam, say=lambda **_: 
                 "resolution": SETTINGS.sam3_resolution, "new_thing_score": SETTINGS.sam3_new_thing_score,
                 "thing_score": SETTINGS.sam3_thing_score, "out": str(Path(tmp) / "labels.npz"),
                 "things": [{"label": FIRST_THING + k, "text": text} for k, text in enumerate(things)]}
+        if spans is not None:
+            spec["spans"] = [list(s) for s in spans]
         answer = sam.ask(spec, say)
         if "error" in answer:
             raise RuntimeError(f"SAM 3 stopped on {name}: {answer['error']}")
@@ -543,22 +634,30 @@ def flags(labels: np.ndarray, things: list[str], grippers: np.ndarray | None = N
 
 
 def make(root: Path, things: list[str], say=lambda **_: None, sam: Sam | None = None) -> dict:
-    """A take's labels for every gripper video - the task's `things` tracked,
-    the grippers drawn over them - written beside it, with what each label
-    is, how many frames each thing was found in and where to look again
-    (masks.json). Returns that account. `sam` is SAM 3 already running, for
+    """A take's labels for every gripper video - the task's `things` tracked
+    (a rollout's over its corrections only, tracked_spans), the grippers
+    drawn over them - written beside it, with what each label is, which
+    frames were tracked, how many frames each thing was found in and where
+    to look again (masks.json). Returns that account. `sam` is SAM 3 already running, for
     a job over many takes; without it, one is started for this take."""
     if sam is None:
         with Sam() as own:
             return make(root, things, say, own)
     drawn = geometry(root)
+    spans = {name: tracked_spans(root, name) for name in drawn}
+    if all(s == [] for s in spans.values()):
+        raise ValueError("a rollout with no correction its dataset would learn from - nothing of it to label")
     found, flagged = {}, {}
     for name, labels in drawn.items():
-        tracks = tracked(root, name, things, sam, lambda video=name, **line: say(video=video, **line)) if things \
-            else np.zeros_like(labels)
+        tracks = tracked(root, name, things, sam, lambda video=name, **line: say(video=video, **line),
+                         spans[name]) if things else np.zeros_like(labels)
         if tracks.shape != labels.shape:
             raise ValueError(f"{name}: SAM 3 read {len(tracks)} frames, the take lists {len(labels)}")
-        flagged[name] = flags(tracks, things, labels)
+        # Each span tracked on its own is looked over on its own: a thing is
+        # not lost where its span ends.
+        flagged[name] = [{**f, "start": f["start"] + a, "end": f["end"] + a}
+                         for a, b in (spans[name] or [(0, len(labels))])
+                         for f in flags(tracks[a:b], things, labels[a:b])]
         found[name] = {text: int((tracks == FIRST_THING + k).any(axis=(1, 2)).sum()) for k, text in enumerate(things)}
         tracks[labels != 0] = labels[labels != 0]
         tracks[border(root, name, tracks.shape[1:])[None] & (tracks == 0)] = BORDER
@@ -568,6 +667,7 @@ def make(root: Path, things: list[str], say=lambda **_: None, sam: Sam | None = 
                           str(BORDER): "lens border",
                           **{str(FIRST_THING + k): text for k, text in enumerate(things)}},
                "things": things, "frames": {name: len(labels) for name, labels in drawn.items()},
+               "tracked": {name: None if s is None else [list(x) for x in s] for name, s in spans.items()},
                "found": found, "flags": flagged, "resolution": SETTINGS.sam3_resolution, "made": time.time()}
     (folder / "masks.json").write_text(json.dumps(account, indent=2) + "\n")
     return account

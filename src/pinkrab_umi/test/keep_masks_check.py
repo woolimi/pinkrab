@@ -36,6 +36,86 @@ def lens() -> keep_masks.Lens:
                             "centre": [960.0, 600.0]})
 
 
+def rollout(root: Path, redone: bool = False) -> None:
+    """A two-second rollout of both arms at rest, 30 fps cameras, readings at
+    60 Hz: the hands drove them from 0.8 s to 1.2 s (correction 1), the
+    right jaw opening as they did; `redone`, that correction thrown away."""
+    from pinkrab_core.kinematics import ArmKinematics, arm_fingerprint
+
+    stream = {"fps": 30, "size": [1920, 1200], "centre": [0.5, 0.5],
+              "lens": {"model": "kannala_brandt", "fx": 560.0, "fy": 560.0, "cx": 960.0, "cy": 600.0,
+                       "k": [0.0, 0.0, 0.0, 0.0], "size": [1920, 1200]}}
+    root.mkdir(parents=True, exist_ok=True)
+    (root / "meta.json").write_text(json.dumps({
+        "kind": "rollout", "arms": list(ARMS), "description": {side: arm_fingerprint(side) for side in ARMS},
+        "streams": {f"gripper_{side}": stream for side in ARMS}}))
+    t0 = 1000.0
+    (root / "frames.jsonl").write_text("".join(
+        json.dumps({"stream": f"gripper_{side}", "index": k, "host_ts": t0 + k / 30}) + "\n"
+        for k in range(60) for side in ARMS))
+    names = [n for side in ARMS for n in ArmKinematics(side).joint_names]
+    lines = []
+    for i in range(120):
+        t = i / 60
+        human = 0.8 <= t <= 1.2
+        joints = {n: 0.0 for n in names} | {"left_gripper": 0.0, "right_gripper": -1.2 if t >= 1.0 else 0.0}
+        lines.append(json.dumps({"host_ts": t0 + t, "joints": joints, "controller": "human" if human else "policy",
+                                 **({"correction": 1} if human else {})}) + "\n")
+    (root / "robot.jsonl").write_text("".join(lines))
+    (root / "events.jsonl").write_text(json.dumps({"event": "redo", "correction": 1}) + "\n" if redone else "")
+
+
+def check_rollout() -> None:
+    print("a rollout's grippers, off the arms")
+    root = Path(tempfile.mkdtemp()) / "run"
+    rollout(root)
+    scene = keep_masks.Scene(root)
+    check("its frames are its videos', in order", all(len(scene.stamps[side]) == 60 for side in ARMS))
+    before, after = scene.draw("right", 25), scene.draw("right", 40)
+    check("each camera draws its own gripper", (before == keep_masks.OWN).mean() > 0.02,
+          f"{(before == keep_masks.OWN).mean():.0%} of the picture")
+    check("the jaw is drawn at the angle read off the arm", not np.array_equal(before, after))
+    spans = keep_masks.tracked_spans(root, "gripper_right")
+    pad = round(keep_masks.TRACK_PAD_S * 30)
+    check("its things are tracked over the correction and a little either side",
+          len(spans) == 1 and abs(spans[0][0] - (24 - pad)) <= 1 and abs(spans[0][1] - (37 + pad)) <= 1, str(spans))
+    redone = Path(tempfile.mkdtemp()) / "run"
+    rollout(redone, redone=True)
+    check("a correction made again is not tracked", keep_masks.tracked_spans(redone, "gripper_right") == [])
+    with mock.patch.object(keep_masks, "TRACK_PIECE_S", 0.2):
+        pieces = keep_masks.tracked_spans(root, "gripper_right")
+    check("a long correction is tracked in pieces, end to end",
+          len(pieces) > 1 and all(b - a <= 6 for a, b in pieces)
+          and all(p[1] == q[0] for p, q in zip(pieces, pieces[1:])), str(pieces))
+    other = json.loads((root / "meta.json").read_text())
+    other["description"]["left"] = "another build"
+    (root / "meta.json").write_text(json.dumps(other))
+    try:
+        keep_masks.Scene(root)
+        refused = False
+    except ValueError:
+        refused = True
+    check("a rollout of an arm built another way is not drawn", refused)
+
+
+def check_spans_tracked() -> None:
+    """sam_track's frames for SAM 3: only the spans asked, each its own folder."""
+    from pinkrab_umi import sam_track
+
+    print("frames of the spans tracked")
+    root = Path(tempfile.mkdtemp())
+    writer = cv2.VideoWriter(str(root / "v.mp4"), cv2.VideoWriter_fourcc(*"mp4v"), 30, (80, 60))
+    for k in range(20):
+        writer.write(np.full((60, 80, 3), 10 * k, dtype=np.uint8))
+    writer.release()
+    out = root / "frames"
+    out.mkdir()
+    counts = sam_track.frames_into(out, str(root / "v.mp4"), [0, 0, 80, 60], (30, 40), [[2, 5], [10, 12]])
+    check("the video's count, then each span's", counts == [20, 3, 2], str(counts))
+    check("each span's frames numbered from its start",
+          sorted(p.name for p in (out / "001").iterdir()) == ["00000.jpg", "00001.jpg"])
+
+
 def main() -> int:
     print("grippers off the description")
     models, link_T_cam = keep_masks.grippers()
@@ -120,6 +200,9 @@ def main() -> int:
           f"{edge.mean():.0%} of the picture")
     check("a dark thing inside the picture is not", not edge[30, 40])
     check("nor is a dark thing at the circle's edge", not edge[30, 16] and not edge[26, 20])
+
+    check_rollout()
+    check_spans_tracked()
 
     print(f"\n{'all passed' if not FAILURES else f'{len(FAILURES)} failed: ' + ', '.join(FAILURES)}")
     return 1 if FAILURES else 0

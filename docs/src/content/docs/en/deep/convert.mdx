@@ -58,6 +58,7 @@ A rollout recording goes through the same steps as a demonstration, but the vide
 | Dataset clock | Exposure time of the top camera | Exposure time of the first arm camera |
 | Segments kept | Segments where both hands' markers were solved | Segments where `controller` is `human` |
 | `pose.tcp_<hand>` | Table marker frame | Robot base frame |
+| Grippers when the background is painted | Drawn where the top camera placed the two hands | The two arms' grippers, placed by forward kinematics of the joint angles |
 
 The video comes from the arm's camera because it is the arm's camera that films the work scene during a correction. A correction is relative, moving the arm only as much as Hermit moves, so the person can hold Hermit anywhere on the desk, and meanwhile Hermit's camera looks at somewhere unrelated to the task. What the running policy sees is also the arm's camera.
 
@@ -80,6 +81,7 @@ A rollout recording is skipped in these cases.
 - The arm that ran differs from the dataset's hand
 - The arm description fingerprint at recording time differs from the current arm. The tool pose changes even if the joint angles are the same
 - The lens center of the arm camera is not known
+- The background is painted and the rollout has no [keep labels](../../use/curate/#keep-labels-of-corrections)
 
 ## Dataset layout
 

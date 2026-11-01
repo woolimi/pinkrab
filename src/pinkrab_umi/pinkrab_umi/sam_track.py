@@ -13,7 +13,11 @@ line at a time on stdout.
 
 spec: {"video": mp4, "window": [x, y, w, h], "size": [height, width],
        "resolution": 672, "new_thing_score": 0.4, "thing_score": 0.3, "out": npz,
-       "things": [{"label": 3, "text": "black cube"}, ...]}
+       "things": [{"label": 3, "text": "black cube"}, ...],
+       "spans": [[start, end], ...]}
+
+"spans", if given, are the only frames tracked, each span on its own as if
+it were a video of its own; the labels of every other frame are 0.
 
 Or kept running, the model loaded once, for one request after another, a
 JSON line each:
@@ -52,21 +56,33 @@ def say(**fields) -> None:
     print(json.dumps(fields), flush=True)
 
 
-def frames_into(folder: Path, video: str, window, size) -> int:
-    """The video's frames as the dataset keeps them, as JPEGs in `folder`."""
+def frames_into(folder: Path, video: str, window, size, spans=None) -> list[int]:
+    """The video's frames as the dataset keeps them, as JPEGs in `folder` -
+    or with `spans` ([start, end) pairs), only those, each span's in a
+    folder of its own (000, 001, ...) numbered from its start. Returns how
+    many frames went into each folder, the video's whole count first."""
     x, y, w, h = window
     height, width = size
+    folders = [folder] if spans is None else [folder / f"{s:03d}" for s in range(len(spans))]
+    for f in folders:
+        f.mkdir(exist_ok=True)
+    counts = [0] * len(folders)
     cap = cv2.VideoCapture(video)
     n = 0
     while True:
         ok, picture = cap.read()
         if not ok:
             break
-        cut = cv2.resize(picture[y:y + h, x:x + w], (width, height), interpolation=cv2.INTER_AREA)
-        cv2.imwrite(str(folder / f"{n:05d}.jpg"), cut, [cv2.IMWRITE_JPEG_QUALITY, 95])
+        homes = [0] if spans is None else [s for s, (a, b) in enumerate(spans) if a <= n < b]
+        if homes:
+            cut = cv2.resize(picture[y:y + h, x:x + w], (width, height), interpolation=cv2.INTER_AREA)
+            for s in homes:
+                start = 0 if spans is None else spans[s][0]
+                cv2.imwrite(str(folders[s] / f"{n - start:05d}.jpg"), cut, [cv2.IMWRITE_JPEG_QUALITY, 95])
+                counts[s] += 1
         n += 1
     cap.release()
-    return n
+    return [n, *counts]
 
 
 # Frames of the picture backbone's answers kept for the next session to ask
@@ -115,72 +131,94 @@ def predictor_for(resolution: int):
 
 
 def track(predictor, spec: dict, tell=say) -> None:
-    """One video's things tracked as `spec` says, the labels written to its
-    out, saying how far it has got; ends by saying done."""
+    """One video's things tracked as `spec` says - over every frame, or over
+    each of its "spans" on its own, the frames outside them left 0 - the
+    labels written to its out, saying how far it has got; ends by saying done."""
     height, width = spec["size"]
     things = spec["things"]
     if len(things) > 8:
         raise ValueError("at most 8 things")
+    spans = spec.get("spans")
     with tempfile.TemporaryDirectory() as tmp:
-        n = frames_into(Path(tmp), spec["video"], spec["window"], spec["size"])
+        n, *counts = frames_into(Path(tmp), spec["video"], spec["window"], spec["size"], spans)
         if n == 0:
             raise ValueError("the video has no frames")
-        # Where each thing was found, a bit each, put together into labels
-        # at the end in the things' order - a later thing over an earlier.
-        found = np.zeros((n, height, width), dtype=np.uint8)
-        seen = np.zeros((len(things), n), dtype=bool)
-        model = predictor.model
-        model.score_threshold_detection = float(spec.get("thing_score", 0.3))
-        model.new_det_thresh = float(spec.get("new_thing_score", 0.4))
-        model.hotstart_unmatch_thresh = predictor.unmatched
-
-        def follow(k: int, start: int, direction: str):
-            """Thing k named on frame `start` and followed one way, a frame at a time.
-
-            Each session keeps its own copy of the video's frames, in this
-            machine's memory rather than the GPU's: a thing each, side by side,
-            they are some 1.2 GB a session for a 7 s video at 672, and with the
-            model they do not fit an 8 GB GPU. Closed however the following
-            ends, so a video that fails leaves nothing on the GPU for the next."""
-            session = predictor.handle_request({"type": "start_session", "resource_path": tmp,
-                                                "offload_video_to_cpu": True})["session_id"]
-            try:
-                predictor.handle_request({"type": "add_prompt", "session_id": session, "frame_index": start,
-                                          "text": things[k]["text"]})
-                for response in predictor.handle_stream_request(
-                        {"type": "propagate_in_video", "session_id": session, "start_frame_index": start,
-                         "propagation_direction": direction}):
-                    i = response["frame_index"]
-                    masks = response["outputs"]["out_binary_masks"]
-                    if len(masks):
-                        found[i][np.any(np.stack([np.asarray(m, dtype=bool) for m in masks]), axis=0)] |= 1 << k
-                        seen[k, i] = True
-                    yield i
-            finally:
-                predictor.handle_request({"type": "close_session", "session_id": session})
-
-        # Every thing named on the first frame and followed forward side by
-        # side, so each frame goes through the backbone once - SAM 3 finds a
-        # thing that comes into view on the way.
-        for frames in zip(*(follow(k, 0, "forward") for k in range(len(things)))):
-            tell(stage="forward", frame=frames[0], frames=n)
-        # Then each thing first found later than that, named there and
-        # followed back to the start. Followed back, it is held by SAM 3's
-        # tracker however long its detector stays under the bar - where it
-        # went unseen is where it was small or half hidden - and nothing new
-        # is taken up on the way.
-        model.new_det_thresh, model.hotstart_unmatch_thresh = 1.0, n + 1
-        for k in range(len(things)):
-            first = int(np.argmax(seen[k])) if seen[k].any() else 0
-            if first > 0:
-                for i in follow(k, first, "backward"):
-                    tell(stage="back", thing=k, frame=i, frames=n)
+        pieces = [(0, Path(tmp), n)] if spans is None else \
+            [(a, Path(tmp) / f"{s:03d}", c) for s, ((a, _), c) in enumerate(zip(spans, counts)) if c]
         labels = np.zeros((n, height, width), dtype=np.uint8)
-        for k, thing in enumerate(things):
-            labels[(found >> k) & 1 == 1] = thing["label"]
-            tell(thing=k, things=len(things), done=True, found=int(seen[k].sum()), frames=n)
+        found = np.zeros(len(things), dtype=int)
+        for start, folder, count in pieces:
+            def told(start=start, **fields) -> None:
+                tell(**{**fields, "frame": fields["frame"] + start, "frames": n})
+            piece, seen = _track(predictor, folder, count, spec, told)
+            labels[start:start + count] = piece
+            found += seen.sum(axis=1)
+        for k in range(len(things)):
+            tell(thing=k, things=len(things), done=True, found=int(found[k]), frames=n)
         np.savez_compressed(spec["out"], labels=labels)
     tell(done=True)
+
+
+def _track(predictor, folder: Path, n: int, spec: dict, tell) -> tuple[np.ndarray, np.ndarray]:
+    """The things tracked through the `n` frames in `folder`: each frame's
+    labels, and which frames each thing was seen in."""
+    height, width = spec["size"]
+    things = spec["things"]
+    tmp = str(folder)
+    # Where each thing was found, a bit each, put together into labels
+    # at the end in the things' order - a later thing over an earlier.
+    found = np.zeros((n, height, width), dtype=np.uint8)
+    seen = np.zeros((len(things), n), dtype=bool)
+    model = predictor.model
+    model.score_threshold_detection = float(spec.get("thing_score", 0.3))
+    model.new_det_thresh = float(spec.get("new_thing_score", 0.4))
+    model.hotstart_unmatch_thresh = predictor.unmatched
+
+    def follow(k: int, start: int, direction: str):
+        """Thing k named on frame `start` and followed one way, a frame at a time.
+
+        Each session keeps its own copy of the video's frames, in this
+        machine's memory rather than the GPU's: a thing each, side by side,
+        they are some 1.2 GB a session for a 7 s video at 672, and with the
+        model they do not fit an 8 GB GPU. Closed however the following
+        ends, so a video that fails leaves nothing on the GPU for the next."""
+        session = predictor.handle_request({"type": "start_session", "resource_path": tmp,
+                                            "offload_video_to_cpu": True})["session_id"]
+        try:
+            predictor.handle_request({"type": "add_prompt", "session_id": session, "frame_index": start,
+                                      "text": things[k]["text"]})
+            for response in predictor.handle_stream_request(
+                    {"type": "propagate_in_video", "session_id": session, "start_frame_index": start,
+                     "propagation_direction": direction}):
+                i = response["frame_index"]
+                masks = response["outputs"]["out_binary_masks"]
+                if len(masks):
+                    found[i][np.any(np.stack([np.asarray(m, dtype=bool) for m in masks]), axis=0)] |= 1 << k
+                    seen[k, i] = True
+                yield i
+        finally:
+            predictor.handle_request({"type": "close_session", "session_id": session})
+
+    # Every thing named on the first frame and followed forward side by
+    # side, so each frame goes through the backbone once - SAM 3 finds a
+    # thing that comes into view on the way.
+    for frames in zip(*(follow(k, 0, "forward") for k in range(len(things)))):
+        tell(stage="forward", frame=frames[0], frames=n)
+    # Then each thing first found later than that, named there and
+    # followed back to the start. Followed back, it is held by SAM 3's
+    # tracker however long its detector stays under the bar - where it
+    # went unseen is where it was small or half hidden - and nothing new
+    # is taken up on the way.
+    model.new_det_thresh, model.hotstart_unmatch_thresh = 1.0, n + 1
+    for k in range(len(things)):
+        first = int(np.argmax(seen[k])) if seen[k].any() else 0
+        if first > 0:
+            for i in follow(k, first, "backward"):
+                tell(stage="back", thing=k, frame=i, frames=n)
+    labels = np.zeros((n, height, width), dtype=np.uint8)
+    for k, thing in enumerate(things):
+        labels[(found >> k) & 1 == 1] = thing["label"]
+    return labels, seen
 
 
 def look(predictor, ask: dict, tell=say) -> None:

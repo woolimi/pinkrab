@@ -58,6 +58,7 @@ pinkrab-umi convert --fps 50 --out pick_place --task "pick and place the block" 
 | dataset 의 시계 | 탑 카메라의 노출 시각 | 첫 팔 카메라의 노출 시각 |
 | 남기는 구간 | 두 손의 마커를 모두 푼 구간 | `controller` 가 `human` 인 구간 |
 | `pose.tcp_<hand>` | 테이블 마커 frame | 로봇의 base frame |
+| 배경을 칠할 때의 그리퍼 | 탑 카메라가 잰 두 손의 자리에 그린 그리퍼 | 관절각의 forward kinematics 로 둔 두 팔의 그리퍼 |
 
 영상이 팔의 카메라인 것은 교정 중 작업 장면을 찍는 것이 팔의 카메라이기 때문입니다. 교정은 Hermit 이 움직인 만큼만 팔을 움직이는 상대 방식이라 사람은 Hermit 을 책상 어디에서 들고 있어도 되고, 그동안 Hermit 의 카메라는 작업과 상관없는 곳을 봅니다. 실행 중인 policy 가 보는 것도 팔의 카메라입니다.
 
@@ -80,6 +81,7 @@ Convert 는 원시 에피소드의 `kind` 가 `rollout` 이면 아래와 같이 
 - 실행한 팔이 dataset 의 손과 다를 때
 - 녹화할 때의 팔 description 지문이 지금 팔과 다를 때. 관절각이 같아도 tool pose 가 달라지기 때문입니다
 - 팔 카메라의 렌즈 중심을 모를 때
+- 배경을 칠하는 변환인데 [keep label](../../use/curate/#교정의-keep-label)이 없을 때
 
 ## dataset 구성
 

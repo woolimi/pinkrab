@@ -36,6 +36,17 @@ When the objects are picked up correctly in the photo, press **Make labels**. Fo
 
 SAM 3 must be installed separately. The installation steps are in [SAM 3 environment in Install](../../start/install/#sam-3-environment). On a Mac, one demonstration with three objects takes a few minutes.
 
+### Keep labels of corrections
+
+Rollouts that hold [corrections](../../deep/corrections/) are listed with the demonstrations, and get keep labels from the same Make labels. What a rollout puts into a dataset is the arms' gripper cameras, so its grippers are drawn from the arms as well.
+
+| Item | What happens for a rollout |
+|---|---|
+| Grippers | The two arms' tools are placed by forward kinematics of the joint angles read off the robot, and each jaw is drawn at the angle read. The top camera is not used |
+| Tracked frames | Only the corrections not thrown away, and 0.5 s either side, are tracked, in pieces of 8 s tracked one by one. What the policy drove never goes into a dataset, so only the grippers are drawn there |
+| List | A rollout without a correction is not listed. Its length is the corrections' seconds added up |
+| Time | On an 8 GB GPU, with three objects, 20 s of corrections take about 8 minutes |
+
 ### Computer to run SAM 3 on
 
 Choose the computer to run SAM 3 on in **SAM 3 on**, above Things to keep. The list is `this machine` and the computers added to [Sources on the Train page](../train/#remote-gpu-computer). A computer not in the list can be added right away with **Add** next to it by entering the ssh line and the working folder, and then SAM 3 runs on that computer and it is also added to Sources on the Train page. If you choose a computer with an NVIDIA GPU, the time per demonstration drops to about a third of the Mac's. With three objects on an 8 GB GPU, a 6-second demonstration takes a little over 2 minutes.
@@ -77,7 +88,7 @@ In the **Convert** stage, enter a dataset name and a task description and press 
 
 The conversion settings are not chosen separately.
 
-- **Background**: If even one demonstration has a keep label, backgrounds are painted, and demonstrations without a label are left out. If no demonstration has a label, they go in as recorded. The line under the button shows how many go in each way.
+- **Background**: If even one demonstration has a keep label, backgrounds are painted, and demonstrations without a label are left out. If no demonstration has a label, they go in as recorded. Rollouts that hold corrections follow the same rule: with keep labels, their corrections go in painted the same way. The line under the button shows how many go in each way.
 - **Pattern**: One per demonstration, made of one of stripes, checks, or blotches layered over smoothly blending colors. It does not change within a demonstration, and the same demonstration gets the same pattern every time it is converted.
 - **fps**: `dataset_fps` (50) in the core settings, and the trained policy **runs at this rate**. How the gaps between camera frames are filled is in [fps of the dataset](../../deep/convert/#dataset-fps).
 
