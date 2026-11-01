@@ -63,6 +63,8 @@ class FakeBus:
         self.calls: list[tuple] = []
         self.torque = FakeBus.initial_torque
         self.deaf = False
+        # The gripper's Present_Current, in the servo's units (6.5 mA each).
+        self.current = 0
         self.present = dict.fromkeys(
             ("shoulder_pan", "shoulder_lift", "elbow_flex", "wrist_flex",
              "wrist_yaw", "wrist_roll", "gripper"), 2048)
@@ -78,6 +80,8 @@ class FakeBus:
     def read(self, register, motor, normalize=True, num_retry=0):
         if register == "Torque_Enable":
             return int(self.torque)
+        if register == "Present_Current":
+            return self.current
         return self.present[motor]
 
     def sync_read(self, register, motors=None, normalize=True, num_retry=0):
@@ -112,6 +116,67 @@ class FakePorts:
     def __getitem__(self, arm): return Path(f"/dev/fake-{arm}")
 
 
+def jaw_contact(buses: dict) -> None:
+    """A jaw pressing on something is held a squeeze past where it stopped."""
+    from pinkrab_core.angles import ticks_to_degrees
+
+    squeeze = SETTINGS.gripper_contact_squeeze_deg
+    pressing = math.ceil(SETTINGS.gripper_contact_ma / arms_module.CURRENT_MA_PER_UNIT) + 1
+    wait = SETTINGS.gripper_contact_s + 0.15
+
+    def sent(arm: str) -> float:
+        return ticks_to_degrees(arm, buses[arm].goals()[-1], OFFSETS)["gripper"]
+
+    def stand(arm: str, deg: float, current: int) -> None:
+        buses[arm].present["gripper"] = degrees_to_ticks(arm, {"gripper": deg}, OFFSETS)["gripper"]
+        buses[arm].current = current
+
+    def jaw(arm: str, deg: float) -> None:
+        arms.write({f"{arm}_gripper": math.radians(deg)})
+
+    for arm, s in (("right", 1.0), ("left", -1.0)):
+        print(f"\na {arm} jaw closed on something")
+        buses.clear()
+        arms = arms_module.Arms()
+        arms.torque(True, arm)
+        arms.start()
+        jaw(arm, s * 40.0)
+        stand(arm, s * 40.0, pressing)
+        _time.sleep(wait)
+        check("pressing while its goal is where it stands is no contact", not arms.contacts(),
+              str(arms.contacts()))
+        jaw(arm, s * -10.0)
+        stand(arm, s * 25.0, 0)
+        _time.sleep(wait)
+        check("nor is a goal past where it stands, with the current low", not arms.contacts())
+        stand(arm, s * 25.0, pressing)
+        _time.sleep(wait)
+        at = arms.contacts().get(arm)
+        check("pressing for the contact time is a contact, where it stands",
+              at is not None and abs(math.degrees(at) - s * 25.0) < 0.2, str(at))
+        check("and the jaw is sent the squeeze past it at once, with no new goal asked",
+              abs(sent(arm) - s * (25.0 - squeeze)) < 0.2, f"{sent(arm):.2f}")
+        stand(arm, s * 25.0, pressing)
+        jaw(arm, s * -10.0)
+        check("a goal to the shut end is sent only the squeeze past the contact",
+              abs(sent(arm) - s * (25.0 - squeeze)) < 0.2, f"{sent(arm):.2f}")
+        jaw(arm, s * (25.0 - squeeze / 2))
+        check("a goal within the squeeze is sent as asked",
+              abs(sent(arm) - s * (25.0 - squeeze / 2)) < 0.2, f"{sent(arm):.2f}")
+        stand(arm, s * 25.0, 0)
+        jaw(arm, s * 30.0)
+        check("a goal that opens it past the contact is sent, and lets the contact go",
+              abs(sent(arm) - s * 30.0) < 0.2 and not arms.contacts(), f"{sent(arm):.2f}")
+        jaw(arm, s * -10.0)
+        check("and the shut end is asked of it again", abs(sent(arm) - s * -10.0) < 0.2,
+              f"{sent(arm):.2f}")
+        stand(arm, s * 25.0, pressing)
+        _time.sleep(wait)
+        arms.torque(False, arm)
+        check("letting go forgets the contact", not arms.contacts(), str(arms.contacts()))
+        arms.stop()
+
+
 def main() -> int:
     buses: dict[str, FakeBus] = {}
 
@@ -123,6 +188,10 @@ def main() -> int:
     arms_module.make_bus = make_bus
     arms_module.ports.load = lambda *a, **k: FakePorts()
     arms_module.load_offsets = lambda *a, **k: OFFSETS
+    # The jaws' bands as the description has them: shut at -10 deg on the
+    # right, the left's servo turned round.
+    arms_module.gripper_band = lambda arm: ((math.radians(-10.0), math.radians(80.0)) if arm == "right"
+                                            else (math.radians(10.0), math.radians(-80.0)))
 
     arms = arms_module.Arms()
 
@@ -137,6 +206,10 @@ def main() -> int:
           and writes.get(("Max_Torque_Limit", "gripper")) == 500
           and writes.get(("Max_Torque_Limit", "wrist_yaw")) == 1000,
           "gains 16/0/32, the gripper's protection, the other joints' factory values")
+    check("and the gripper is given no I",
+          writes.get(("I_Coefficient", "gripper")) == 0
+          and writes.get(("I_Coefficient", "elbow_flex")) == SETTINGS.servo_i_coefficient,
+          str({m: writes.get(("I_Coefficient", m)) for m in ("gripper", "elbow_flex")}))
     check("with torque left off", not any(b.torque for b in buses.values()))
 
     print("\na pose for a limp arm is dropped, not queued")
@@ -291,6 +364,7 @@ def main() -> int:
           f"{len(cycles)} cycles")
     check("and no more is sent to them", walked <= 4 + 2, f"{walked} goals")
 
+    jaw_contact(buses)
 
     if FAILURES:
         print(f"\nFAILED: {len(FAILURES)}")

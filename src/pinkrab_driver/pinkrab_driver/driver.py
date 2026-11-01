@@ -40,12 +40,16 @@ here, and those servos keep holding.
     ros2 run pinkrab_driver driver
     ros2 service call /set_torque pinkrab_interfaces/srv/SetTorque "{arm: left, enable: true}"
 
+A jaw in contact with something is said once, where it is held, and again
+when a goal lets it go: see `pinkrab_core.arms` for what holds it.
+
 The emergency stop is the gate's `/estop`, which idles the gate and asks this node
 to let both arms go through `/set_torque`.
 """
 
 from __future__ import annotations
 
+import math
 import signal
 
 import rclpy
@@ -90,6 +94,8 @@ class DriverNode(Node):
         # A failed read publishes nothing, and the bus still takes writes: an
         # arm can be driven on from a reading that stopped coming. Said once a
         # second while it happens, which arm and why.
+        # Each jaw's contact as last said, so a change is said once.
+        self._contacts: dict[str, float] = {}
         self.create_timer(1.0, self._report_reads)
         held = [arm for arm, on in self.arms.torque_held().items() if on]
         self.get_logger().info(
@@ -101,6 +107,18 @@ class DriverNode(Node):
     def _report_reads(self) -> None:
         for arm, (count, why) in self.arms.failed_reads().items():
             self.get_logger().warn(f"{arm} arm: {count} read(s) of the bus failed in the last second - {why}")
+        contacts = self.arms.contacts()
+        for arm in self.arms.arms:
+            at = contacts.get(arm)
+            if at == self._contacts.get(arm):
+                continue
+            if at is None:
+                self.get_logger().info(f"{arm} jaw let go of its contact")
+            else:
+                self.get_logger().info(
+                    f"{arm} jaw in contact at {math.degrees(at):.1f} deg - "
+                    f"held to {SETTINGS.gripper_contact_squeeze_deg:g} deg past it")
+        self._contacts = contacts
 
     def _publish(self, angles: dict[str, float]) -> None:
         message = JointState()

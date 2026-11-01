@@ -37,6 +37,7 @@ T_target = T_start · Δ          The same amount applied to the arm tool, in it
 - **Left arm**: the description is a mirror image of the right arm, so the left arm's tool frame is rotated half a turn about the approach axis. For the left arm, `Δ` is applied rotated by that amount.
 - **Jitter**: even when the hand is held still there is tracking noise of about 1 mm and 0.5°, and IK amplifies this to several degrees at the joints. The pose is smoothed with a 0.1 second time constant before it is followed.
 - **jaw**: Hermit's jaw opening ratio is mapped directly onto the arm jaw's range of motion.
+- **A jaw closed on an object**: squeeze an empty Hermit shut and the arm's jaw stops against the object while still pushing toward its shut end. When the jaw's current stays at 100 mA or more for 0.1 s, the driver takes it as touching the object and lets it close only 2° further from there, so it grips with a little under half its torque cap. Opening Hermit past that point lets go.
 
 ## IK and the safety gate
 

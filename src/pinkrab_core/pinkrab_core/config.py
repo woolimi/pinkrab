@@ -163,6 +163,21 @@ class Settings:
     # 250 is a quarter of the stall torque; 150 and 500 were tried either side
     # of it on 2026-09-20 and 250 kept.
     gripper_torque_limit: int = 250
+    # A jaw closed on something stops there while its goal goes on toward the
+    # shut end, and the servo pushes at Torque_Limit for as long as that goal
+    # stands - which is what a handheld squeezed shut with nothing in it asks,
+    # in teleop and in a correction alike. On the right arm closing on a block
+    # the current held at 160-260 mA; closing on nothing it never passed 45 mA
+    # (2026-11-01). So a jaw whose current stays at gripper_contact_ma or over
+    # for gripper_contact_s, while its goal is further shut than it stands, is
+    # in contact where it stands, and no goal sends it more than
+    # gripper_contact_squeeze_deg past that until a goal opens it past the
+    # contact again. The squeeze is the grip: with no I on the gripper the push
+    # is proportional to it - on the block, load 44 at 0 deg, 80 at 1, 116 at
+    # 2, 184 at 4 and the cap at 8.
+    gripper_contact_ma: float = 100.0
+    gripper_contact_s: float = 0.1
+    gripper_contact_squeeze_deg: float = 2.0
 
     # --- servo registers ----------------------------------------------------
     # What LeRobot's SO-101 writes into every STS3215 on connecting
@@ -188,9 +203,16 @@ class Settings:
     # at I 8. Held at ready and given goals 3 to 11 ticks off, it hunted 0.8 to
     # 0.9 deg after three of six at I 8 and after none at I 0, which stopped
     # up to 0.6 deg short (2026-11-01). Those joints keep LeRobot's 0.
+    #
+    # The gripper carries none of it either, and on a jaw closed on something
+    # I is worse than idle: the goal is never reached, so I builds until the
+    # push is at the cap whatever the goal. Held on a block 1 deg past its
+    # contact, load went to the cap at once at I 8; held AT the contact, it
+    # climbed from 42 to 221 in five seconds. At I 0 each held steady
+    # (2026-11-01), which is what lets gripper_contact_squeeze_deg set a grip.
     servo_p_coefficient: int = 16
     servo_i_coefficient: int = 8
-    servo_i_unloaded: tuple[str, ...] = ("shoulder_pan",)
+    servo_i_unloaded: tuple[str, ...] = ("shoulder_pan", "gripper")
     servo_d_coefficient: int = 32
     gripper_max_torque_limit: int = 500
     gripper_protection_current: int = 250

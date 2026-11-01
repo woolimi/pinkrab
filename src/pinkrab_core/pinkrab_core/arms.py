@@ -25,6 +25,14 @@ enabling torque on a stale one is an arm snapping to a pose nobody asked for jus
 now. And a pose for an arm whose torque is off is dropped rather than stored, for
 the same reason: the write would sit in the servo waiting to be obeyed later.
 
+A jaw is the one joint held back here, and only from squeezing. A jaw closed on
+something stops against it while its goal goes on toward the shut end, and the
+servo then pushes at its torque cap for as long as that goal stands - so a jaw
+whose current says it is pressing on something is taken to be in contact where
+it stands, and no goal sends it further than `gripper_contact_squeeze_deg` past
+that until a goal opens it past the contact again. The poll reads the jaw's
+current beside the positions for it.
+
 What this does NOT do is decide whether a pose is a good idea. Joint bands,
 contact and the ramp belong to pinkrab_safety, and the driver above this takes
 only what has been through it. The one exception is `park`, which walks the
@@ -42,6 +50,10 @@ from . import ports, servos
 from .angles import load_offsets, radians_to_ticks, ticks_to_radians
 from .bus import make_bus
 from .config import SETTINGS
+from .jaw import gripper_band
+
+# Present_Current's unit on an STS3215.
+CURRENT_MA_PER_UNIT = 6.5
 
 
 class ArmsError(RuntimeError):
@@ -90,6 +102,20 @@ class Arms:
             self._buses[arm] = bus
 
         self.arms = tuple(self._buses)
+        # Which way each jaw opens, +1 or -1 in radians: the left's servo is
+        # turned round, so its jaw shuts toward positive.
+        try:
+            self._opens = {arm: 1.0 if wide > shut else -1.0
+                           for arm in self.arms for shut, wide in [gripper_band(arm)]}
+        except Exception as exc:
+            self.close()
+            raise ArmsError(f"the jaws' bands: {type(exc).__name__}: {exc}") from exc
+        # Per arm: the jaw's last goal as asked (radians), since when its
+        # current has said it is pressing, and where it stood when that held
+        # long enough - its contact, which caps how far a goal can shut it.
+        self._jaw_goal: dict[str, float] = {}
+        self._pressing: dict[str, float] = {}
+        self._contact: dict[str, float] = {}
         # Which arms are holding torque. Nothing is written to an arm that is not
         # in here. Configuring the servos puts torque back on the motors that had
         # it, so what is in here is what the bus says, not a guess that the rig
@@ -153,6 +179,11 @@ class Arms:
         """Which arms are holding torque, as this process last set it."""
         return dict(self._torque)
 
+    def contacts(self) -> dict[str, float]:
+        """Each jaw in contact with something, and where (radians)."""
+        with self._lock:
+            return dict(self._contact)
+
     # --- driving ------------------------------------------------------------
     def torque(self, on: bool, arm: str | None = None) -> list[str]:
         """Switch torque on or off, one arm or both. Returns the arms changed.
@@ -195,6 +226,7 @@ class Arms:
                 failed.append(f"{name} arm: {type(exc).__name__}: {exc}")
                 continue
             self._torque[name] = on
+            self._forget_jaw(name)
             changed.append(name)
         if failed:
             raise ArmsError("; ".join(failed) + (f" (let go: {', '.join(changed)})" if changed else ""))
@@ -218,6 +250,8 @@ class Arms:
             }
             if not wanted:
                 continue
+            if "gripper" in wanted:
+                wanted["gripper"] = self._jaw_goal_for(name, wanted["gripper"])
             ticks = radians_to_ticks(name, wanted, self._offsets)
             if not ticks:
                 continue
@@ -228,6 +262,60 @@ class Arms:
                 raise ArmsError(f"{name} arm: {type(exc).__name__}: {exc}") from exc
             sent.extend(f"{name}_{joint}" for joint in ticks)
         return sent
+
+    def _jaw_goal_for(self, arm: str, goal: float) -> float:
+        """The goal a jaw is sent for `goal`: as asked, unless it is in contact
+        and the goal would shut it more than the squeeze past that. A goal that
+        opens it past the contact lets the contact go."""
+        opens = self._opens[arm]
+        with self._lock:
+            self._jaw_goal[arm] = goal
+            contact = self._contact.get(arm)
+            if contact is not None and opens * (goal - contact) > 0:
+                del self._contact[arm]
+                self._pressing.pop(arm, None)
+                contact = None
+        if contact is None:
+            return goal
+        limit = contact - opens * math.radians(self._settings.gripper_contact_squeeze_deg)
+        return limit if opens * (goal - limit) < 0 else goal
+
+    def _note_jaw(self, arm: str, at: float, current_ma: float, now: float) -> bool:
+        """Whether the jaw has just come into contact, from one reading: its
+        current at or over `gripper_contact_ma` for `gripper_contact_s`, while
+        its goal is further shut than where it stands."""
+        settings = self._settings
+        with self._lock:
+            if arm in self._contact:
+                return False
+            goal = self._jaw_goal.get(arm)
+            shutting = goal is not None and self._opens[arm] * (goal - at) < 0
+            if not shutting or current_ma < settings.gripper_contact_ma:
+                self._pressing.pop(arm, None)
+                return False
+            since = self._pressing.setdefault(arm, now)
+            if now - since < settings.gripper_contact_s:
+                return False
+            self._contact[arm] = at
+            return True
+
+    def _hold_jaw(self, arm: str, bus) -> None:
+        """Send a jaw that has just come into contact its held goal now. The
+        goal it holds was sent before the contact, and nothing may come after
+        it to be held back - a correction held, a hand gone still."""
+        with self._lock:
+            goal = self._jaw_goal.get(arm)
+        if goal is None or not self._torque.get(arm):
+            return
+        ticks = radians_to_ticks(arm, {"gripper": self._jaw_goal_for(arm, goal)}, self._offsets)
+        if ticks:
+            with self._bus_locks[arm]:
+                bus.sync_write("Goal_Position", ticks, normalize=False)
+
+    def _forget_jaw(self, arm: str) -> None:
+        with self._lock:
+            for state in (self._jaw_goal, self._pressing, self._contact):
+                state.pop(arm, None)
 
     def park(self, pose: dict[str, float], speed_dps: float, timeout_s: float,
              tolerance_deg: float | None = None, ease_s: float | None = None,
@@ -351,8 +439,15 @@ class Arms:
                     # everywhere else - the description, the MJCF and the page all
                     # say `left_shoulder_pan`, and an unprefixed name here would
                     # have to be translated by whoever received it.
-                    for joint, value in ticks_to_radians(arm, ticks, self._offsets).items():
+                    read = ticks_to_radians(arm, ticks, self._offsets)
+                    for joint, value in read.items():
                         angles[f"{arm}_{joint}"] = round(value, 5)
+                    if "gripper" in read and self._torque.get(arm):
+                        with self._bus_locks[arm]:
+                            current = bus.read("Present_Current", "gripper", normalize=False)
+                        if self._note_jaw(arm, read["gripper"], CURRENT_MA_PER_UNIT * int(current),
+                                          time.monotonic()):
+                            self._hold_jaw(arm, bus)
                 except Exception as exc:  # noqa: BLE001 - a bus is allowed to fail
                     trouble = f"{arm} arm: {type(exc).__name__}"
                     words = str(exc).strip().splitlines()
