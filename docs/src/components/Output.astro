@@ -4,6 +4,8 @@
 // The output is a transcript kept beside the pages (src/transcripts),
 // recorded from a real run and cut to what the page is about: a line of "..."
 // stands for the lines left out.
+import { pick } from '../i18n';
+
 interface Props {
 	/** What it printed, ANSI colours and all. */
 	out: string;
@@ -11,7 +13,7 @@ interface Props {
 	title?: string;
 }
 
-const { out, title = '실행 결과' } = Astro.props;
+const { out, title = pick(Astro.locals.starlightRoute.lang, '실행 결과', 'Output') } = Astro.props;
 
 const escape = (text: string) =>
 	text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');

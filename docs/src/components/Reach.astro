@@ -1,13 +1,16 @@
 ---
 // The arms' reach on the desk, as the studio's reach switch lays it down.
 import Stage3D from './Stage3D.astro';
+import { pick } from '../i18n';
+
+const lang = Astro.locals.starlightRoute.lang;
 ---
 
 <figure class="pk-reach not-content">
-	<Stage3D label="페그보드에 건 두 팔과 책상. 책상 위에 왼팔은 파란색, 오른팔은 분홍색으로 tool 이 집을 수 있는 영역을 칠했습니다." />
+	<Stage3D label={pick(lang, '페그보드에 건 두 팔과 책상. 책상 위에 왼팔은 파란색, 오른팔은 분홍색으로 tool 이 집을 수 있는 영역을 칠했습니다.', 'The two arms on the pegboard and the desk. The area the tool can reach is painted on the desk, blue for the left arm and pink for the right.')} />
 	<ul class="legend">
-		<li><span class="key left" aria-hidden="true"></span>왼팔 <b data-area="left"></b></li>
-		<li><span class="key right" aria-hidden="true"></span>오른팔 <b data-area="right"></b></li>
+		<li><span class="key left" aria-hidden="true"></span>{pick(lang, '왼팔', 'Left arm')} <b data-area="left"></b></li>
+		<li><span class="key right" aria-hidden="true"></span>{pick(lang, '오른팔', 'Right arm')} <b data-area="right"></b></li>
 	</ul>
 </figure>
 

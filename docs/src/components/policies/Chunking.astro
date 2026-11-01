@@ -4,11 +4,15 @@
 // of H = 8 steps of which the first k = 2 run before the next is asked.
 const cell = 22;
 const rows = [0, 1, 2, 3];
+import { pick } from '../../i18n';
+
+const lang = Astro.locals.starlightRoute.lang;
+const t = (ko: string, en: string) => pick(lang, ko, en);
 ---
 
 <figure class="pk-fig not-content">
-	<svg viewBox="0 0 720 250" role="img" aria-label="한 step 씩 낸 동작의 오차 누적과 chunk 실행의 비교">
-		<text x="20" y="20" class="head">한 step 씩 추론</text>
+	<svg viewBox="0 0 720 250" role="img" aria-label={t('한 step 씩 낸 동작의 오차 누적과 chunk 실행의 비교', 'Error accumulating when acting one step at a time, compared with running chunks')}>
+		<text x="20" y="20" class="head">{t('한 step 씩 추론', 'Inference one step at a time')}</text>
 		<path class="wire dash" d="M30 200 C 130 190, 230 170, 320 160" />
 		<path class="wire hot-wire" d="M30 200 L66 195 L102 187 L138 175 L174 158 L210 135 L246 106 L282 72 L318 32" />
 		<g class="dot">
@@ -16,12 +20,12 @@ const rows = [0, 1, 2, 3];
 			<circle cx="138" cy="175" r="3" /><circle cx="174" cy="158" r="3" /><circle cx="210" cy="135" r="3" />
 			<circle cx="246" cy="106" r="3" /><circle cx="282" cy="72" r="3" /><circle cx="318" cy="32" r="3" />
 		</g>
-		<text x="232" y="192" class="dim">시연 궤적</text>
-		<text x="160" y="110" class="hot">policy 궤적</text>
-		<text x="20" y="222" class="dim">step 마다의 오차 ε 가 시연에 없던 state 로</text>
-		<text x="20" y="238" class="dim">밀어내, T step 뒤에는 O(T²ε) 까지 벌어짐</text>
+		<text x="232" y="192" class="dim">{t('시연 궤적', 'Demonstration trajectory')}</text>
+		<text x="160" y="110" class="hot">{t('policy 궤적', 'Policy trajectory')}</text>
+		<text x="20" y="222" class="dim">{t('step 마다의 오차 ε 가 시연에 없던 state 로', 'The error ε of each step pushes it into states')}</text>
+		<text x="20" y="238" class="dim">{t('밀어내, T step 뒤에는 O(T²ε) 까지 벌어짐', 'absent from the demonstrations; after T steps it grows to O(T²ε)')}</text>
 
-		<text x="380" y="20" class="head">chunk 를 내고 앞부분만 실행</text>
+		<text x="380" y="20" class="head">{t('chunk 를 내고 앞부분만 실행', 'Output a chunk, run only its first part')}</text>
 		{rows.map((r) => {
 			const x0 = 380 + r * 2 * cell;
 			const y = 40 + r * 34;
@@ -36,8 +40,8 @@ const rows = [0, 1, 2, 3];
 		})}
 		<path class="wire" d="M380 196 L708 196" marker-end="url(#chunk-arrow)" />
 		<path class="wire hot-wire" d="M380 186 L556 186" stroke-width="3" />
-		<text x="380" y="222" class="dim">분홍 칸만 실행하고 다음 chunk 를 추론</text>
-		<text x="380" y="238" class="dim">H = 8, k = 2 의 개념도 (ACT 는 50 fps 에서 100, 5)</text>
+		<text x="380" y="222" class="dim">{t('분홍 칸만 실행하고 다음 chunk 를 추론', 'Run only the pink cells, then infer the next chunk')}</text>
+		<text x="380" y="238" class="dim">{t('H = 8, k = 2 의 개념도 (ACT 는 50 fps 에서 100, 5)', 'Sketch with H = 8, k = 2 (ACT uses 100 and 5 at 50 fps)')}</text>
 		<defs>
 			<marker id="chunk-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
 				<path d="M0 0 L10 5 L0 10z" class="fill-dim" />
@@ -45,6 +49,6 @@ const rows = [0, 1, 2, 3];
 		</defs>
 	</svg>
 	<figcaption>
-		한 step 씩 추론하면 결정마다 오차가 쌓이지만, chunk 를 내면 결정 횟수가 k 분의 1 로 줄고 chunk 안의 step 들은 한 번에 만들어져 매끄럽게 이어집니다.
+		{t('한 step 씩 추론하면 결정마다 오차가 쌓이지만, chunk 를 내면 결정 횟수가 k 분의 1 로 줄고 chunk 안의 step 들은 한 번에 만들어져 매끄럽게 이어집니다.', 'Inferring one step at a time piles up error with every decision, but with chunks the number of decisions drops to 1/k and the steps inside a chunk are produced together, so they follow smoothly.')}
 	</figcaption>
 </figure>

@@ -1,11 +1,14 @@
 ---
 // Which joint is which on the arm: its name and servo id, drawn out to the side.
 import Stage3D from './Stage3D.astro';
+import { pick } from '../i18n';
+
+const lang = Astro.locals.starlightRoute.lang;
 ---
 
 <figure class="pk-names not-content">
 	<div class="wrap">
-		<Stage3D label="페그보드에 건 왼팔. 관절마다 선을 그어 관절 이름과 서보 id 1–7 을 표시했습니다." />
+		<Stage3D label={pick(lang, '페그보드에 건 왼팔. 관절마다 선을 그어 관절 이름과 서보 id 1–7 을 표시했습니다.', 'The left arm on the pegboard. A line is drawn out from each joint, marking the joint name and servo ids 1–7.')} />
 		<svg class="leaders" aria-hidden="true"></svg>
 		<div class="labels" aria-hidden="true"></div>
 	</div>

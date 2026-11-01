@@ -2,26 +2,29 @@
 // A figure's 3D picture: a canvas a script draws into, with a word
 // on how to turn it where it can be turned, and - for a picture worth
 // looking into - buttons to come closer and go back.
+import { isEn } from '../i18n';
+
 interface Props {
 	label: string;
 	zoom?: boolean;
 }
 const { label, zoom = false } = Astro.props;
+const en = isEn(Astro.locals.starlightRoute.lang);
 ---
 
 <div class="stage">
 	<canvas role="img" aria-label={label}></canvas>
 	{zoom ? (
-		<div class="zoom" role="group" aria-label="확대·축소">
-			<button type="button" class="in" aria-label="확대">
+		<div class="zoom" role="group" aria-label={en ? 'Zoom' : '확대·축소'}>
+			<button type="button" class="in" aria-label={en ? 'Zoom in' : '확대'}>
 				<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>
 			</button>
-			<button type="button" class="out" aria-label="축소">
+			<button type="button" class="out" aria-label={en ? 'Zoom out' : '축소'}>
 				<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14"></path></svg>
 			</button>
 		</div>
 	) : null}
-	<p class="hint">{zoom ? '드래그해서 돌려 보기 · Ctrl + 스크롤로 확대' : '드래그해서 돌려 보기'}</p>
+	<p class="hint">{zoom ? (en ? 'Drag to rotate · Ctrl + scroll to zoom' : '드래그해서 돌려 보기 · Ctrl + 스크롤로 확대') : (en ? 'Drag to rotate' : '드래그해서 돌려 보기')}</p>
 </div>
 
 <style>

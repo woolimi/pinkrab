@@ -1,0 +1,119 @@
+---
+title: ACT
+description: How Pinkrab trains and runs LeRobot's ACT. Structure, one step of training and execution, the CVAE and KL term, temporal ensembling, training and inference settings, strengths and weaknesses.
+---
+
+import ActArch from '../../../../../components/policies/ActArch.astro';
+import LatentSpace from '../../../../../components/policies/LatentSpace.astro';
+
+ACT (Action Chunking with Transformers, Zhao et al., 2023) is a policy released with the ALOHA bimanual robot, known for learning precise bimanual tasks from few demonstrations. Pinkrab trains the ACT implementation included in LeRobot with its default settings (the defaults of `ACTConfig`). These defaults follow the settings of the ACT paper, such as a KL weight of 10 and a 32-dimensional latent. The chunk is also the same **2 seconds** as in the paper, which is 100 steps at the default 50 fps. At other fps the number of steps is adjusted in training so that it is the same 2 seconds. In execution, Pinkrab's inference settings reduce the number of steps executed at a time (`n_action_steps`) from the whole chunk to **0.1 second worth** (5 at 50 fps).
+
+What action chunking and multimodality are and why they are a problem is in the [Policy overview](../#difficulties-of-behavior-cloning).
+
+## Structure
+
+<ActArch />
+
+| Part | Composition |
+|---|---|
+| Video | For each camera, the last feature map of an ImageNet ResNet-18 (batch normalization frozen), one cell per 32 px, is projected to width 512, and a 2D sine position is added to each cell to use it as a token. A 780×570 image is 25×18 cells, 450 tokens per camera |
+| encoder | Transformer, 4 layers, width 512, 8 heads, feed-forward 3200 (ReLU). It reads one latent token, one state token, and 900 video tokens from the two cameras together |
+| decoder | Transformer, 1 layer. There is one query per step of the chunk (100 at 50 fps); they see each other and read the encoder output, then one linear layer produces 20 action values per step |
+| CVAE encoder | A 4-layer transformer used only in training reads the target chunk and the state and produces the mean and variance of a 32-dimensional latent |
+| loss | L1 to the target chunk, KL of the latent distribution (weight 10) |
+| Size | About 52M parameters. Of these, about 17M in the CVAE encoder are used only in training, so about 34M in execution |
+
+The decoder's query is an all-zero input plus a position embedding learned per step, the same approach as DETR's object queries. So the queries differ only in "which step is this", and the action for that step is read from the encoder output. The ACT paper's decoder has 7 layers, but since the original implementation used only the first layer, LeRobot sets it to 1 layer to match that behavior.
+
+## One training step
+
+One sample in a batch is the observation at one time and the target chunk for the 2 seconds from that time. For a sample near the end of an episode where the 2 seconds do not fill, the remaining steps are filled with padding and left out of the loss.
+
+1. **CVAE encoder**: The `[CLS]` token, the state token, and 100 action tokens, one per step of the target chunk, with a 1D sine position added, go into the 4-layer transformer. A linear layer turns the output at the `[CLS]` position into 64 numbers, of which the first 32 are used as the mean `μ` and the last 32 as `log σ²`.
+2. **Sampling the latent**: `z` is sampled as `z = μ + σ · ε`, `ε ~ N(0, I)`. This is the reparameterization trick, which pushes the randomness out into `ε` so gradients can flow to `μ` and `σ`.
+3. **Transformer encoder**: `z` is turned by a linear layer into one token of width 512, joined with one state token and the 900 video tokens of the two cameras, and fed to the 4 layers.
+4. **Transformer decoder**: 100 queries read the encoder output by cross-attention, and a linear layer produces the 100×20 chunk.
+5. **loss**: The L1 to the target chunk plus 10 times the KL term.
+
+## Latent and CVAE
+
+A latent is a hidden variable that is not written in the data but represents the cause of how the data came to be. A demonstration dataset has only video, state, and actions, with no label such as "this time it went around the left", yet the reason actions split in the same scene is **this unwritten choice**. ACT represents this choice as a vector `z` of 32 numbers, and what each number means is not decided by a person but by training.
+
+An autoencoder is trained to shrink the input into a small latent with an encoder and rebuild it with a decoder, so the latent keeps only the information necessary for the rebuild. A VAE (Variational Autoencoder) produces the latent not as a single value but as a distribution and holds that distribution near the standard normal `N(0, I)`, so that whichever point near it is chosen later, the decoder gives a plausible output. A CVAE (Conditional VAE) is a VAE in which the encoder and decoder also receive a condition.
+
+In ACT, what is shrunk and rebuilt is the target chunk, and the decoder-side condition is the video and state (the CVAE encoder takes only the state and leaves out the video to cut computation). What can be known from the observation is already told by the condition, so what remains in the latent is what cannot be known from the observation alone, namely **which way that demonstration went**. Here the decoder means the whole transformer encoder and decoder in the figure above.
+
+<LatentSpace />
+
+In training, the CVAE encoder, which has seen the target chunk, produces the distribution `q(z | a, s)` of `z`, and the `z` sampled from it enters the transformer encoder as one token. The transformer encoder and decoder after that are told which way it went through `z`, so they learn the action of the side `z` points to **without averaging the two ways**.
+
+## KL term
+
+The KL term is the KL divergence (Kullback–Leibler divergence), which measures how different two distributions are; it is 0 when the two are the same and grows as they move apart. ACT's loss is `L1 + β·KL`, where β is the KL weight 10 above. L1 decreases the more demonstration mode is loaded into `z`, but KL decreases the more `q(z | a, s)` becomes the same as `N(0, I)` regardless of the target, so β sets **the amount of information carried in `z`**. If β is too large it falls into the posterior collapse in the weaknesses below.
+
+Both distributions are normal, so the KL is computed directly from `μ` and `σ` without an integral. The value below is computed for each of the 32 latent dimensions, summed, and averaged over the batch.
+
+```text
+KL( N(μ, σ²) ‖ N(0, 1) ) = ½ ( μ² + σ² − 1 − log σ² )
+```
+
+It is 0 at `μ = 0`, `σ = 1`, and grows as `μ` moves away from 0 or `σ` becomes smaller than 1. If the CVAE encoder tries to pin down each demonstration exactly by placing the `z` of different demonstrations far apart or narrowing the variance, the KL penalizes it by that much.
+
+In this way the KL term holds `q(z | a, s)` close to `N(0, I)` and makes room for a `z` that can be used in execution without a target. In execution ACT does not sample `z` but sets it to 0, its center. So the same observation **always gives the same chunk**. Which mode 0 corresponds to is decided by training, and a more common mode occupies a larger region of the latent space and so tends to take the center. If the two modes are half and half, 0 sits near the boundary of the two regions and an action between them can come out.
+
+## One execution step
+
+Execution has no target chunk, so the CVAE encoder is not used and `z = 0` is fed in. One forward pass with the two images and the state gives a 100-step chunk, whose first 5 steps are put in a queue and taken out one by one at the dataset fps. When the queue is empty, inference is run again with the video and state at that time, so it **looks anew every 0.1 second** and discards the other 95 steps.
+
+The actions of the chunk are values normalized with dataset statistics, so before execution they are returned to the original units with the mean and standard deviation. The video is normalized with ImageNet's mean and standard deviation.
+
+## Temporal ensembling
+
+The ACT paper proposed temporal ensembling, which sets `k = 1`, that is, infers anew at every step and takes a weighted average of the actions that past chunks gave for the same time. The weights are `wᵢ = exp(−m·i)` starting from the oldest chunk, and the paper's `m` is 0.01. The actions become smoother, but inference is needed at every step, so in Pinkrab it is turned on with `temporal_ensemble_coeff` in the inference settings, and then **`n_action_steps` must be 1**.
+
+A positive `m` trusts old chunks more, a negative `m` trusts new chunks more, and 0 averages them all with equal weight. The actions being averaged must come from the same mode for the result to be smooth; if two chunks are in different modes, their average lands **between the peaks again**.
+
+## Training settings
+
+When ACT is chosen on the [Train page](../../../use/train/#new-run), training uses the values below. Apart from batch and number of steps, the rest are the defaults of LeRobot `ACTConfig`.
+
+| Item | Value |
+|---|---|
+| batch, step | 8, 100 000 |
+| chunk | 2 seconds (100 steps at 50 fps) |
+| optimizer | AdamW, learning rate 1e-5 (1e-5 for the backbone too), weight decay 1e-4, gradient clip 10 |
+| learning rate schedule | Same value from start to end |
+| dropout | 0.1 |
+| Normalization | State and actions with the dataset's mean and standard deviation, video with ImageNet's mean and standard deviation |
+| image augmentation | On (brightness, contrast, etc.) |
+
+## Inference settings
+
+These are values you can change in the [inference settings](../../../use/run/#inference-settings) without retraining.
+
+| Value | Default | Meaning |
+|---|---|---|
+| `n_action_steps` | 0.1 second (5 at 50 fps) | Number of steps executed from the chunk before looking again. From 1 up to the chunk length |
+| `temporal_ensemble_coeff` | Off | `m` of temporal ensembling. When on, `n_action_steps` is 1 |
+
+## Strengths
+
+- **Fast inference**: One chunk comes from one forward pass, so execution cost is low.
+- **Little data**: Thanks to action chunking, there are many cases of learning precise tasks from a few dozen demonstrations.
+- **Proven baseline**: The paper, implementation, and training settings are widely used, so it is a good first baseline for a new task. When something goes wrong, you can suspect the data before the policy.
+- **Partial handling of multimodality**: The CVAE distinguishes the modes in training, so it collapses to the mean less often than pure regression.
+
+## Weaknesses
+
+- **`z = 0` in execution**: The latent is fixed in execution, so it does not choose one of several modes but always gives the same one. Even if that one is blocked in the current scene, it cannot switch to the other.
+- **Posterior collapse**: With a large KL weight, the CVAE encoder tends to fall into a solution that puts almost no information in `z`. Then the transformer ignores `z` and becomes L1 regression again, and on data where two modes are mixed about equally it goes between the peaks.
+- **Median within a peak**: The L1 to the target chunk gives the median of the detailed actions even within the same mode. In scenes where differences of mm matter, such as the grasp position, the action can get blurred.
+- **Large training memory**: Training memory is 5.7 GB at batch 8. The roughly 17M parameters of the CVAE encoder are also not used in execution and cost only in training.
+- **Shallow decoder, no instructions**: The decoder is 1 layer and there is no language input, so one policy learns only one task.
+
+## References
+
+- Zhao, Kumar, Levine, Finn. *Learning Fine-Grained Bimanual Manipulation with Low-Cost Hardware* (ACT). RSS 2023.
+- Kingma, Welling. *Auto-Encoding Variational Bayes* (VAE). ICLR 2014.
+- Sohn, Lee, Yan. *Learning Structured Output Representation using Deep Conditional Generative Models* (CVAE). NeurIPS 2015.
+- Carion et al. *End-to-End Object Detection with Transformers* (DETR). ECCV 2020.

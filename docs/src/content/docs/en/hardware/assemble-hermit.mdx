@@ -1,0 +1,20 @@
+---
+title: Hermit assembly
+description: The order for assembling one Hermit from printed parts, an STS3215 servo, a camera, and a servo board. The parts and screws attached at each step.
+---
+
+import Assembly from '../../../../components/Assembly.astro';
+import ScrewTotals from '../../../../components/ScrewTotals.astro';
+
+One Hermit is assembled from printed parts, **one STS3215 7.4 V servo**, one camera, one Waveshare servo board, a UMI marker, and marker tiles. The places where the servo, jaw, and camera attach are the same as on the arm's gripper. The left and right hands are mirror images of each other, so the order is the same.
+
+<Assembly kind="hermit" />
+
+- Servo ids and the jaw calibration are done after assembly, in [Setup](../../use/setup/#hermit).
+- Print the marker tiles in white and black and fit them into the faces of the UMI marker.
+
+## Screws
+
+The count is the sum of the screws used in each step.
+
+<ScrewTotals kind="hermit" />

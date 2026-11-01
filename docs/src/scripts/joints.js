@@ -5,6 +5,7 @@
 import * as THREE from 'three';
 import { fitView, orbit } from './canvases.js';
 import { SIDE, solids, stage } from './stage.js';
+import { pick } from './lang.js';
 
 // Where the camera looks from, in the description's z-up frame: in front of
 // the board, to the arm's outer side and a little above it. Each joint turns
@@ -206,7 +207,7 @@ export async function showJoints(figure, sources) {
     slider.value = String(d);
     angle.textContent = `${d >= 0.5 ? '+' : d <= -0.5 ? '−' : ''}${Math.abs(Math.round(d))}°`;
     play.setAttribute('aria-pressed', String(playing));
-    play.setAttribute('aria-label', playing ? '일시정지' : '재생');
+    play.setAttribute('aria-label', playing ? pick('일시정지', 'Pause') : pick('재생', 'Play'));
   }
 
   const picture = addView(canvas, { camera, pose, step });

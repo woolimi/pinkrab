@@ -1,0 +1,163 @@
+---
+title: Installation
+description: Installing Pinkrab. On macOS, into a single RoboStack conda environment; on Ubuntu 24.04, into a venv on the system Python with ROS installed through apt.
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+Pinkrab needs **Python 3.12 or later** and **ROS 2 Jazzy**, and the installation method depends on where you get ROS. ROS for macOS is not shipped as an operating system package, so it is installed from [RoboStack](https://robostack.github.io) conda packages; in that case ROS, LeRobot, and MuJoCo all live in a single Python interpreter. On Ubuntu, ROS is installed with apt. That ROS is built against the system's Python 3.12, so the Pinkrab packages are installed into a venv created from that same Python.
+
+**Choose your operating system once** in the tabs below, and every step on the page switches to that operating system.
+
+## Prerequisites
+
+<Tabs syncKey="os">
+<TabItem label="macOS" icon="apple">
+
+[RoboStack](https://robostack.github.io) distributes ROS 2 Jazzy as conda packages. Installing these packages requires conda; if you install [Miniforge](https://github.com/conda-forge/miniforge), you get `conda` and also `mamba`, a faster installer.
+
+```bash
+brew install miniforge
+conda init "$(basename "$SHELL")"
+```
+
+After installation you must **open a new terminal** before the `conda` command works in your shell.
+
+</TabItem>
+<TabItem label="Ubuntu" icon="linux">
+
+Start with [ROS 2 Jazzy installed through apt](https://docs.ros.org/en/jazzy/Installation/Ubuntu-Install-Debs.html) on Ubuntu 24.04; the only ROS package you need is `ros-jazzy-ros-base`. Then install the tools needed for the build.
+
+```bash
+sudo apt install -y python3.12-venv python3-rosdep python3-colcon-common-extensions \
+  ros-jazzy-rmw-cyclonedds-cpp
+sudo rosdep init
+rosdep update
+```
+
+</TabItem>
+</Tabs>
+
+## Python environment
+
+<Tabs syncKey="os">
+<TabItem label="macOS" icon="apple">
+
+Create the RoboStack environment from `requirements/environment.yml`. This environment holds ROS 2 Jazzy from the `robostack-jazzy` channel, `colcon`, LeRobot, and MuJoCo on a single Python 3.12, and the Pinkrab packages are installed into it in editable mode.
+
+```bash
+git clone https://github.com/woolimi/pinkrab.git
+cd pinkrab
+mamba env create -f requirements/environment.yml
+mamba activate pinkrab
+pip install -e src/pinkrab_core -e src/pinkrab_cli -e src/pinkrab_mujoco \
+  -e src/pinkrab_studio -e src/pinkrab_umi -e src/pinkrab_policy -e lerobot-plugin
+```
+
+</TabItem>
+<TabItem label="Ubuntu" icon="linux">
+
+`rclpy` is a C extension compiled for `/usr/bin/python3.12`, so it cannot be loaded from any other Python. The venv is therefore also created with this Python, with the **`--system-site-packages` option** so that ROS's `rclpy` is visible inside the venv. `scripts/setup.sh` creates this venv, installs the packages in `requirements/lock/linux.txt` and the Pinkrab packages, and prints what was actually installed; it is safe to run more than once.
+
+```bash
+git clone https://github.com/woolimi/pinkrab.git
+cd pinkrab
+./scripts/setup.sh
+```
+
+Every time you open a new shell, **source ROS first and activate the venv afterwards**. This order makes the venv's copy win when a package with the same name exists in both ROS and the venv.
+
+```bash
+source /opt/ros/jazzy/setup.bash
+source .venv/bin/activate
+```
+
+</TabItem>
+</Tabs>
+
+## ROS packages
+
+<Tabs syncKey="os">
+<TabItem label="macOS" icon="apple">
+
+The RoboStack environment already contains all the ROS dependencies, so `rosdep` is not used. When building, you tell CMake the environment's **Python and NumPy paths directly**; without them, CMake may find a different `python3` first and the `pinkrab_interfaces` build can fail.
+
+```bash
+colcon build --symlink-install --cmake-args \
+  -DPython3_EXECUTABLE="$CONDA_PREFIX/bin/python3" \
+  -DPython3_NumPy_INCLUDE_DIRS="$CONDA_PREFIX/lib/python3.12/site-packages/numpy/_core/include"
+source install/setup.zsh
+```
+
+If your shell is bash, source `install/setup.bash` on the last line.
+
+</TabItem>
+<TabItem label="Ubuntu" icon="linux">
+
+```bash
+rosdep install --from-paths src --ignore-src -r -y
+colcon build --symlink-install
+source install/setup.bash
+```
+
+</TabItem>
+</Tabs>
+
+Once built with `--symlink-install`, changes to Python code take effect immediately without rebuilding. Rebuild **only when you add a new file, an entry point, or a launch file**.
+
+## Device permissions
+
+<Tabs syncKey="os">
+<TabItem label="macOS" icon="apple">
+
+The servo boards and cameras open without any extra setup. The foot pedal can only be opened with root privileges, so studio runs it with `sudo -n`; to avoid a password prompt, add **one allow rule to sudoers**. Run the commands below **with the conda environment activated**.
+
+```bash
+echo "$USER ALL=(root) NOPASSWD: $CONDA_PREFIX/bin/pinkrab-footswitch" | sudo tee /etc/sudoers.d/pinkrab-footswitch
+sudo chmod 440 /etc/sudoers.d/pinkrab-footswitch
+sudo visudo -c
+```
+
+Running the pedal as root is not enough: the app that launched studio also needs the **Input Monitoring** permission before macOS lets it read pedal input. In System Settings → Privacy & Security → Input Monitoring, turn on the terminal app you use and restart the terminal.
+
+</TabItem>
+<TabItem label="Ubuntu" icon="linux">
+
+Servo boards show up as serial ports, and only users in the `dialout` group can open serial ports. The foot pedal needs a udev rule before ordinary users can open it. After adding yourself to the group you must **log out and log back in**, and after installing the rule you must **unplug the pedal and plug it back in** for it to apply.
+
+```bash
+sudo usermod -aG dialout "$USER"
+sudo cp scripts/udev/60-pinkrab.rules /etc/udev/rules.d/
+sudo udevadm control --reload && sudo udevadm trigger
+```
+
+</TabItem>
+</Tabs>
+
+## SAM 3 environment
+
+To randomize the background of gripper video when building a dataset, you need [SAM 3](https://github.com/facebookresearch/sam3), which finds the task objects in the video. If you do not plan to change the background, skip this step. SAM 3 uses a newer torch than LeRobot allows, so it is installed separately from the Pinkrab environment, in `~/pinkrab/sam3-env`. The SAM 3 installed is [sam3-silicon-mac](https://github.com/woolimi/sam3-silicon-mac), modified to run on both macOS (MPS) and CUDA.
+
+```bash
+uv venv --python 3.12 ~/pinkrab/sam3-env
+uv pip install --python ~/pinkrab/sam3-env/bin/python "torch>=2.15" torchvision \
+  "sam3[video] @ git+https://github.com/woolimi/sam3-silicon-mac.git"
+```
+
+The SAM 3 weights can only be downloaded after approval on Hugging Face. Request access at [facebook/sam3](https://huggingface.co/facebook/sam3), and once approved, log in once. The weights are downloaded the first time they are used.
+
+```bash
+~/pinkrab/sam3-env/bin/hf auth login
+```
+
+If you plan to run SAM 3 on another computer with a GPU, you do not need to install it on this one. Studio creates the same environment on that computer ([the computer that runs SAM 3](../../use/curate/#computer-to-run-sam-3-on)).
+
+SAM 3 and its weights are covered by Meta's [SAM License](https://github.com/facebookresearch/sam3/blob/main/LICENSE). The Pinkrab repository contains neither SAM 3's code nor its weights.
+
+## Verifying the installation
+
+```bash
+pinkrab doctor
+```
+
+`pinkrab doctor` checks the environment, the servo boards, and the description **without moving the robot**. If anything is missing, it tells you what is missing along with the command to fix it.

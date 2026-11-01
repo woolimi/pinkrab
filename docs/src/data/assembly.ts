@@ -19,12 +19,15 @@
 
 import data from './assembly.json';
 import found from '../../public/robot/assembly.json';
+import { isEn } from '../i18n';
 
 export interface Screw {
 	size: string;
 	count: number;
 	/** What it holds, a few words. */
 	what: string;
+	/** The English of `what`, for a screw written in a step. */
+	whatEn?: string;
 }
 
 export interface Step {
@@ -40,6 +43,8 @@ interface Written {
 	text: string;
 	parts: string[];
 	screws?: Screw[];
+	/** The English title and text. */
+	en: { title: string; text: string };
 	horn?: string;
 	/** The part whose bolts take the nuts this step puts in. */
 	nuts?: string;
@@ -65,8 +70,11 @@ interface Found {
 }
 
 const SIZES = { centre: 'M3×6', horn: 'M3×6', mount: 'M2×6', bolt: 'M4×20 접시머리 + M4 너트' };
+const SIZES_EN = { ...SIZES, bolt: 'M4×20 countersunk + M4 nut' };
 
-function steps(kind: Kind): Step[] {
+/** The steps of an assembly, in the page's language. */
+export function stepsOf(kind: Kind, lang: string): Step[] {
+	const en = isEn(lang);
 	const written = data[kind] as Written[];
 	// A part by its mesh's name: `upper_arm_link:upper_arm` is the upper arm.
 	const nameOf = (key: string) => key.split(':').pop()!.replace(/_/g, ' ');
@@ -75,25 +83,28 @@ function steps(kind: Kind): Step[] {
 	return written.map((step, i) => {
 		const here = new Map<string, Screw>();
 		for (const s of screws.filter((s) => s.step === i)) {
-			const size = s.kind === 'join' || s.kind === 'nut' ? s.size!
-				: s.kind === 'horn' ? (step.horn ?? SIZES.horn) : SIZES[s.kind];
-			const what = s.kind === 'nut' ? `${nameOf(s.part)} 너트 자리`
-				: s.kind === 'join' ? `${nameOf(s.part)} 고정`
-				: s.kind === 'bolt' ? '베이스 → 페그보드'
-				: s.kind === 'centre' ? '윗면 혼 가운데'
-				: s.kind === 'horn' ? `${nameOf(s.part)} → 혼`
-				: `서보 → ${nameOf(s.part)}`;
+			const size = s.kind === 'join' || s.kind === 'nut' ? (en ? s.size!.replace('육각 너트', 'hex nut').replace('접시머리', 'countersunk') : s.size!)
+				: s.kind === 'horn' ? (step.horn ?? SIZES.horn) : (en ? SIZES_EN : SIZES)[s.kind];
+			const what = s.kind === 'nut' ? (en ? `${nameOf(s.part)} nut slot` : `${nameOf(s.part)} 너트 자리`)
+				: s.kind === 'join' ? (en ? `${nameOf(s.part)} fixing` : `${nameOf(s.part)} 고정`)
+				: s.kind === 'bolt' ? (en ? 'Base → pegboard' : '베이스 → 페그보드')
+				: s.kind === 'centre' ? (en ? 'Top horn, centre' : '윗면 혼 가운데')
+				: s.kind === 'horn' ? (en ? `${nameOf(s.part)} → horn` : `${nameOf(s.part)} → 혼`)
+				: (en ? `Servo → ${nameOf(s.part)}` : `서보 → ${nameOf(s.part)}`);
 			const key = `${size}|${what}`;
 			const seen = here.get(key);
 			if (seen) seen.count += 1;
 			else here.set(key, { size, count: 1, what });
 		}
-		return { title: step.title, text: step.text, parts: step.parts, screws: [...here.values(), ...(step.screws ?? [])] };
+		const own = (step.screws ?? []).map((s) => ({ ...s, what: en ? s.whatEn ?? s.what : s.what }));
+		return {
+			title: en ? step.en.title : step.title,
+			text: en ? step.en.text : step.text,
+			parts: step.parts,
+			screws: [...here.values(), ...own],
+		};
 	});
 }
-
-export const ARM = steps('arm');
-export const HERMIT = steps('hermit');
 
 /** Every screw of an assembly, by size, for the parts list. */
 export function screwTotals(list: Step[]): { size: string; count: number }[] {

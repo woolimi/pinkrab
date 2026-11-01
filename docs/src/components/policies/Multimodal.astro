@@ -6,34 +6,38 @@
 const bimodal =
 	'M390.0 189.7 L395.3 189.5 L400.7 189.0 L406.0 188.1 L411.3 186.6 L416.7 184.3 L422.0 180.9 L427.3 175.9 L432.7 169.0 L438.0 160.2 L443.3 149.3 L448.7 136.8 L454.0 123.3 L459.3 109.8 L464.7 97.6 L470.0 87.8 L475.3 81.8 L480.7 80.0 L486.0 82.9 L491.3 90.0 L496.7 100.4 L502.0 113.1 L507.3 126.7 L512.7 140.0 L518.0 152.2 L523.3 162.6 L528.7 170.9 L534.0 177.2 L539.3 181.8 L544.7 184.9 L550.0 186.8 L555.3 187.8 L560.7 188.1 L566.0 187.6 L571.3 186.4 L576.7 184.2 L582.0 180.8 L587.3 175.8 L592.7 169.0 L598.0 160.2 L603.3 149.3 L608.7 136.8 L614.0 123.3 L619.3 109.8 L624.7 97.6 L630.0 87.8 L635.3 81.8 L640.7 80.0 L646.0 82.9 L651.3 90.0 L656.7 100.4 L662.0 113.1 L667.3 126.7 L672.7 140.0 L678.0 152.2 L683.3 162.6 L688.7 170.9 L694.0 177.3 L699.3 181.9 L704.7 185.0 L710.0 187.1';
 const samples = [468, 477, 486, 494, 628, 637, 646, 655];
+import { pick } from '../../i18n';
+
+const lang = Astro.locals.starlightRoute.lang;
+const t = (ko: string, en: string) => pick(lang, ko, en);
 ---
 
 <figure class="pk-fig not-content">
-	<svg viewBox="0 0 720 250" role="img" aria-label="장애물을 왼쪽과 오른쪽으로 피하는 두 시연과, 두 시연의 평균이 장애물에 부딪히는 모습">
-		<text x="20" y="20" class="head">위에서 본 장면</text>
+	<svg viewBox="0 0 720 250" role="img" aria-label={t('장애물을 왼쪽과 오른쪽으로 피하는 두 시연과, 두 시연의 평균이 장애물에 부딪히는 모습', 'Two demonstrations going round the obstacle to the left and to the right, and their mean running into the obstacle')}>
+		<text x="20" y="20" class="head">{t('위에서 본 장면', 'Scene from above')}</text>
 		<rect x="130" y="112" width="80" height="40" rx="4" class="area" />
-		<text x="170" y="137" text-anchor="middle" class="dim">장애물</text>
+		<text x="170" y="137" text-anchor="middle" class="dim">{t('장애물', 'Obstacle')}</text>
 		<circle cx="170" cy="44" r="9" class="box-hot" />
-		<text x="186" y="48" class="dim">목표</text>
+		<text x="186" y="48" class="dim">{t('목표', 'Goal')}</text>
 		<path class="wire" d="M170 214 C 70 190, 70 80, 162 48" marker-end="url(#mm-arrow)" />
 		<path class="wire" d="M170 214 C 270 190, 270 80, 178 48" marker-end="url(#mm-arrow)" />
 		<path class="wire hot-wire dash" d="M170 214 L170 160" stroke-width="2" />
 		<path class="wire hot-wire" d="M162 158 L178 170 M178 158 L162 170" stroke-width="2" />
 		<circle cx="170" cy="218" r="6" class="box" />
-		<text x="44" y="110" class="dim">시연 A</text>
-		<text x="262" y="110" class="dim">시연 B</text>
-		<text x="182" y="198" class="hot">평균</text>
+		<text x="44" y="110" class="dim">{t('시연 A', 'Demonstration A')}</text>
+		<text x="262" y="110" class="dim">{t('시연 B', 'Demonstration B')}</text>
+		<text x="182" y="198" class="hot">{t('평균', 'Mean')}</text>
 
-		<text x="380" y="20" class="head">같은 장면의 동작 분포</text>
+		<text x="380" y="20" class="head">{t('같은 장면의 동작 분포', 'Action distribution for the same scene')}</text>
 		<path class="area" d={bimodal + ' L710 190 L390 190 Z'} />
 		<path class="wire hot-wire dash" d="M560 60 L560 190" stroke-width="2" />
-		<text x="560" y="52" text-anchor="middle" class="hot">regression 의 답</text>
+		<text x="560" y="52" text-anchor="middle" class="hot">{t('regression 의 답', 'Answer of the regression')}</text>
 		<g class="dot">
 			{samples.map((x) => <circle cx={x} cy="204" r="3.5" />)}
 		</g>
-		<text x="480" y="224" text-anchor="middle" class="dim">왼쪽으로 피함</text>
-		<text x="640" y="224" text-anchor="middle" class="dim">오른쪽으로 피함</text>
-		<text x="550" y="244" text-anchor="middle" class="dim">점: 생성 모델의 sample, 가로축: 옆으로 피하는 양</text>
+		<text x="480" y="224" text-anchor="middle" class="dim">{t('왼쪽으로 피함', 'Avoids to the left')}</text>
+		<text x="640" y="224" text-anchor="middle" class="dim">{t('오른쪽으로 피함', 'Avoids to the right')}</text>
+		<text x="550" y="244" text-anchor="middle" class="dim">{t('점: 생성 모델의 sample, 가로축: 옆으로 피하는 양', 'Dots: samples of a generative model, horizontal axis: sideways offset')}</text>
 		<defs>
 			<marker id="mm-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
 				<path d="M0 0 L10 5 L0 10z" class="fill-dim" />
@@ -41,6 +45,6 @@ const samples = [468, 477, 486, 494, 628, 637, 646, 655];
 		</defs>
 	</svg>
 	<figcaption>
-		같은 관찰에 맞는 동작이 둘이면 정답의 분포는 봉우리가 두 개입니다. 두 방식의 시연이 반씩이면 L2 loss 의 최적해인 평균도, L1 loss 의 최적해인 중앙값도 두 봉우리 사이에 떨어지고, 그 동작은 시연 어디에도 없습니다.
+		{t('같은 관찰에 맞는 동작이 둘이면 정답의 분포는 봉우리가 두 개입니다. 두 방식의 시연이 반씩이면 L2 loss 의 최적해인 평균도, L1 loss 의 최적해인 중앙값도 두 봉우리 사이에 떨어지고, 그 동작은 시연 어디에도 없습니다.', 'When two actions fit the same observation, the target distribution has two peaks. If the two ways are demonstrated half and half, both the mean, the optimum of the L2 loss, and the median, the optimum of the L1 loss, fall between the two peaks, and that action appears nowhere in the demonstrations.')}
 	</figcaption>
 </figure>

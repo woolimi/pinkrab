@@ -1,16 +1,19 @@
 ---
 // A file to download: a button with its name, and the download icon.
+import { isEn } from '../i18n';
+
 interface Props {
 	/** The file, by name in public/print. */
 	file: string;
 }
 const { file } = Astro.props;
+const en = isEn(Astro.locals.starlightRoute.lang);
 const href = `${import.meta.env.BASE_URL.replace(/\/$/, '')}/print/${file}`;
 ---
 
 <a class="download" href={href} download>
 	<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11m0 0-4.5-4.5M12 15l4.5-4.5M5 19h14"></path></svg>
-	<span>{file} 내려받기</span>
+	<span>{en ? `Download ${file}` : `${file} 내려받기`}</span>
 </a>
 
 <style>

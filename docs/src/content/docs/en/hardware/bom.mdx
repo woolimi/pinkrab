@@ -1,0 +1,100 @@
+---
+title: Bill of materials
+description: The parts needed for one Pinkrab set. Two Pinkrab arms, two Hermit units, cameras, demonstration collection equipment, printed parts, and the host.
+---
+
+import ScrewTotals from '../../../../components/ScrewTotals.astro';
+
+One Pinkrab set consists of two arms hung on a pegboard, two Hermit units held in the hand, five cameras, and the equipment for collecting demonstrations. All quantities below are for one set.
+
+## Pinkrab
+
+| Item | Qty | Spec |
+|---|---:|---|
+| Feetech STS3215 servo | 14 | **12 V model**, gear ratio 1/345 (C018) |
+| [Seeed XIAO bus servo board](https://www.aliexpress.com/item/1005008761261144.html) | 2 | USB |
+| 12 V power adapter | 1 | 12 V 6 A |
+| [IKEA SKÅDIS pegboard](https://www.ikea.com/us/en/p/skadis-pegboard-black-50534378/) | 1 | Panel thickness 5 mm |
+
+- Each arm has 7 servos (6 joints + gripper), and the bus ids are 1–7 starting from the base.
+- One servo board per arm is fitted into the base's driver mount, and a single power adapter drives both arms.
+- The base is fixed to the board with **M4×20 countersunk bolts** (DIN 7991) and M4 nuts. After passing through the 8 mm base plate and the 5 mm panel, the remaining 7 mm holds the nut; the quantities are in [Screws](#screws) below.
+- The default setup has 480 mm between the arms and the base top surface 180 mm above the desk. You may hang them at a different spacing and height to suit your pegboard or desk; just **enter those dimensions in [mounting dimensions](../../use/setup/#mount-dimensions)** afterwards.
+
+## Hermit
+
+| Item | Qty | Spec |
+|---|---:|---|
+| Feetech STS3215 servo | 2 | **7.4 V model**, gear ratio 1/147 (C046) |
+| [Waveshare Bus Servo Adapter (A)](https://www.aliexpress.com/item/1005008842742388.html) | 2 | USB |
+| USB → DC5521 cable | 2 | 5 V |
+
+- There is one servo per hand, and with torque off it only reads the angle the jaw is open. The servo turns together with the jaw when you open and close it with your fingers, so use the model with the **lowest gear ratio**, which is easiest to turn by hand. It is the same model as the servo used for the gripper of the SO-ARM 101 leader arm, and **5 V power is enough**.
+- Set the board's jumper to the **`USB-Servo` side**. On the `UART-Servo` side the servo does not respond.
+- The board's **USB-C does not supply power to the servo**, so power the servo separately with the USB → DC5521 cable.
+
+## Cameras
+
+| Item | Qty | Spec |
+|---|---:|---|
+| Gripper camera [ELP AR0234 fisheye](https://www.aliexpress.com/item/1005012124258479.html) | 4 | global shutter, 200° fisheye lens, USB 3, 1920×1200 |
+| Top camera [ELP AR0234 H120](https://www.aliexpress.com/item/1005012118711826.html) | 1 | global shutter, 120° horizontal undistorted lens, USB 3, 1920×1200 |
+| [Camera head strap](https://www.coupang.com/vp/products/8065902312?itemId=22683855266&vendorItemId=89719759206) | 1 | Strap for wearing the top camera on the head |
+
+- The models in the table are the cameras used while building Pinkrab, and **you may use other cameras for both the gripper cameras and the top camera**. Any UVC camera that OpenCV can open will do, and since the lens is measured per unit rather than taken from the spec sheet, there is no code to change. The conditions to meet and the settings to change afterwards are in [Replacing the camera](../cameras/).
+- Two gripper cameras go on the arm wrists and two on Hermit. The policy learns from Hermit camera video and acts while viewing arm camera video, so **all four must be the same model**.
+- When buying the gripper camera from the linked listing, **be sure to choose 200°** in the "Sensor size" option. Remove the corner screws of the module and fix it with **four long M2 screws** that are long enough to pass through the front wall of the camera bracket.
+- The top camera is the same module as the gripper camera fitted with an undistorted lens; choose **H120** in the lens option on the listing. Wear it on the demonstrator's head with the head strap so it looks down at the work area.
+- Because it is a global shutter, the marker shape is not distorted when the hand moves. The top camera's exposure is fixed at 10 ms over UVC.
+
+## Screws
+
+The count is the sum of the screws used in each step of [Pinkrab assembly](../assemble-arm/) and [Hermit assembly](../assemble-hermit/).
+
+<ScrewTotals kind="arm" />
+
+<ScrewTotals kind="hermit" />
+
+## Collection equipment
+
+| Item | Qty | Spec |
+|---|---:|---|
+| [PCsensor USB foot switch](https://www.coupang.com/vp/products/7603579915?itemId=20120214399&vendorItemId=96012264724) | 1 | 3 pedals, keyboard HID |
+| ChArUco board | 1 | A4 print |
+
+- The foot switch's pedal keys are F16, F17, and F19.
+- The ChArUco board (9×6, 30 mm squares, `DICT_5X5_100`) is used for camera lens calibration. The print file is [lens_charuco_a4.pdf](../../../print/lens_charuco_a4.pdf).
+
+## Printed parts
+
+The print files are Bambu Studio projects (3MF) set up for the Bambu Lab P2S and PLA.
+
+| Group | Files (under `src/`) |
+|---|---|
+| Pinkrab | `pinkrab_description/print/pinkrab_arm_left.3mf`<br />`pinkrab_description/print/pinkrab_arm_right.3mf` |
+| Hermit | `pinkrab_umi/print/umi_handheld_parts_left.3mf`<br />`pinkrab_umi/print/umi_handheld_parts_right.3mf` |
+| Markers | `pinkrab_umi/print/umi_handheld_solids.3mf`<br />`pinkrab_umi/print/umi_handheld_tiles.3mf`<br />`pinkrab_umi/print/umi_desk.3mf`<br />`pinkrab_umi/print/umi_desk_tiles.3mf` |
+
+- A Pinkrab project contains the base, base servo mount, shoulder, shoulder servo mount, upper arm, 2 wrist yaw brackets, wrist, claw, jaw, camera bracket, and driver mount for one arm.
+- A Hermit project contains the handheld body, jaw, peg, camera bracket, board mount, and driver plate for one hand.
+- The markers are 2 UMI markers attached to the Hermit handles, 1 table marker placed on the desk, and the marker tiles that fit into their faces. The two markers are printed in white PLA, and the tiles in white and black PLA.
+
+Filament usage and print time are the values from slicing the 3MF files above in Bambu Studio. The per-plate values and the files to download are in [Printing the parts](../print/).
+
+| Group | PLA | Print time |
+|---|---:|---:|
+| Pinkrab | 793 g | 27 h 8 min |
+| Hermit | 257 g | 9 h 33 min |
+| Markers | 236 g | 7 h 7 min |
+
+## Host
+
+| Item | Spec |
+|---|---|
+| PC | Ubuntu 24.04 (ROS 2 Jazzy) or macOS |
+| Training GPU | NVIDIA 8 GB or more |
+| USB hub | USB 3, 7 or more ports |
+
+- Training ACT with batch 8 on the video from two gripper cameras uses close to 6 GB of GPU memory.
+- Connect to the USB hub 2 gripper cameras, the top camera, 2 arm boards, and 2 Hermit boards. When collecting demonstrations you connect the Hermit cameras, and when running a policy you connect the arm cameras, so **only 2 gripper cameras** need to be plugged in at a time. The top camera stays plugged in.
+- Connect the foot switch **directly to the PC**.

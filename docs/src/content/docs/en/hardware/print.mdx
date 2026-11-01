@@ -1,0 +1,82 @@
+---
+title: Printing the parts
+description: The printed parts of Pinkrab, Hermit, and the markers. Bambu Studio project (3MF) downloads, common settings, plate layout, and print time.
+---
+
+import PrintPlates from '../../../../components/PrintPlates.astro';
+
+The printed parts come as Bambu Studio projects (3MF) set up for the Bambu Lab P2S. Each project contains the part layout, print orientation, and settings, so download it, open it in Bambu Studio, and **slice and print plate by plate**. The figures below read the downloadable 3MF directly and show the parts as they sit on the bed for each plate. The same files are also in the repo at `src/pinkrab_description/print/` and `src/pinkrab_umi/print/`.
+
+## Common settings
+
+| Item | Value |
+|---|---|
+| Printer | Bambu Lab P2S, 0.4 mm nozzle |
+| Filament | Bambu PLA Basic |
+| Build plate | Textured PEI |
+| Process | 0.20mm Standard @BBL P2S |
+| Support | tree (auto) |
+
+Only a few values of the process were changed from the system settings, and the changed values are shown next to the process name in Bambu Studio. The values changed in every project are:
+
+- `seam_position` back: gathers the seam at the back of the part.
+- `precise_outer_wall` 1: makes the outer wall dimensions match the design dimensions.
+- `counterbore_hole_bridging` partiallybridge: builds the floor of the screw head recess as a bridge without support.
+
+Pinkrab and Hermit are printed in hot pink PLA, and the UMI marker and table marker in white PLA; the filament colors in the projects are set accordingly. Only the marker tiles use two colors, white and black.
+
+## Pinkrab
+
+There is one project per arm, with 2 plates per project. The right arm's plates are the left arm's plates mirrored left to right. Walls are 3 loops, infill is 15 % gyroid, and the brim is 3 mm outside.
+
+<PrintPlates
+	files={[{ file: 'pinkrab_arm_left.3mf', label: 'Left arm' }, { file: 'pinkrab_arm_right.3mf', label: 'Right arm' }]}
+	label="Plates of the Pinkrab project. The arm parts sit on the P2S bed in their print orientation."
+/>
+
+| Plate | Parts | Print time | PLA |
+|---|---|---:|---:|
+| 1 | base, claw, 2 wrist yaw brackets, driver mount, shoulder servo mount | 6 h 53 min | 206 g |
+| 2 | shoulder, wrist, upper arm, jaw, base servo mount, camera bracket | 6 h 41 min | 190 g |
+
+The times and weights in the table are for the left arm. The right arm's driver mount is **not a mirror image but a different shape**, so plate 1 of the right arm takes about 1 minute and 1 g more.
+
+## Hermit
+
+There is one project per hand, and all the parts of one hand fit on a single plate. Because these parts are held and handled, they are printed **sturdier than Pinkrab** with walls of 4 loops and 25 % gyroid infill, and the brim is 3 mm outside.
+
+<PrintPlates
+	files={[{ file: 'umi_handheld_parts_left.3mf', label: 'Left hand' }, { file: 'umi_handheld_parts_right.3mf', label: 'Right hand' }]}
+	label="Plate of the Hermit project. The Hermit parts sit on the P2S bed in their print orientation."
+/>
+
+| Plate | Parts | Print time | PLA |
+|---|---|---:|---:|
+| 1 | handheld body, peg, jaw, camera bracket, board mount, driver plate | 4 h 47 min | 128 g |
+
+The times and weights in the table are for the left hand, and the right hand is the same to within 1 minute.
+
+## Markers
+
+The markers are 2 UMI markers attached to the Hermit handles and 1 table marker placed on the desk. Each face of the two markers has a pocket, and **separately printed marker tiles** fit into those pockets.
+
+<PrintPlates
+	files={[
+		{ file: 'umi_handheld_solids.3mf', label: 'UMI marker' },
+		{ file: 'umi_handheld_tiles.3mf', label: 'UMI marker tiles' },
+		{ file: 'umi_desk.3mf', label: 'Table marker' },
+		{ file: 'umi_desk_tiles.3mf', label: 'Table marker tiles' },
+	]}
+	label="Plates of the marker projects. The UMI marker, table marker, and tiles sit on the P2S bed in their print orientation."
+/>
+
+| Project | Plates | Print time | PLA |
+|---|---:|---:|---:|
+| UMI marker (`umi_handheld_solids.3mf`) | 1 | 3 h 41 min | 135 g |
+| UMI marker tiles (`umi_handheld_tiles.3mf`) | 2 | 1 h 38 min | 36 g |
+| Table marker (`umi_desk.3mf`) | 1 | 1 h 7 min | 50 g |
+| Table marker tiles (`umi_desk_tiles.3mf`) | 1 | 41 min | 15 g |
+
+- The UMI marker and table marker use 4 wall loops and 10 % cubic infill. Fitting the tiles presses on the pocket floor, so **do not switch to lightning infill**.
+- Print the table marker with the cut face on the bed and **without support**.
+- A tile is two parts, a white base and the black cells on top of it forming one object, so it is printed in two colors, white and black PLA. Because the mating face touches the bed, **no brim is used** and the walls are 2 loops.

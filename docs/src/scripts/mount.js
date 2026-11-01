@@ -9,6 +9,7 @@
 
 import * as THREE from 'three';
 import { LAYERS, SIDE, solids, stage } from './stage.js';
+import { pick } from './lang.js';
 
 const SVG = 'http://www.w3.org/2000/svg';
 // Room round the arms, as a fraction of the picture, for the dimensions.
@@ -140,7 +141,7 @@ export async function showMount(figure, sources, which) {
       line([x - 12, faceY], [axes[0], faceY], 'ext');
       dimension([x, faceY], [x, deskY]);
       tag([x, (faceY + deskY) / 2], mm(top));
-      const names = { left: '왼팔', right: '오른팔' };
+      const names = { left: pick('왼팔', 'Left arm'), right: pick('오른팔', 'Right arm') };
       for (const s of Object.keys(pan)) {
         const [px] = screen(pan[s].x, pan[s].y, 0);
         add('text', { x: px, y: deskY + 18, class: 'label', 'text-anchor': 'middle' }, names[s]);
@@ -155,11 +156,11 @@ export async function showMount(figure, sources, which) {
       line(face[0], face[1], 'face');
       dimension([x, face[0][1]], [x, deskY]);
       tag([x, (face[0][1] + deskY) / 2], mm(top));
-      add('text', { x: x - 10, y: face[0][1] - 8, class: 'label hot', 'text-anchor': 'end' }, '베이스 윗면');
+      add('text', { x: x - 10, y: face[0][1] - 8, class: 'label hot', 'text-anchor': 'end' }, pick('베이스 윗면', 'Base top'));
       const axis = screen(pan[SIDE].x, b.y, 0)[0];
       line([axis, h * MARGIN.side.top * 0.6], [axis, deskY], 'axis');
-      add('text', { x: axis, y: h * MARGIN.side.top * 0.45, class: 'label dimmed', 'text-anchor': 'middle' }, 'shoulder_pan 축');
-      add('text', { x: screen(0.009, b.y, 0)[0], y: deskY + 18, class: 'label', 'text-anchor': 'middle' }, '보드');
+      add('text', { x: axis, y: h * MARGIN.side.top * 0.45, class: 'label dimmed', 'text-anchor': 'middle' }, pick('shoulder_pan 축', 'shoulder_pan axis'));
+      add('text', { x: screen(0.009, b.y, 0)[0], y: deskY + 18, class: 'label', 'text-anchor': 'middle' }, pick('보드', 'Board'));
     }
   }
 

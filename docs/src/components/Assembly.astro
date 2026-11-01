@@ -4,31 +4,38 @@
 // the script, its words in the list, which is all a reader without the
 // picture gets and all it needs.
 import Stage3D from './Stage3D.astro';
-import { ARM, HERMIT } from '../data/assembly';
+import { stepsOf } from '../data/assembly';
+import { isEn } from '../i18n';
 
 interface Props {
 	kind: 'arm' | 'hermit';
 }
 const { kind } = Astro.props;
-const steps = kind === 'arm' ? ARM : HERMIT;
-const sides = kind === 'arm' ? ['왼팔', '오른팔'] : ['왼손', '오른손'];
-const label = kind === 'arm'
+const lang = Astro.locals.starlightRoute.lang;
+const en = isEn(lang);
+const steps = stepsOf(kind, lang);
+const sides = kind === 'arm' ? (en ? ['Left arm', 'Right arm'] : ['왼팔', '오른팔']) : (en ? ['Left hand', 'Right hand'] : ['왼손', '오른손']);
+const label = en
+	? kind === 'arm'
+		? 'The assembly steps of the Pinkrab arm. In each step the new parts come in pink from the direction they fit, then that step\'s screws turn in. Parts attached earlier are shown faded.'
+		: 'The assembly steps of the Hermit. In each step the new parts come in pink from the direction they fit, then that step\'s screws turn in. The UMI marker is white, as printed. Parts attached earlier are shown faded.'
+	: kind === 'arm'
 	? 'Pinkrab 팔의 조립 단계. 단계마다 새로 붙는 부품이 끼워지는 방향으로 분홍색으로 들어오고, 이어서 그 단계의 나사가 돌아 들어갑니다. 앞서 붙인 부품은 옅게 보입니다.'
 	: 'Hermit 의 조립 단계. 단계마다 새로 붙는 부품이 끼워지는 방향으로 분홍색으로 들어오고, 이어서 그 단계의 나사가 돌아 들어갑니다. UMI 마커는 출력한 대로 흰색입니다. 앞서 붙인 부품은 옅게 보입니다.';
 ---
 
 <figure class="pk-assembly not-content" data-kind={kind} tabindex="-1">
-	<div class="sides" role="group" aria-label="조립할 쪽">
+	<div class="sides" role="group" aria-label={en ? 'Side to build' : '조립할 쪽'}>
 		<button type="button" data-side="left" aria-pressed="true">{sides[0]}</button>
 		<button type="button" data-side="right" aria-pressed="false">{sides[1]}</button>
 	</div>
 	<Stage3D label={label} zoom />
 	<div class="controls">
-		<button type="button" class="prev" aria-label="이전 단계">
+		<button type="button" class="prev" aria-label={en ? 'Previous step' : '이전 단계'}>
 			<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"></path></svg>
 		</button>
 		<span class="count" aria-live="polite">1 / {steps.length}</span>
-		<button type="button" class="next" aria-label="다음 단계">
+		<button type="button" class="next" aria-label={en ? 'Next step' : '다음 단계'}>
 			<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7"></path></svg>
 		</button>
 	</div>
@@ -39,7 +46,7 @@ const label = kind === 'arm'
 				<div class="body">
 					<p>{step.text}</p>
 					{step.screws?.length ? (
-						<ul class="screws" aria-label="나사">
+						<ul class="screws" aria-label={en ? 'Screws' : '나사'}>
 							{step.screws.map((s) => (
 								<li><b>{s.size}</b><span class="x">×{s.count}</span><span class="what">{s.what}</span></li>
 							))}

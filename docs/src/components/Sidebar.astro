@@ -3,15 +3,18 @@
 // sidebar, double-click it to go back to the default. The width is kept in
 // the browser and set again before the page paints (astro.config.mjs).
 import Default from '@astrojs/starlight/components/Sidebar.astro';
+import { pick } from '../i18n';
+
+const lang = Astro.locals.starlightRoute.lang;
 ---
 
 <Default />
 <pk-sidebar-resize
 	role="separator"
 	aria-orientation="vertical"
-	aria-label="사이드바 너비"
+	aria-label={pick(lang, '사이드바 너비', 'Sidebar width')}
 	tabindex="0"
-	title="끌어서 너비 조절, 더블클릭으로 기본값"></pk-sidebar-resize>
+	title={pick(lang, '끌어서 너비 조절, 더블클릭으로 기본값', 'Drag to resize, double-click for the default')}></pk-sidebar-resize>
 
 <script>
 	const KEY = 'pk-sidebar-width';

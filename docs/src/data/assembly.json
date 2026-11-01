@@ -10,7 +10,11 @@
 			"text": "베이스를 페그보드에 대고 볼트를 앞에서 끼워 뒤에서 너트로 조입니다. 베이스 판 8 mm 와 패널 5 mm 를 지나고 남은 7 mm 에 너트가 물립니다. 두 팔의 간격은 480 mm, 베이스 윗면 높이는 책상 위 180 mm 입니다.",
 			"parts": [
 				"base_link:base"
-			]
+			],
+			"en": {
+				"title": "Base",
+				"text": "Hold the base against the pegboard, push the bolts through from the front and tighten them with nuts at the back. The bolts pass the 8 mm base plate and the 5 mm panel, and the nuts seat on the remaining 7 mm. The two arms are 480 mm apart, and the top of the base is 180 mm above the desk."
+			}
 		},
 		{
 			"title": "shoulder_pan 서보 (id 1)",
@@ -18,7 +22,11 @@
 			"parts": [
 				"base_servo_link:servo",
 				"base_link:base_servo_mount"
-			]
+			],
+			"en": {
+				"title": "shoulder_pan servo (id 1)",
+				"text": "Fit a horn on each side of the servo and fix only the top horn with its centre screw. Put the servo in the base servo mount and fix it with 2 screws at the top and 2 at the bottom, then set the mount on the base and fix it at both sides."
+			}
 		},
 		{
 			"title": "서보 보드",
@@ -41,6 +49,10 @@
 					"usb": "in"
 				},
 				"xiao": true
+			},
+			"en": {
+				"title": "Servo board",
+				"text": "Fix the Seeed XIAO bus servo board to the driver mount with 4 screws, then slide the driver mount in from the side into the slot between the base and the servo holder. The screw heads sink into the mount, so attach the board before sliding it in."
 			}
 		},
 		{
@@ -49,90 +61,142 @@
 			"parts": [
 				"shoulder_link:shoulder",
 				"shoulder_link:shoulder_servo_mount"
-			]
+			],
+			"en": {
+				"title": "Shoulder",
+				"text": "Set the shoulder on the top and bottom horns of the id 1 servo and fix each horn with 4 screws. The shoulder servo mount comes attached to the shoulder."
+			}
 		},
 		{
 			"title": "shoulder_lift 서보 (id 2)",
 			"text": "혼을 끼우고 윗면 혼을 고정한 뒤, 서보를 shoulder servo mount 에 넣어 고정합니다.",
 			"parts": [
 				"shoulder_servo_link:servo"
-			]
+			],
+			"en": {
+				"title": "shoulder_lift servo (id 2)",
+				"text": "Fit the horns and fix the top horn, then put the servo in the shoulder servo mount and fix it."
+			}
 		},
 		{
 			"title": "위팔",
 			"text": "위팔(upper_arm)을 id 2 서보의 양쪽 혼에 고정합니다.",
 			"parts": [
 				"upper_arm_link:upper_arm"
-			]
+			],
+			"en": {
+				"title": "Upper arm",
+				"text": "Fix the upper arm (upper_arm) to the horns on both sides of the id 2 servo."
+			}
 		},
 		{
 			"title": "elbow_flex 서보 (id 3)",
 			"text": "혼을 끼우고 윗면 혼을 고정한 뒤, 서보를 위팔 끝의 서보 자리에 넣어 고정합니다.",
 			"parts": [
 				"upper_arm_servo_link:servo"
-			]
+			],
+			"en": {
+				"title": "elbow_flex servo (id 3)",
+				"text": "Fit the horns and fix the top horn, then put the servo in the servo seat at the end of the upper arm and fix it."
+			}
 		},
 		{
 			"title": "아래팔",
 			"text": "아래팔이 되는 wrist_yaw_bracket 을 id 3 서보의 양쪽 혼에 고정합니다.",
 			"parts": [
 				"lower_arm_link:wrist_yaw_bracket"
-			]
+			],
+			"en": {
+				"title": "Forearm",
+				"text": "Fix the wrist_yaw_bracket that becomes the forearm to the horns on both sides of the id 3 servo."
+			}
 		},
 		{
 			"title": "wrist_flex 서보 (id 4)",
 			"text": "혼을 끼우고 윗면 혼을 고정한 뒤, 서보를 아래팔의 서보 자리에 넣어 고정합니다.",
 			"parts": [
 				"lower_arm_servo_link:servo"
-			]
+			],
+			"en": {
+				"title": "wrist_flex servo (id 4)",
+				"text": "Fit the horns and fix the top horn, then put the servo in the servo seat of the forearm and fix it."
+			}
 		},
 		{
 			"title": "wrist_yaw 브래킷",
 			"text": "두 번째 wrist_yaw_bracket 을 id 4 서보의 양쪽 혼에 고정합니다.",
 			"parts": [
 				"wrist_yaw_link:wrist_yaw_bracket"
-			]
+			],
+			"en": {
+				"title": "wrist_yaw bracket",
+				"text": "Fix the second wrist_yaw_bracket to the horns on both sides of the id 4 servo."
+			}
 		},
 		{
 			"title": "wrist_yaw 서보 (id 5)",
 			"text": "혼을 끼우고 윗면 혼을 고정한 뒤, 서보를 브래킷의 서보 자리에 넣어 고정합니다.",
 			"parts": [
 				"wrist_yaw_servo_link:servo"
-			]
+			],
+			"en": {
+				"title": "wrist_yaw servo (id 5)",
+				"text": "Fit the horns and fix the top horn, then put the servo in the servo seat of the bracket and fix it."
+			}
 		},
 		{
 			"title": "손목",
 			"text": "손목(wrist)을 id 5 서보의 양쪽 혼에 고정합니다.",
 			"parts": [
 				"wrist_link:wrist"
-			]
+			],
+			"en": {
+				"title": "Wrist",
+				"text": "Fix the wrist to the horns on both sides of the id 5 servo."
+			}
 		},
 		{
 			"title": "wrist_roll 서보 (id 6)",
 			"text": "이 서보는 혼을 윗면 하나만 끼워 가운데 나사로 고정합니다. 서보를 손목의 서보 자리에 넣어 앞쪽 나사 2개로 고정하고, 혼이 claw 가 붙을 바깥쪽을 향하게 합니다.",
 			"parts": [
 				"wrist_servo_link:servo_no_horn"
-			]
+			],
+			"en": {
+				"title": "wrist_roll servo (id 6)",
+				"text": "This servo gets only one horn, on the top, fixed with its centre screw. Put the servo in the servo seat of the wrist and fix it with the 2 front screws, with the horn facing outward, where the claw goes."
+			}
 		},
 		{
 			"title": "claw",
 			"text": "claw 바닥을 id 6 서보의 혼에 대고, claw 안쪽 서보 자리에서 나사 4개를 조입니다. 다음 단계의 서보가 이 자리를 덮으므로 나사부터 조입니다.",
 			"parts": [
 				"gripper_link:claw"
-			]
+			],
+			"en": {
+				"title": "claw",
+				"text": "Set the claw base against the horn of the id 6 servo and tighten 4 screws from the servo seat inside the claw. The next step's servo covers this seat, so tighten the screws first."
+			}
 		},
 		{
 			"title": "카메라 너트",
 			"text": "claw 옆면 안쪽의 너트 자리 2곳에 M3 육각 너트를 하나씩 끼워 넣습니다. 다음 단계에서 서보가 들어가면 너트 자리가 막히므로 서보보다 먼저 넣습니다. 이 너트가 카메라 bracket 을 고정하는 M3×10 볼트를 받습니다.",
 			"parts": [],
-			"nuts": "camera_bracket_link:camera_bracket"
+			"nuts": "camera_bracket_link:camera_bracket",
+			"en": {
+				"title": "Camera nuts",
+				"text": "Push an M3 hex nut into each of the 2 nut slots on the inside of the claw's side face. The servo of the next step closes the slots, so put the nuts in before the servo. These nuts take the M3×10 bolts that hold the camera bracket."
+			}
 		},
 		{
 			"title": "gripper 서보 (id 7)",
 			"text": "혼을 끼우고 윗면 혼을 고정한 뒤, 서보를 claw 의 서보 자리에 넣어 양옆 2개씩 나사로 고정합니다.",
 			"parts": [
 				"gripper_servo_link:servo"
-			]
+			],
+			"en": {
+				"title": "gripper servo (id 7)",
+				"text": "Fit the horns and fix the top horn, then put the servo in the servo seat of the claw and fix it with 2 screws on each side."
+			}
 		},
 		{
 			"title": "jaw",
@@ -140,7 +204,11 @@
 			"parts": [
 				"jaw_link:jaw"
 			],
-			"horn": "M2.5"
+			"horn": "M2.5",
+			"en": {
+				"title": "jaw",
+				"text": "Fix the jaw to the horn of the id 7 servo with a horn screw. The screw-head seats are on both faces of the jaw. Turn the jaw by hand and check that it closes against the claw."
+			}
 		},
 		{
 			"title": "카메라",
@@ -152,14 +220,23 @@
 				{
 					"size": "M2",
 					"count": 4,
-					"what": "카메라 모듈 → bracket"
+					"what": "카메라 모듈 → bracket",
+					"whatEn": "Camera module → bracket"
 				}
-			]
+			],
+			"en": {
+				"title": "Camera",
+				"text": "Remove the four corner screws of the AR0234 camera module and fix the module to the camera bracket with 4 M2 screws long enough to pass the front wall of the bracket. Fix the bracket to the side face of the claw with 2 bolts, which go into the nuts placed inside the claw earlier."
+			}
 		},
 		{
 			"title": "케이블",
 			"text": "서보를 베이스부터 손끝까지 서보 케이블로 차례로 잇고, 첫 서보를 서보 보드에 연결합니다. 서보 보드에는 12 V 전원을, 보드와 카메라는 USB 로 호스트에 연결합니다. 서보 id 는 조립한 뒤 준비 단계에서 하나씩 씁니다.",
-			"parts": []
+			"parts": [],
+			"en": {
+				"title": "Cables",
+				"text": "Connect the servos with servo cables in order from the base to the fingertip, and connect the first servo to the servo board. Power the servo board with 12 V, and connect the board and the camera to the host by USB. The servo ids are written one by one in the setup step after assembly."
+			}
 		}
 	],
 	"hermit": [
@@ -168,20 +245,32 @@
 			"text": "handheld body 가 Hermit 의 뼈대입니다. 고정된 날 아래로 검지가 들어가는 터널이 있고, 위에는 UMI 마커를 거는 지붕이 있습니다.",
 			"parts": [
 				"body"
-			]
+			],
+			"en": {
+				"title": "body",
+				"text": "The handheld body is the frame of the Hermit. It has a tunnel under the fixed blade for the index finger, and a roof above it that carries the UMI marker."
+			}
 		},
 		{
 			"title": "카메라 너트",
 			"text": "body 의 claw 옆면 안쪽의 너트 자리 2곳에 M3 육각 너트를 하나씩 끼워 넣습니다. 다음 단계에서 서보가 들어가면 너트 자리가 막히므로 서보보다 먼저 넣습니다. 이 너트가 카메라 bracket 을 고정하는 M3×10 볼트를 받습니다.",
 			"parts": [],
-			"nuts": "camera_bracket"
+			"nuts": "camera_bracket",
+			"en": {
+				"title": "Camera nuts",
+				"text": "Push an M3 hex nut into each of the 2 nut slots on the inside of the body's claw side face. The servo of the next step closes the slots, so put the nuts in before the servo. These nuts take the M3×10 bolts that hold the camera bracket."
+			}
 		},
 		{
 			"title": "서보",
 			"text": "STS3215 7.4 V 서보에 혼을 끼우고 윗면 혼을 가운데 나사로 고정한 뒤, 서보를 body 의 서보 자리에 넣어 양옆 2개씩 나사로 고정합니다. 이 서보는 모터로 돌지 않고 jaw 가 열린 각도만 읽습니다.",
 			"parts": [
 				"servo"
-			]
+			],
+			"en": {
+				"title": "Servo",
+				"text": "Fit the horns on the STS3215 7.4 V servo and fix the top horn with its centre screw, then put the servo in the servo seat of the body and fix it with 2 screws on each side. This servo is not driven; it only reads the angle the jaw is opened to."
+			}
 		},
 		{
 			"title": "jaw",
@@ -189,7 +278,11 @@
 			"parts": [
 				"jaw"
 			],
-			"horn": "M2.5"
+			"horn": "M2.5",
+			"en": {
+				"title": "jaw",
+				"text": "Fix the handheld jaw to the servo horn with a horn screw. The screw-head seats are on both faces of the jaw. The thumb goes into the tunnel under the jaw and opens and closes the jaw together with the index finger."
+			}
 		},
 		{
 			"title": "카메라",
@@ -201,30 +294,47 @@
 				{
 					"size": "M2",
 					"count": 4,
-					"what": "카메라 모듈 → bracket"
+					"what": "카메라 모듈 → bracket",
+					"whatEn": "Camera module → bracket"
 				}
-			]
+			],
+			"en": {
+				"title": "Camera",
+				"text": "Remove the four corner screws of the AR0234 camera module and fix the module to the camera bracket with 4 M2 screws long enough to pass the front wall of the bracket. Fix the bracket to the claw side face of the body with 2 bolts, which go into the nuts placed earlier. The camera sits in the same place as on the arm."
+			}
 		},
 		{
 			"title": "peg",
 			"text": "peg 를 body 지붕 아래의 사각 구멍에 끝까지 끼웁니다. 나사 없이 꽉 끼워지며, 사각이라 UMI 마커가 peg 위에서 돌지 않습니다.",
 			"parts": [
 				"peg"
-			]
+			],
+			"en": {
+				"title": "peg",
+				"text": "Push the peg all the way into the square hole under the body's roof. It fits tightly without screws, and being square it keeps the UMI marker from turning on the peg."
+			}
 		},
 		{
 			"title": "UMI 마커",
 			"text": "UMI 마커의 면마다 마커 타일을 끼운 뒤, 마커의 소켓을 peg 에 끝까지 끼웁니다. 빈 면 하나가 지붕에 닿고, 다른 빈 면 하나가 손 쪽을 향합니다.",
 			"parts": [
 				"solid"
-			]
+			],
+			"en": {
+				"title": "UMI marker",
+				"text": "Push a marker tile into each face of the UMI marker, then push the marker's socket all the way onto the peg. One empty face touches the roof, and another empty face points toward the hand."
+			}
 		},
 		{
 			"title": "board mount",
 			"text": "board mount 를 UMI 마커의 손 쪽 빈 면에 끼웁니다.",
 			"parts": [
 				"board_mount"
-			]
+			],
+			"en": {
+				"title": "board mount",
+				"text": "Fit the board mount onto the empty face of the UMI marker that points toward the hand."
+			}
 		},
 		{
 			"title": "driver plate 와 서보 보드",
@@ -247,12 +357,20 @@
 				"right": {
 					"usb": "back"
 				}
+			},
+			"en": {
+				"title": "driver plate and servo board",
+				"text": "Fix the Waveshare Bus Servo Adapter (A) to the driver plate with 4 screws and fit the plate onto the board mount. The screw heads sink into the face of the plate that fits in. Leave the board's jumper on the USB-Servo side."
 			}
 		},
 		{
 			"title": "케이블",
 			"text": "서보를 서보 보드에 연결하고, 보드의 USB-C 와 카메라의 USB 를 호스트에 연결합니다. 보드의 USB-C 로는 서보에 전원이 가지 않으므로 USB → DC5521 케이블로 5 V 를 따로 넣습니다.",
-			"parts": []
+			"parts": [],
+			"en": {
+				"title": "Cables",
+				"text": "Connect the servo to the servo board, and connect the board's USB-C and the camera's USB to the host. The board's USB-C does not power the servo, so feed 5 V separately through a USB to DC5521 cable."
+			}
 		}
 	]
 }

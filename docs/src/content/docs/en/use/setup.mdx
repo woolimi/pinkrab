@@ -1,0 +1,196 @@
+---
+title: Setup
+description: Settings to make before first using an assembled Pinkrab and Hermit. Servo board assignment, servo ids, servo check, mount dimensions, calibration, and camera and lens measurement.
+---
+
+import HomePose from '../../../../components/HomePose.astro';
+import BoardPreview from '../../../../components/BoardPreview.astro';
+import JointNames from '../../../../components/JointNames.astro';
+import Output from '../../../../components/Output.astro';
+import MountDims from '../../../../components/MountDims.astro';
+import doctor from '../../../../transcripts/doctor.txt?raw';
+import check from '../../../../transcripts/check.txt?raw';
+import portsDetect from '../../../../transcripts/ports-detect.txt?raw';
+import setupMotors from '../../../../transcripts/setup-motors.txt?raw';
+import mount from '../../../../transcripts/mount.txt?raw';
+import camerasArm from '../../../../transcripts/cameras-arm.txt?raw';
+import lensFitArm from '../../../../transcripts/lens-fit-arm.txt?raw';
+import umiDetect from '../../../../transcripts/umi-detect.txt?raw';
+import lensFitHand from '../../../../transcripts/lens-fit-hand.txt?raw';
+import camerasTop from '../../../../transcripts/cameras-top.txt?raw';
+import lensFitTop from '../../../../transcripts/lens-fit-top.txt?raw';
+
+**Once**, after assembly, set things up so that the computer knows which board is which arm, how far the servos move, and how the camera lenses distort the image. The arms are set up with the `pinkrab` command, and Hermit and the top camera with the `pinkrab-umi` command; all results are saved under `~/pinkrab/`.
+
+You can check how far the setup has come at any time.
+
+```bash
+pinkrab doctor
+```
+
+<Output out={doctor} />
+
+`pinkrab doctor` **changes nothing**. It checks the environment, the connected boards, and the description, then shows for each step of this page whether it is done and the command to run for the remaining steps.
+
+## Servo board assignment
+
+The servo boards of the two arms are identical, so the device names the operating system assigns cannot tell which board is which arm. Once you **assign them by plugging in in order**, the same arm is recognized even after you unplug and replug a board.
+
+```bash
+pinkrab ports detect
+```
+
+<Output out={portsDetect} />
+
+Following the prompts, unplug both boards, then plug them in **one at a time, left arm board first, then right arm board**. If you find the arms swapped after the assignment, swap them with `pinkrab ports swap`.
+
+## Servo ID
+
+STS3215 servos all come from the factory with id 1, so to use them on the same bus each servo needs its own id written. The ids are 1–7 from the base outward, and are written through the arm's board assigned in the previous step.
+
+```bash
+pinkrab setup-motors left
+pinkrab setup-motors right
+```
+
+<Output out={setupMotors} title="Output · pinkrab setup-motors left" />
+
+**Connect only the one servo** of the joint shown on screen to the board and press ENTER, and that servo gets its id. If you write with two or more servos connected, all connected servos receive the same id, so **always connect them one at a time**. A servo that already has an id does not need one assigned again; enter an id again only when you want a different id or have replaced a servo. To enter the id of one specific joint directly, specify the joint with `--joints`.
+
+```bash
+pinkrab setup-motors left --joints wrist_roll           # only the left arm wrist roll servo
+pinkrab setup-motors right --joints wrist_flex wrist_yaw # two joints of the right arm
+```
+
+The joint names are `shoulder_pan`, `shoulder_lift`, `elbow_flex`, `wrist_flex`, `wrist_yaw`, `wrist_roll`, and `gripper`. Even when you specify several joints, they are written **in order from the gripper toward the base**, regardless of the order you typed, so in the second example above you connect the wrist yaw first and the wrist flex afterward.
+
+<JointNames />
+
+## Servo response check
+
+```bash
+pinkrab check
+```
+
+<Output out={check} />
+
+It sends a signal to the 7 servos of each arm in turn and shows the response, the current position, and the temperature. The servos are daisy-chained from the base outward, so if a middle connection is missing, every servo after it stops responding; in that case `check` reports the **first joint that did not respond**, so check that joint's cable first. If it reports that several servos respond at once, a servo without an id is still left, so go back to the [Servo ID](#servo-id) step.
+
+## Mount dimensions
+
+```bash
+pinkrab mount
+```
+
+<Output out={mount} />
+
+Enter the two actual mount dimensions on the desk **in mm**. The defaults are a spacing of 480 mm and a height of 180 mm; if you mounted the arms at a different spacing or height, enter the values **measured with a tape measure**. Pressing only Enter leaves the current value as is.
+
+- The distance between the two arm base centers. Measure **between the shoulder_pan axes of the two arms**.
+- The height from the desk surface to the top of the base. Measure up to **the flat top surface** formed together by the base plate, the beam, and the first servo's cover.
+
+<MountDims />
+
+The values are saved in `src/pinkrab_description/config/mount.yaml`.
+
+These values determine where the two arms are in the desk coordinate frame, and inverse kinematics and the simulation use the same values.
+
+## Arm calibration
+
+Calibration is done separately for each arm: you hold the arm in the home pose, start, and then move every joint from end to end so that the range each joint actually moves through is recorded in the servo. **Clear the space** the wall-mounted arm will move in first.
+
+```bash
+pinkrab calibrate left
+pinkrab calibrate right
+```
+
+1. When it starts, the **torque is released** and you can move the arm by hand.
+2. Hold the arm in the home pose in the figure below, **close the gripper**, and press ENTER.
+3. Move each joint **slowly** from one end to the other, one at a time, and press ENTER when you have finished all of them.
+
+<HomePose />
+
+The home pose is as follows.
+
+- shoulder pan: the shoulder faces the front of the board.
+- shoulder lift: the upper arm is tilted back and laid right above the top surface of the base.
+- elbow flex: the forearm is folded forward and overlaps the upper arm.
+- wrist flex: the wrist yaw bracket is centered so it tilts neither way.
+- wrist yaw: the wrist is turned until it touches the wall of the bracket opening.
+- wrist roll: the gripping surface is perpendicular to the wall, and the claw is on the outside.
+
+You must move **every joint all the way**, including wrist roll. The wrist roll stops at ±175°, where the stops printed on the claw and the wrist meet, and the ends found in calibration become the servo's limit values as they are. The results are saved per arm in `~/pinkrab/calibration/robots/pinkrab_follower/`.
+
+## Wrist cameras
+
+The wrist cameras of the two arms are also the same model, so plug them in one at a time following the prompts to assign which camera is which arm.
+
+```bash
+pinkrab cameras
+```
+
+<Output out={camerasArm} />
+
+Next, measure the lens for each arm. Print the ChArUco board below **at actual size on A4**, attach it to a flat board, and show it in front of the camera while changing its distance and angle. Usable scenes are saved automatically, and when enough have accumulated, fit computes the lens values.
+
+<BoardPreview />
+
+```bash
+pinkrab lens capture left
+pinkrab lens fit left
+pinkrab lens capture right
+pinkrab lens fit right
+```
+
+<Output out={lensFitArm} title="Output · pinkrab lens fit left" />
+
+## Hermit
+
+Hermit is set up in the same order as the arms.
+
+```bash
+pinkrab-umi setup-motor umi_left   # new servos only, connected one at a time
+pinkrab-umi setup-motor umi_right
+pinkrab-umi detect                 # assign by plugging in the left hand board, then the right hand board
+pinkrab-umi check umi_left
+pinkrab-umi check umi_right
+pinkrab-umi calibrate umi_left
+pinkrab-umi calibrate umi_right
+pinkrab-umi cameras                # plug in one at a time following the prompts to assign
+```
+
+<Output out={umiDetect} title="Output · pinkrab-umi detect" />
+
+Hermit's servo does not move the jaw and only reads how far the jaw is open, so calibration records only the servo positions **with the jaw fully closed and with it opened all the way**. The lens is measured the same way as for the wrist cameras.
+
+```bash
+pinkrab-umi lens capture left
+pinkrab-umi lens fit left
+pinkrab-umi lens capture right
+pinkrab-umi lens fit right
+```
+
+<Output out={lensFitHand} title="Output · pinkrab-umi lens fit left" />
+
+## Top camera
+
+The top camera is the same module as the gripper cameras, so it is told apart by the USB socket it is plugged into. Following the prompts, **unplug only the top camera and plug it back in**, and that socket is assigned to the top camera; the gripper cameras may stay plugged in.
+
+```bash
+pinkrab-umi cameras --top
+```
+
+<Output out={camerasTop} />
+
+The lens is also measured with the same ChArUco board. The top camera needs its lens values measured to compute marker poses, so the collection screen does not unlock markers before they are measured. Lift the board off the desk, **tilt it 30–45°** in various directions, and show it close and far, moving it **all the way to the screen corners**.
+
+```bash
+pinkrab-umi lens capture top
+pinkrab-umi lens fit top
+```
+
+<Output out={lensFitTop} title="Output · pinkrab-umi lens fit top" />
+
+While measuring, turn off **other programs that use the top camera** (`pinkrab-umi live`, the collection screen in studio). If you change the lens, clear `~/pinkrab/lens/top` and measure again.
+
+Finally, run `pinkrab doctor` again to confirm that every item is done.

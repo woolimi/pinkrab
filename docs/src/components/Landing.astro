@@ -1,18 +1,21 @@
 ---
 import { Icon } from '@astrojs/starlight/components';
+import { isEn } from '../i18n';
 
 // The front page: the name, and the robot reaching for the pointer. Both
 // are the studio's own front page (pinkrab_studio/static: home.html,
 // hero.js, wordmark.js), drawn here from the files `pinkrab-studio --export`
 // writes.
 const base = import.meta.env.BASE_URL.replace(/\/$/, '');
-const link = (path: string) => `${base}/${path}`;
+const lang = Astro.locals.starlightRoute.lang;
+const en = isEn(lang);
+const link = (path: string) => `${base}/${en ? 'en/' : ''}${path}`;
 // The pegboard at the IKEA of the page's language: Korea for Korean, the US otherwise.
 const SKADIS: Record<string, string> = {
 	ko: 'https://www.ikea.com/kr/ko/p/skadis-pegboard-black-30534379/',
 	en: 'https://www.ikea.com/us/en/p/skadis-pegboard-black-50534378/',
 };
-const skadis = SKADIS[Astro.locals.starlightRoute.lang] ?? SKADIS.en;
+const skadis = SKADIS[lang] ?? SKADIS.en;
 ---
 
 <div class="pk-landing not-content">
@@ -43,21 +46,21 @@ const skadis = SKADIS[Astro.locals.starlightRoute.lang] ?? SKADIS.en;
 					</svg>
 				</span>
 			</h1>
-			<p class="lede">벽에 부착하는 6-DOF 양팔 로봇과 UMI 그리퍼 Hermit</p>
+			<p class="lede">{en ? 'A wall-mounted 6-DOF dual-arm robot and Hermit, a UMI gripper' : '벽에 부착하는 6-DOF 양팔 로봇과 UMI 그리퍼 Hermit'}</p>
 			<div class="actions">
-				<a class="go primary" href={link('start/introduction/')}><b>Introduction</b><span>Pinkrab 문서 보러가기</span></a>
-				<a class="go with-icon" href="https://github.com/woolimi/pinkrab"><Icon name="github" size="1.6rem" /><b>GitHub</b><span>하드웨어와 소프트웨어</span></a>
+				<a class="go primary" href={link('start/introduction/')}><b>Introduction</b><span>{en ? 'Read the Pinkrab docs' : 'Pinkrab 문서 보러가기'}</span></a>
+				<a class="go with-icon" href="https://github.com/woolimi/pinkrab"><Icon name="github" size="1.6rem" /><b>GitHub</b><span>{en ? 'Hardware and software' : '하드웨어와 소프트웨어'}</span></a>
 			</div>
 		</div>
 		<figure class="scene">
-			<canvas id="hero-robot" aria-label="페그보드에 걸린 팔 두 개와 그 앞 책상 위의 Hermit. 팔이 포인터를 따라 손을 뻗습니다."></canvas>
+			<canvas id="hero-robot" aria-label={en ? 'Two arms hung on a pegboard and a Hermit on the desk in front of them. The arms reach after the pointer.' : '페그보드에 걸린 팔 두 개와 그 앞 책상 위의 Hermit. 팔이 포인터를 따라 손을 뻗습니다.'}></canvas>
 			<svg class="leaders" aria-hidden="true"></svg>
 			<ul class="callouts">
-				<li data-at="board" data-dx="0.12" data-dy="-0.12" hidden><b><a href={skadis}>IKEA SKÅDIS 페그보드</a></b><span>팔을 거는 벽</span></li>
-				<li data-at="joints" data-dx="0.045" data-dy="-0.15" hidden><b>6-DoF 팔</b><span>5-DoF SO&#8209;ARM&nbsp;101 + wrist yaw</span></li>
-				<li data-at="pink" data-dx="-0.13" data-dy="-0.024" hidden><b>HotPink</b><span>Pinkrab 의 Pink</span></li>
-				<li data-at="claw" data-dx="-0.005" data-dy="0.233" hidden><b>Claw 그리퍼</b><span>Pinkrab 의 krab, 게의 집게</span></li>
-				<li data-at="hermit" data-dx="-0.01" data-dy="0.15" hidden><b>Hermit</b><span>UMI Handheld 그리퍼</span></li>
+				<li data-at="board" data-dx="0.12" data-dy="-0.12" hidden><b><a href={skadis}>IKEA SKÅDIS {en ? 'pegboard' : '페그보드'}</a></b><span>{en ? 'The wall the arms hang on' : '팔을 거는 벽'}</span></li>
+				<li data-at="joints" data-dx="0.045" data-dy="-0.15" hidden><b>{en ? '6-DoF arm' : '6-DoF 팔'}</b><span>5-DoF SO&#8209;ARM&nbsp;101 + wrist yaw</span></li>
+				<li data-at="pink" data-dx="-0.13" data-dy="-0.024" hidden><b>HotPink</b><span>{en ? 'The Pink of Pinkrab' : 'Pinkrab 의 Pink'}</span></li>
+				<li data-at="claw" data-dx="-0.005" data-dy="0.233" hidden><b>{en ? 'Claw gripper' : 'Claw 그리퍼'}</b><span>{en ? 'The krab of Pinkrab, a crab claw' : 'Pinkrab 의 krab, 게의 집게'}</span></li>
+				<li data-at="hermit" data-dx="-0.01" data-dy="0.15" hidden><b>Hermit</b><span>{en ? 'UMI handheld gripper' : 'UMI Handheld 그리퍼'}</span></li>
 			</ul>
 		</figure>
 	</section>

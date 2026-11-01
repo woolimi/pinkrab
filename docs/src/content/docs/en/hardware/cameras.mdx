@@ -1,0 +1,97 @@
+---
+title: Replacing the camera
+description: How to use Pinkrab with a different camera. Camera requirements, the camera profile in camera.yaml, the gripper camera mount, and settings after the swap.
+---
+
+Pinkrab uses ELP AR0234 modules for the gripper cameras and the top camera, but you can swap in another model as long as it is a UVC camera that OpenCV can open. How the camera is opened and how video is read are both written in a single file, `src/pinkrab_description/config/camera.yaml`, and since the lens is measured per unit rather than taken from the spec sheet, there is no code to change when you replace a camera.
+
+## Camera requirements
+
+| Requirement | Gripper camera | Top camera |
+|---|---|---|
+| Connection | USB UVC | USB UVC |
+| Field of view | At least about 145° horizontal (fisheye lens) | Wide enough to see the work area, the table marker, and both Hermit units together |
+| Exposure | No constraint | Manual exposure must be lockable over UVC; gain is used if available |
+| Shutter | global shutter recommended | global shutter recommended |
+| Focus | Fixed | Fixed |
+| Count | 4 of the same model (two Hermit, two arm) | 1 |
+
+- **Gripper camera field of view**: with the jaw fully open, the jaw tip sits 71.3° away from the lens axis, so a camera with a narrower horizontal field of view loses the jaw off the frame.
+- **4 of the same model**: the policy learns from Hermit camera video and runs while viewing arm camera video, so mount the same model in the same place on Hermit and the arm.
+- **Top camera exposure**: all marker poses are solved from top camera video, so a long exposure blurs the markers of a moving hand and they get missed. The exposure is therefore fixed short (10 ms by default), and brightness is set with gain and lighting. In the top camera panel of studio you adjust **exposure** and **brightness**; brightness is a value that moves the gain, so on a camera without UVC gain only exposure is adjusted and brightness has to be set with lighting. A camera that does not accept manual exposure cannot be opened as the top camera.
+- **Top camera distance**: the markers must appear large enough at the working distance. A 1920×1200 camera with a 120° lens must be within about 50 cm of the work area, so wear it on the head looking down at the hands.
+- **Top camera position**: the top camera is worn on the demonstrator's head and moves with it. Because the Hermit pose is computed relative to the table marker on every frame, **the table marker must always be in view**, and turning the head quickly blurs the marker and loses that frame.
+
+## Camera profile
+
+The `gripper` and `top` blocks in `camera.yaml` are the profile of each camera.
+
+```yaml title="src/pinkrab_description/config/camera.yaml"
+gripper:
+  model: ELP-AR0234-GS-fisheye
+  usb: [0x32e4, 0x5234]
+  sensor: [1920, 1200]
+  resolution: [1280, 960]
+  region: [160, 0, 1600, 1200]
+  fps: 30
+  fourcc: MJPG
+  latency_s: 0.012
+  crop: [0.8125, 0.95]
+
+top:
+  model: ELP-AR0234-GS-H120
+  usb: [0x32e4, 0x5234]
+  resolution: [1920, 1200]
+  fps: 60
+  fourcc: MJPG
+  latency_s: 0.012
+  exposure_unit_us: 16.667
+  hfov_deg: 120.0
+```
+
+| Key | Meaning |
+|---|---|
+| `model` | Camera name. It is recorded with every recording |
+| `usb` | USB vendor id and product id. If set, only cameras with that id are candidates; if `null`, every connected USB camera is a candidate. Which camera is which hand is decided by the socket it is plugged into, not by the id |
+| `resolution` | Resolution to open at |
+| `sensor` | Gripper camera only. The size of the full sensor frame. Lens measurement is always done at this size, and the lens axis is also written in proportion to this frame. If absent, it equals `resolution` |
+| `region` | Gripper camera only. Which part of the sensor (x, y, width, height) the `resolution` mode covers. The AR0234's 1280×960 mode is the central 1600×1200 of the sensor scaled by 0.8, so it covers the lens-side region the dataset uses as is, and the video is a little over half the size of the full sensor. If absent, the whole sensor |
+| `fps` | Frame rate to open at. Requesting 30 on the top camera delivers only about 21 fps, so 60 is requested (about 50 actual) |
+| `fourcc` | Video format. Use `MJPG` when receiving several cameras on the same USB bus |
+| `latency_s` | Time from exposure until the frame arrives at the computer. Used to align timing between cameras and with the jaw |
+| `crop` | Gripper camera only. The region the dataset keeps, written as the ratio of the sensor width and height, centered on each camera's lens axis. It trims the black corners of a fisheye lens; for a lens whose image fills the frame, use `[1.0, 1.0]` |
+| `exposure_unit_us` | Top camera only. The length (µs) of exposure control value 1. The UVC standard is 100, but it differs by module |
+| `hfov_deg` | Top camera only. The horizontal field of view stated by the manufacturer. Used only as the starting value of lens measurement |
+
+After plugging in the camera, check the USB id with `system_profiler SPUSBDataType` on macOS or `lsusb` on Linux.
+
+You can find `exposure_unit_us` by raising the exposure value and watching the image brightness. Once the exposure fills the frame period, brightness no longer increases, so the frame period divided by the exposure value at that point is one unit. The AR0234 stops brightening at about 1000 at 60 fps, so 16.7 ms ÷ 1000 = 16.7 µs.
+
+To verify `region`, shoot a frame in that mode and a full sensor frame side by side with the same camera, and check whether the mode's frame matches a central crop or a downscale of the full frame. The region the dataset keeps must fit inside `region`.
+
+Changing the gripper camera's `crop` changes the dataset's video size. The Policy page refuses to run a checkpoint trained on the earlier dataset, so convert the demonstrations again and retrain.
+
+## Gripper camera mount
+
+The gripper camera attaches to the arm's wrist and to Hermit with the same camera bracket. Another camera has a different case size, so a new bracket must be drawn; the current bracket geometry is in `src/pinkrab_description/print/camera_bracket_right.stl` (arm) and `src/pinkrab_umi/print/camera_bracket_right.stl` (Hermit).
+
+The camera's position and orientation are set by `pose` in `camera.yaml`. The reference is the TCP frame (+z is the direction going out between the two fingers, x is the direction the jaw opens), for the right hand; the left hand has the opposite sign for y and yaw.
+
+| Key | Meaning | Current value |
+|---|---|---|
+| `offset_out` | Distance outward from the plane in which the fingers open | 62 mm |
+| `offset_back` | Distance from the TCP toward the wrist | 78 mm |
+| `pitch`, `yaw` | Tilt of the optical axis | 3.05°, 5.11° |
+
+Draw the new bracket so that it satisfies the following.
+
+- The lens center lands at `offset_out` and `offset_back`, and the optical axis points in the `pitch` and `yaw` direction. For a lens with a different field of view, redetermine `pitch` and `yaw` so that, with the jaw closed, the two fingertips sit at the lower quarter height of the vertical center line of the frame.
+- Over the full wrist roll range (±175°) and the full jaw range, the bracket and camera do not touch the wrist or jaw. The current bracket is 4.1 mm from the wrist and 1.9 mm from the jaw.
+- The arm bracket and the Hermit bracket place the camera in the same position and orientation.
+
+## Settings after the swap
+
+1. Edit the profile in `camera.yaml` to match the new camera.
+2. Reassign the sockets the cameras are plugged into: `pinkrab cameras`, `pinkrab-umi cameras`, and `pinkrab-umi cameras --top` in [Setup](../../use/setup/).
+3. Measure the lens again for every camera you changed (`pinkrab lens`, `pinkrab-umi lens`). The top camera does not open without a lens measurement, and for the gripper cameras convert and execution are refused without one.
+4. If you changed the gripper camera, record a short demonstration with Hermit and check that both jaws stay in the frame even when fully open.

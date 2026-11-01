@@ -2,22 +2,25 @@
 // The two measurements `pinkrab mount` asks for, drawn over the arms at home
 // (scripts/mount.js): from the front, the spacing and the height; from the
 // side, the face the height is measured to. The pictures do not turn.
+import { pick } from '../i18n';
+
+const lang = Astro.locals.starlightRoute.lang;
 ---
 
 <div class="pk-mount not-content">
 	<figure data-view="front">
 		<div class="stage">
-			<canvas role="img" aria-label="정면에서 본 두 팔. 두 팔의 shoulder_pan 축 사이의 간격과 책상 면에서 베이스 윗면까지의 높이가 표시되어 있습니다."></canvas>
+			<canvas role="img" aria-label={pick(lang, '정면에서 본 두 팔. 두 팔의 shoulder_pan 축 사이의 간격과 책상 면에서 베이스 윗면까지의 높이가 표시되어 있습니다.', 'The two arms seen from the front. The spacing between the two shoulder_pan axes and the height from the desk surface to the top of the base are marked.')}></canvas>
 			<svg aria-hidden="true"></svg>
 		</div>
-		<figcaption>정면 — 팔 간격과 높이</figcaption>
+		<figcaption>{pick(lang, '정면 — 팔 간격과 높이', 'Front — arm spacing and height')}</figcaption>
 	</figure>
 	<figure data-view="side">
 		<div class="stage">
-			<canvas role="img" aria-label="옆에서 본 팔. 베이스 판, 빔, 첫 서보의 덮개가 이루는 평평한 윗면과 그 높이가 표시되어 있습니다."></canvas>
+			<canvas role="img" aria-label={pick(lang, '옆에서 본 팔. 베이스 판, 빔, 첫 서보의 덮개가 이루는 평평한 윗면과 그 높이가 표시되어 있습니다.', 'An arm seen from the side. The flat top face formed by the base plate, the beam and the first servo\'s cover, and its height, are marked.')}></canvas>
 			<svg aria-hidden="true"></svg>
 		</div>
-		<figcaption>옆면 — 높이를 재는 면</figcaption>
+		<figcaption>{pick(lang, '옆면 — 높이를 재는 면', 'Side — the face the height is measured to')}</figcaption>
 	</figure>
 </div>
 

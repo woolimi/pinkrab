@@ -24,20 +24,24 @@ const pedals = [
 	[410, '2'], [450, '1'], [500, '3'], [525, '2'], [595, '1'], [660, '2'],
 ];
 const corrections = [
-	{ x: 120, w: 210, n: '교정 1' },
-	{ x: 410, w: 90, n: '교정 2 (버림)' },
-	{ x: 555, w: 105, n: '교정 3' },
+	{ x: 120, w: 210, n: ['교정 1', 'Correction 1'] },
+	{ x: 410, w: 90, n: ['교정 2 (버림)', 'Correction 2 (thrown away)'] },
+	{ x: 555, w: 105, n: ['교정 3', 'Correction 3'] },
 ];
 const kept = [
 	{ x: 160, w: 85 },
 	{ x: 285, w: 45 },
 	{ x: 595, w: 65 },
 ];
+import { pick } from '../../i18n';
+
+const lang = Astro.locals.starlightRoute.lang;
+const t = (ko: string, en: string) => pick(lang, ko, en);
 ---
 
 <figure class="pk-fig not-content">
-	<svg viewBox="0 0 720 230" role="img" aria-label="Drive 한 번의 기록에서 controller 가 바뀌는 모습과 dataset 에 남는 구간">
-		<text x="20" y="20" class="head">페달</text>
+	<svg viewBox="0 0 720 230" role="img" aria-label={t('Drive 한 번의 기록에서 controller 가 바뀌는 모습과 dataset 에 남는 구간', 'How the controller changes within one recorded Drive, and the stretches that stay in the dataset')}>
+		<text x="20" y="20" class="head">{t('페달', 'Pedal')}</text>
 		{pedals.map(([x, p]) => (
 			<g>
 				<circle cx={x} cy="44" r="9" class={p === '3' ? 'box-hot' : 'box'} />
@@ -60,21 +64,21 @@ const kept = [
 		{corrections.map((c) => (
 			<g>
 				<path class="wire" d={`M${c.x} 122 L${c.x} 130 L${c.x + c.w} 130 L${c.x + c.w} 122`} />
-				<text x={c.x + c.w / 2} y="146" text-anchor="middle" class="dim">{c.n}</text>
+				<text x={c.x + c.w / 2} y="146" text-anchor="middle" class="dim">{t(c.n[0], c.n[1])}</text>
 			</g>
 		))}
-		<text x="527" y="146" text-anchor="middle" class="dim">되돌아감</text>
+		<text x="527" y="146" text-anchor="middle" class="dim">{t('되돌아감', 'Walks back')}</text>
 
 		<text x="20" y="186" class="head">dataset</text>
 		{kept.map((k) => (
 			<g>
 				<rect x={k.x} y="174" width={k.w} height="22" rx="3" class="box-hot" />
-				<text x={k.x + k.w / 2} y="189" text-anchor="middle" class="hot">에피소드</text>
+				<text x={k.x + k.w / 2} y="189" text-anchor="middle" class="hot">{t('에피소드', 'Episode')}</text>
 			</g>
 		))}
-		<text x="20" y="220" class="dim">human 구간마다 에피소드 하나. hold 가 구간을 나누고, 버린 교정과 policy 구간은 남지 않음</text>
+		<text x="20" y="220" class="dim">{t('human 구간마다 에피소드 하나. hold 가 구간을 나누고, 버린 교정과 policy 구간은 남지 않음', 'One episode per human stretch. A hold splits the stretches; thrown-away corrections and policy stretches are not kept')}</text>
 	</svg>
 	<figcaption>
-		Drive 한 번은 처음부터 끝까지 기록되고, 관절 읽기값마다 그때 누가 팔을 움직였는지와 몇 번째 교정인지가 붙습니다. Convert 는 버리지 않은 교정의 human 구간만 에피소드로 만듭니다.
+		{t('Drive 한 번은 처음부터 끝까지 기록되고, 관절 읽기값마다 그때 누가 팔을 움직였는지와 몇 번째 교정인지가 붙습니다. Convert 는 버리지 않은 교정의 human 구간만 에피소드로 만듭니다.', 'One Drive is recorded from start to end, and each joint reading carries who was moving the arm at the time and which correction it belongs to. Convert makes episodes only from the human stretches of corrections that were not thrown away.')}
 	</figcaption>
 </figure>

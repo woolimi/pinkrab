@@ -1,0 +1,131 @@
+---
+title: Dataset conversion
+description: How Convert turns demonstrations and rollout recordings into a LeRobot dataset. Inputs and outputs, the conversion steps for demonstrations, conversion of rollout recordings, dataset layout and fps, why relative actions are used, and datasets that mix demonstrations and corrections.
+---
+
+Convert turns raw episodes into a LeRobot dataset. There are two kinds of raw episodes, [demonstrations](../data/#raw-episodes) and policy [rollout recordings](../corrections/#recording-method), and both can go into the same dataset. How to press Convert in studio is described in [Dataset curation](../../use/curate/#convert).
+
+## Inputs and outputs
+
+Convert in studio converts all completed episodes left in the Collect page list, in the order they were recorded. Delete any episodes you do not want to train on from the list before converting. The result is saved to `~/pinkrab/datasets/<name>/`, and conversion does not start if a dataset with **the same name** already exists. If conversion fails partway, the half-built dataset is deleted.
+
+The dataset's `meta/pinkrab_convert.json` keeps a record of the conversion. For each raw episode it lists the kind, the segments that were cut out, and the reason for any that were skipped, together with the constants used in the conversion, such as the latency, smoothing, and outlier thresholds.
+
+The same conversion is available from the command line.
+
+```bash
+pinkrab-umi convert --fps 50 --out pick_place --task "pick and place the block" <episode> <episode> ...
+```
+
+| Argument | Meaning |
+|---|---|
+| `<episode>` | Name of a raw episode under `~/pinkrab/episodes/`. Several allowed |
+| `--out` | Dataset name |
+| `--task` | Task description. If an episode has its own task description, that one is used |
+| `--fps` | Dataset fps. Default 50 |
+| `--gop` | Keyframe interval of the dataset video. Default 30. Setting it to 2 makes training several times faster, but the dataset several times larger |
+| `--from` | Where the raw episodes are. Default `~/pinkrab/episodes/` |
+
+## Conversion steps for demonstrations
+
+
+A demonstration episode goes through the following steps.
+
+1. **Camera position**: The top camera is mounted on the demonstrator's head and moves with it, so for each frame the camera position is fixed by the table marker pose solved in that frame. A frame in which the table marker is not visible cannot have its Hermit pose moved into the table marker frame, so it is treated as a gap. The table marker pose also has a small frame-to-frame jitter; this jitter is added into the Hermit pose and is reduced together with it by the smoothing in step 5.
+2. **Time alignment**: The exposure time of the top camera is the time of each marker pose. The gripper video and jaw opening are placed on this timeline after subtracting the latency measured for each device (12 ms for both the gripper camera and the jaw).
+3. **Cutting**: A frame is a gap if either hand's marker could not be solved, the table marker was not visible, or no gripper frame was captured within 1.5 frames before that time. A gap of **1/6 second or less** (5 frames at 30 fps) is bridged. Poses are interpolated between the frames on either side, and the video uses the last frame captured. At a longer gap the segment is cut, and segments shorter than 0.95 seconds (about 30 frames at 30 fps) are discarded.
+
+   Short gaps are bridged for this reason. With two hands and three cameras, such a frame occurs about once every 1–2 seconds, and cutting there splits one demonstration into many short pieces, some of which start in the middle of the task. LeRobot has no concept of an invalid frame, so the bridged values are also trained on as real labels, but the frames of the dataset are produced anyway by interpolating a spline between camera frames, so a gap of 1/6 second or less is no different from that interpolation. The threshold is `convert_max_hole_s` in the config, and it equals the marker loss that the demonstration verdict allows.
+4. **TCP trajectory**: What the top camera measures is the pose of the [marker solid](../teleoperation/#pose-measured-from-markers) attached to Hermit, but what the arm has to follow is the tool center (TCP) between the two jaws. So the solid trajectory is converted into a TCP trajectory by multiplying by `solid_T_tcp`, the position of the TCP as seen in the solid frame. `solid_T_tcp` is determined by Hermit's assembly dimensions and is recorded with every recording. The solid sits away from the TCP, so using the solid trajectory as is would register a large solid movement even when only the wrist rotates about the TCP, and the position change of the action would differ from the actual tool movement.
+5. **Smoothing**: A Savitzky-Golay filter (window about 0.23 seconds, 11–13 frames at the roughly 50 fps top camera, order 2) is applied to the TCP position and rotation. Marker tracking has a small noise in every frame, and because an action is the difference between neighboring frames, this noise goes straight into the action, at a size of **about half of one step's action**. A Savitzky-Golay filter fits a quadratic curve to the points in the window and reads off the middle value, so unlike a moving average it reduces only the noise without flattening acceleration and deceleration. It is computed after the recording ends using the frames before and after, so the trajectory is not delayed the way it would be with a real-time filter. For rotation, the same filter is applied to the four values of the quaternion, and since `q` and `−q` are the same rotation, the signs of neighboring quaternions are first aligned to one side.
+6. **Removing still segments**: The frames before either hand first moves and after it last moves are removed. A hand counts as moved if it travels more than 4 mm from its first position or its jaw opening changes by more than 0.03. If the start, where the hand stays still while the pedal is pressed, were shown, the policy would learn to stand still at the start and **would not move in execution**.
+7. **Dataset timestamps**: Starting from the first exposure of the segment, one frame is placed every `1/fps` seconds. The tool position is read at that time from a cubic spline through the smoothed trajectory, the rotation from a rotation spline, the jaw opening is interpolated, and the gripper video uses the last frame captured up to that time. Details are in [Dataset fps](#dataset-fps) below.
+8. **Relative actions**: For each hand, the change from frame `t` to `t+1` is computed in the tool frame at that moment. The position is `R_tᵀ (p_{t+1} − p_t)` and the rotation is the first two columns (6D) of `R_tᵀ R_{t+1}`.
+9. **Outlier removal**: A change faster than 2400 mm or 150° per second (80 mm or 5° in one frame at 30 fps) is treated as a tracking error and set to 0.
+10. **Jaw action**: The opening (0–1) of the next frame is used as is. It is not changed to push toward the fully closed end. This is because an object the person grasped gently would be crushed if the arm grasped it all the way.
+11. **State**: It contains the opening of the two jaws and the pose of the right tool as seen in the left-hand tool frame. The relative pose of the two hands lets each hand move knowing the position of the other (the inter-gripper proprioception of UMI).
+12. **Absolute pose**: The TCP pose in the table marker frame is also saved as `pose.tcp_<hand>`. Its name does not start with `observation.`, so it is **not an input to any policy**, and it is used only to compute the start pose for execution.
+
+## Conversion of rollout recordings
+
+A rollout recording goes through the same steps as a demonstration, but the video and actions are computed from the arm rather than from Hermit, and **only the correction segments are kept**. How recordings are made is described in [Correction data](../corrections/#recording-method).
+
+| Item | Demonstration | Correction |
+|---|---|---|
+| Video | Hermit's gripper camera | The arm's gripper camera |
+| Tool pose | Marker solid pose measured by the top camera × `solid_T_tcp` | Forward kinematics of the arm's joint angles |
+| Jaw opening | Hermit's jaw reading | The arm's jaw joint converted to an opening width |
+| Dataset clock | Exposure time of the top camera | Exposure time of the first arm camera |
+| Segments kept | Segments where both hands' markers were solved | Segments where `controller` is `human` |
+| `pose.tcp_<hand>` | Table marker frame | Robot base frame |
+
+The video comes from the arm's camera because it is the arm's camera that films the work scene during a correction. A correction is relative, moving the arm only as much as Hermit moves, so the person can hold Hermit anywhere on the desk, and meanwhile Hermit's camera looks at somewhere unrelated to the task. What the running policy sees is also the arm's camera.
+
+The tool pose is computed from the joint angles because the arm has no marker, but its joint angles are always readable. The arm's tool frame obtained by forward kinematics can have different axis directions from Hermit's tool frame (the left arm is a half turn about the z axis), so it is rotated into Hermit's convention. This way the relative action computed in a correction has the same meaning as the relative action in a demonstration, and it also matches the rotation applied back when the policy's action is applied to the arm at execution.
+
+The relative pose between the two tools in the state also comes from forward kinematics. The state given to the policy at execution is the same computation, so the state of a correction episode is **the same value as the state the policy sees in execution**.
+
+### Computation steps
+
+If the `kind` of a raw episode is `rollout`, Convert computes it as follows.
+
+1. **Readings to keep**: Readings where `controller` is `human` and the `correction` number has no `redo`.
+2. **Time alignment**: For each exposure time of the first arm camera (the time minus the 12 ms camera latency), the joint angles are fixed by linearly interpolating between the two joint readings before and after it (each at its time minus the 17 ms joint read latency). If the two readings are more than 0.1 second apart, or either of them is not a reading to keep, that frame is left empty.
+3. **Cutting**: The segment is cut at an empty frame, at a frame with no video captured within 1.5 frames by the other arm's camera, and at a place where the video breaks, and segments shorter than 0.95 seconds are discarded. Since `hold` and `policy` segments are not readings to keep, segments are split at the place where the arm was stopped with pedal 1 and at the place where control was given back to the policy, and each segment becomes one episode of the dataset.
+4. **Tool trajectory**: For each frame, forward kinematics is solved from the joint angles, rotated into Hermit's tool frame convention, and smoothed with the same Savitzky-Golay filter as for demonstrations. The jaw opening is obtained by converting the jaw joint angle into that arm's opening range.
+5. **Remaining steps**: Removing still segments, dataset timestamps, relative actions, outlier removal, jaw action, and state are the same as for demonstrations.
+
+A rollout recording is skipped in these cases.
+
+- The arm that ran differs from the dataset's hand
+- The arm description fingerprint at recording time differs from the current arm. The tool pose changes even if the joint angles are the same
+- The lens center of the arm camera is not known
+
+## Dataset layout
+
+
+| feature | Size | Contents |
+|---|---:|---|
+| `observation.images.gripper_left`, `gripper_right` | video | The gripper camera video cropped to a 1560×1140 window around the lens axis and scaled down to width 780. The fisheye image is narrower than the sensor, so using it as is leaves a black border over a quarter of the frame |
+| `observation.state` | 11 | Opening of the two jaws (2), position of the right tool as seen from the left tool (3), and rotation 6D (6) |
+| `action` | 20 | Per hand: position change (3), rotation change 6D (6), next opening (1) |
+| `pose.tcp_left`, `pose.tcp_right` | 7 | TCP position and quaternion in the table marker frame. Not a policy input |
+
+Rotation is used as the first two columns of the matrix (6D) because **it is continuous**. Axis-angle breaks near 180°, and with a quaternion `q` and `−q` are the same rotation, so the same action would have two values.
+
+The state does **not** contain the **previous step's action**. If it did, the policy could reduce its training error just by repeating the previous action without looking at the video, and in execution it would **keep going in the direction it first moved** (copycat).
+
+## Dataset fps
+
+
+The dataset fps is chosen at Convert time. **The default is 50, the same as ALOHA**, and any value from 1 to 60 can be chosen regardless of the camera's fps. One policy step is one dataset frame, so this value is also **the rate at which the trained policy is queried** during execution.
+
+| Value | When fps is higher than the camera | When fps is lower than the camera |
+|---|---|---|
+| tool pose | The spline fills in positions between camera frames. The pose differs at every step, so no step has zero motion | Positions between frames are read from the spline |
+| jaw opening | Interpolated | Interpolated |
+| Gripper video | The last frame captured up to that time, so the same image is used for several frames | The last frame captured up to that time |
+
+The video is chosen as the last frame captured up to that time so that it matches execution. The running policy also sees the last image captured up to that moment.
+
+When fps changes, the length of a step changes, so values that must be fixed in time are **kept in seconds** and the number of steps is counted according to fps.
+
+- **Chunk length**: The training recipe sets it in seconds (2 seconds for ACT, the same as the paper), and the number of steps is counted by multiplying by the dataset fps. At the default 50 fps it is 100 steps.
+- **Steps executed at a time**: The default is 0.1 second worth. At the default 50 fps it is 5 steps.
+- **Threshold for a bad answer**: A step that asks the tool to move faster than 900 mm or 300° per second is not executed (`max_tool_speed_mm_s` and `max_tool_turn_dps` in the inference settings).
+- **Speed budget of IK**: The angle a joint may turn in one step is computed from the length of the step.
+
+The safety gate that writes commands to the servos smooths and writes commands 60 times per second regardless of the dataset fps. Above 60 fps, steps that fall between two gate ticks never reach the servos, so **the upper limit of fps is 60**.
+
+## Why relative actions are used
+
+
+- **Independent of demonstration position**: A change measured in the tool frame has the same value for the same motion, wherever on the desk the object was and wherever the demonstrator stood. The table marker frame cancels out in step 8.
+- **Robot coordinates unknown**: At demonstration time the robot is not there, so Hermit's absolute position cannot be measured relative to the robot, and the robot coordinates fixed with the table marker are approximate. Relative actions keep the error of this approximation out of training.
+- **Result from UMI**: The UMI paper reports that absolute actions drop much more than relative actions on the same data.
+
+## Datasets that mix demonstrations and corrections
+
+Convert converts the demonstrations and rollout recordings left in the list together into one dataset, and correction episodes receive the same task description as the demonstrations. A dataset with corrections added is created **under a new name**. Convert does not start under the same name, and if the existing dataset is deleted and rebuilt, a checkpoint trained on it **refuses to run** because the dataset has changed.
+
+The dataset also records in `meta/pinkrab_convert.json` which episodes are corrections. The [start pose](../data/#execution) of execution is the average of the first tool poses of the demonstrations, and correction episodes are excluded from this average because they start in the middle of the task.

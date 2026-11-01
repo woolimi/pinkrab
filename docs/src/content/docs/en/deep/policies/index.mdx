@@ -1,0 +1,64 @@
+---
+title: Policy overview
+description: Inputs and outputs of the policies Pinkrab trains, and the difficulties of behavior cloning. Action chunking and multimodality, ACT, and execution speed.
+---
+
+import Chunking from '../../../../../components/policies/Chunking.astro';
+import Multimodal from '../../../../../components/policies/Multimodal.astro';
+
+Pinkrab trains and runs the ACT included in LeRobot with `lerobot-train` on a [dataset](../convert/#dataset-layout). ACT is **behavior cloning**, which learns to imitate demonstrations as they are, and it learns the conditional distribution `p(a | o)` that produces a chunk of future actions `a` from an observation `o`.
+
+## Inputs and outputs
+
+| | Contents |
+|---|---|
+| Input | Video of the two gripper cameras, and 11 values of `observation.state` (the opening of the two jaws and the relative pose of the two tools) |
+| Output | Several future action steps (a chunk). One step is the position and rotation change in the tool frame for each hand plus the next jaw opening, 20 values in all |
+
+## Difficulties of behavior cloning
+
+### Compounding error and action chunking
+
+A policy learned by behavior cloning is slightly wrong at every step. Once it is wrong, the arm is in a state that was not in the demonstrations, and in an unfamiliar state it tends to be wrong by more, so one error invites the next. It is known that if the per-step error is `ε`, the accumulated error in a task of length `T` can grow **in proportion to `T²`** rather than `T` (Ross & Bagnell, 2010). This is called compounding error, or distribution shift in the sense that the state distribution differs between training and execution.
+
+Action chunking is a method that produces `H` steps of actions in one inference, executes the first `k` steps, and then queries again. **The number of decisions drops to 1/`k`**, so there are fewer chances for errors to accumulate, and the actions inside a chunk are produced all at once and are smooth over time. Human demonstrations contain actions that the current observation alone does not explain, such as a pause of the hand, and a chunk learns these together with their surrounding context as one trajectory.
+
+<Chunking />
+
+Increasing `k` lengthens the open-loop stretch in which a chunk is executed without looking at the end of it, so the policy reacts late when an object moves differently than expected. `k` is **a choice between smoothness and responsiveness**, and Pinkrab sets it by time, using **0.1 second**. That is 5 steps in a 50 fps dataset.
+
+### Multimodality
+
+Even in the same scene, a person may go around an obstacle on the left or on the right. Both are correct actions, so `p(a | o)` becomes a distribution with two peaks. If this distribution is learned by regression, the policy learns to output **a single number** rather than the whole distribution. The mean learned with L2 loss **always falls between the two peaks**, and the median learned with L1 loss falls between them if the two modes are mixed about equally, and on the peak of the more common one if one side dominates.
+
+<Multimodal />
+
+The action between the peaks is **in no demonstration**, and as in the figure above it can run straight into the obstacle. ACT handles this problem by receiving which way the demonstration went separately as a hidden variable called a latent ([Latent and CVAE](./act/#latent-and-cvae)).
+
+## ACT
+
+**[ACT](./act/)** feeds the video read by ResNet-18 and the state to a transformer encoder and decoder, which produce a chunk in a single forward pass. A CVAE used only in training distinguishes the demonstration's mode with a latent, and at execution the latent is set to 0.
+
+| | ACT |
+|---|---|
+| Video | ResNet-18 |
+| How the chunk is produced | L1 regression + CVAE |
+| Multimodality | Distinguished by a latent in training, `z = 0` in execution |
+| Trained parameters | About 52M (about 34M in execution) |
+| Training memory (batch 8) | 5.7 GB |
+
+Training memory is the maximum for one batch-8 step on a dataset of two 780×570 gripper cameras, and training runs at **batch 8 on an 8 GB GPU**.
+
+## Execution speed
+
+The step counts are for the default 50 fps dataset. At other fps the number of steps changes so that the time stays the same ([Dataset fps](../convert/#dataset-fps)).
+
+| policy | chunk | Steps executed at a time | Inference |
+|---|---:|---:|---|
+| ACT | 100 | 5 | One forward pass |
+
+## References
+
+- Ross, Bagnell. *Efficient Reductions for Imitation Learning*. AISTATS 2010.
+- Ross, Gordon, Bagnell. *A Reduction of Imitation Learning and Structured Prediction to No-Regret Online Learning* (DAgger). AISTATS 2011.
+- Zhao, Kumar, Levine, Finn. *Learning Fine-Grained Bimanual Manipulation with Low-Cost Hardware* (ACT). RSS 2023.

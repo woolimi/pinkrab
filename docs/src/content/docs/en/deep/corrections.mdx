@@ -1,0 +1,85 @@
+---
+title: Correction data
+description: The principle and recording method of adding actions corrected by taking over with Hermit during policy execution to the dataset. DAgger and HG-DAgger, recording of rollouts, verdicts, retraining, and good corrections.
+---
+
+import Timeline from '../../../../components/corrections/Timeline.astro';
+
+Correction data is the actions in which a person took over both arms while running a trained policy and set them right. They become episodes of the same LeRobot dataset as the demonstrations and are used for retraining together with them. Taking over and handing back with the pedals is described in [Run](../../use/run/#correction-with-hermit), and how the arms follow Hermit while taken over is in [Hermit and teleoperation](../teleoperation/#differences-in-correction).
+
+## Why corrections are needed
+
+A demonstration dataset contains only states in which the person did the task well. In execution the policy is slightly wrong at every step, and once wrong it lands in a state that was not in the demonstrations and tends to be wrong by more ([compounding error](../policies/#compounding-error-and-action-chunking)). But the demonstrations have no scene showing how to come back from such a slightly off position, so adding demonstrations only **adds more scenes the person did well**.
+
+### DAgger
+
+DAgger (Dataset Aggregation, Ross et al., 2011) solves this problem with data. It runs the trained policy to collect the states the policy actually reaches, attaches **the action the expert would have taken as the label** to each of those states, adds them to the dataset, and retrains, repeating this. With each repetition the state distribution of the training dataset follows the distribution the policy meets in execution, so the dataset gets labels for the states met in execution.
+
+The original DAgger has the expert attach a label action to every state the policy passed through. This is hard for a person. One cannot write down numerically, while watching recorded video, where the hand should have moved and by how many mm in every frame, and an action produced in the head without actually moving the arm also differs from what the person would really do.
+
+### HG-DAgger
+
+In HG-DAgger (Human-Gated DAgger, Kelly et al., 2019), the person watches the policy run, **takes over only when it goes wrong** and controls it directly, and **only the taken-over segments** are added to the dataset. The label is the action the person actually made on the spot, and the moment of taking over is the very state where the policy went wrong, so what is added to the dataset is the place the policy actually strayed to and how to come back from there. Pinkrab's correction works this way.
+
+The segments in which the policy moved are **not put in the dataset**. The actions the policy produced are not labels. A segment that went well is something the policy already knows how to do, and including a segment that went wrong would make it learn that mistake again.
+
+## Recording method
+
+When Drive is pressed on the [Policy page](../../use/run/#policy-page), recording starts before the policy starts, and the whole run is saved as one raw episode with `kind` set to `rollout`. If recording cannot start, **it does not run**, and the recording ends and is saved by Stop, by pedal 3 when no correction is in progress, or by Disconnect. Taking over, following, stopping, and handing back do not split or stop the recording; they only change the marks attached to the readings.
+
+| File | Contents |
+|---|---|
+| `gripper_left.mp4`, `gripper_right.mp4` | Video of the two arms' gripper cameras. The top camera video is not saved |
+| `robot.jsonl` | Joint readings of both arms, 60 times per second. Each line has the joint angles, the gate mode, `controller`, and `correction` if in a correction |
+| `events.jsonl` | Start and end, and `redo` of a discarded correction |
+| `meta.json` | `kind: rollout`, the arm that ran, the checkpoint, the arm description fingerprint at recording time, the camera lens center, and the verdict of the person watching (`outcome`: `succeeded` or `failed`, only if a verdict was made) |
+
+`controller` is who was moving the arm at the moment of that reading.
+
+| `controller` | State at that time |
+|---|---|
+| `policy` | The gate is in policy mode and the policy is moving the arm |
+| `human` | The gate is in correction mode and the arm is following Hermit |
+| `hold` | The gate is in correction mode and the arm is stopped with pedal 1 |
+| `none` | Otherwise. While going to Ready, or standing after a discarded correction or walking back to the taken-over pose |
+
+`correction` is which takeover it is. It increases by 1 each time control is taken over with pedal 2, and is attached only to readings while the gate is in correction mode. Even if the arm is stopped with pedal 1 and follows again within one correction, the number stays the same.
+
+<Timeline />
+
+If a correction is done wrong and discarded with pedal 3, the arm no longer follows Hermit and stands, and a `redo` for that correction number is left in `events.jsonl`. The readings of a discarded correction are **not deleted from the file**; Convert sees the `redo` and drops them. Pressing pedal 2 next makes both arms walk back to the pose they had taken over, and after returning they start from the state stopped again with the next correction number.
+
+The whole run is kept and Convert chooses the segments to use because **the raw record cannot be made again**. A rollout recording is also material for looking again at where and how the policy went wrong, and even if the rule for which segments go into the dataset changes, the dataset can be rebuilt from the same recording.
+
+## How it becomes a dataset
+
+A rollout recording becomes a dataset through the same Convert as the demonstrations, but its video and actions are computed from the arm rather than from Hermit. The video is the arm's gripper camera and the tool pose is the forward kinematics of the joint angles, and **only the segments of corrections that were not discarded**, where `controller` is `human`, are kept, with each segment becoming one episode of the dataset. The state is also the same computation as the one given to the policy at execution, so the state of a correction episode is the same value as the state the policy sees in execution. The step-by-step computation is in [Dataset conversion](../convert/#conversion-of-rollout-recordings).
+
+## Verdicts for corrections
+
+The Episodes list on the Collect page shows rollout recordings together with demonstrations, and **the verdict uses different criteria from demonstrations**. A correction is computed from joint readings rather than markers, so even if the top camera misses Hermit's marker solid while it is taken over, the arm in that segment was merely standing still, and it is not a gap.
+
+| Verdict | Criterion |
+|---|---|
+| Dropped | The total time joints could not be read exceeds 1/6 second |
+| Warning | Hermit moved the arm for less than 1 second, or neither jaw moved during the correction |
+
+A rollout recording with almost no correction is not dropped, only given a warning. Convert has nothing to take from that recording, but it is still worth keeping as a record of what the policy did.
+
+## Adding to the dataset and retraining
+
+To add corrections, Convert the demonstrations and rollout recordings together to make a **dataset with a new name**, and train fresh on that dataset ([Datasets that mix demonstrations and corrections](../convert/#datasets-that-mix-demonstrations-and-corrections)).
+
+In training, correction episodes are indistinguishable from demonstration episodes and are **used with the same weight**. LeRobot's training does not look at the kind of episode, so the share that corrections take in the dataset is set by the number and length of correction episodes.
+
+## Good corrections
+
+- **Take over early**: Take over when the arm starts to go off. The scene after it has already strayed far is one that even the retrained policy rarely meets again, so such a correction is seldom used.
+- **Hand back quickly**: Correct only up to a pose the policy can continue from, then hand back. The purpose of a correction is not to show the whole task again but to show how to come back from where it strayed.
+- **Correct in the same way**: Correcting in a way different from the demonstrations splits the action in the same scene and creates multimodality. Follow the grasp method and order used in the demonstrations.
+- **Discard a bad correction**: If you made a mistake while correcting, discard it with pedal 3 and do it again. A correction that is not discarded is **all trained on as correct**.
+
+## References
+
+- Ross, Gordon, Bagnell. *A Reduction of Imitation Learning and Structured Prediction to No-Regret Online Learning* (DAgger). AISTATS 2011.
+- Kelly, Sidrane, Driggs-Campbell, Kochenderfer. *HG-DAgger: Interactive Imitation Learning with Human Experts*. ICRA 2019.

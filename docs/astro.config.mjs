@@ -21,7 +21,10 @@ export default defineConfig({
 			description:
 				'벽에 부착하는 6-DOF 양팔 로봇과 UMI 그리퍼 Hermit: 조립, 시연 수집, policy 학습과 실행.',
 			// Korean is the source; other languages are added beside it as locales.
-			locales: { root: { label: '한국어', lang: 'ko' } },
+			locales: {
+				root: { label: '한국어', lang: 'ko' },
+				en: { label: 'English', lang: 'en' },
+			},
 			components: {
 				PageTitle: './src/components/PageTitle.astro',
 				Search: './src/components/Search.astro',
@@ -77,44 +80,45 @@ export default defineConfig({
 			],
 			sidebar: [
 				{
-					label: '시작',
+					label: '시작', translations: { en: 'Start' },
 					items: [
-						{ label: '소개', slug: 'start/introduction' },
-						{ label: '설치', slug: 'start/install' },
+						{ label: '소개', translations: { en: 'Introduction' }, slug: 'start/introduction' },
+						{ label: '설치', translations: { en: 'Install' }, slug: 'start/install' },
 					],
 				},
 				{
-					label: '하드웨어',
+					label: '하드웨어', translations: { en: 'Hardware' },
 					items: [
-						{ label: '부품 목록', slug: 'hardware/bom' },
-						{ label: '부품 출력', slug: 'hardware/print' },
-						{ label: 'Pinkrab 조립', slug: 'hardware/assemble-arm' },
-						{ label: 'Hermit 조립', slug: 'hardware/assemble-hermit' },
-						{ label: '카메라 교체', slug: 'hardware/cameras' },
+						{ label: '부품 목록', translations: { en: 'Bill of materials' }, slug: 'hardware/bom' },
+						{ label: '부품 출력', translations: { en: 'Printing' }, slug: 'hardware/print' },
+						{ label: 'Pinkrab 조립', translations: { en: 'Pinkrab assembly' }, slug: 'hardware/assemble-arm' },
+						{ label: 'Hermit 조립', translations: { en: 'Hermit assembly' }, slug: 'hardware/assemble-hermit' },
+						{ label: '카메라 교체', translations: { en: 'Camera swap' }, slug: 'hardware/cameras' },
 					],
 				},
 				{
-					label: '사용',
+					label: '사용', translations: { en: 'Use' },
 					items: [
-						{ label: '준비', slug: 'use/setup' },
-						{ label: '첫 구동', slug: 'use/first-run' },
-						{ label: '시연 수집', slug: 'use/collect' },
-						{ label: 'dataset 정리', slug: 'use/curate' },
-						{ label: '학습', slug: 'use/train' },
-						{ label: '실행', slug: 'use/run' },
+						{ label: '준비', translations: { en: 'Setup' }, slug: 'use/setup' },
+						{ label: '첫 구동', translations: { en: 'First run' }, slug: 'use/first-run' },
+						{ label: '시연 수집', translations: { en: 'Collecting demonstrations' }, slug: 'use/collect' },
+						{ label: 'dataset 정리', translations: { en: 'Curating a dataset' }, slug: 'use/curate' },
+						{ label: '학습', translations: { en: 'Training' }, slug: 'use/train' },
+						{ label: '실행', translations: { en: 'Running' }, slug: 'use/run' },
 					],
 				},
 				{
-					label: '심화',
+					label: '심화', translations: { en: 'In depth' },
 					items: [
-						{ label: 'Hermit 과 teleoperation', slug: 'deep/teleoperation' },
-						{ label: '시연 데이터와 학습', slug: 'deep/data' },
-						{ label: '교정 데이터', slug: 'deep/corrections' },
-						{ label: 'dataset 변환', slug: 'deep/convert' },
+						{ label: 'Hermit 과 teleoperation', translations: { en: 'Hermit and teleoperation' }, slug: 'deep/teleoperation' },
+						{ label: '시연 데이터와 학습', translations: { en: 'Demonstration data and training' }, slug: 'deep/data' },
+						{ label: '교정 데이터', translations: { en: 'Correction data' }, slug: 'deep/corrections' },
+						{ label: 'dataset 변환', translations: { en: 'Dataset conversion' }, slug: 'deep/convert' },
 						{
 							label: 'policy',
+							translations: { en: 'Policies' },
 							items: [
-								{ label: '개요', slug: 'deep/policies' },
+								{ label: '개요', translations: { en: 'Overview' }, slug: 'deep/policies' },
 								{ label: 'ACT', slug: 'deep/policies/act' },
 							],
 						},

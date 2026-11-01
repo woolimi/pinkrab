@@ -4,6 +4,7 @@
 import * as THREE from 'three';
 import { addView, fitView, orbit } from './canvases.js';
 import { bedOf, partsOf, readProject } from './plates.js';
+import { pick } from './lang.js';
 
 // In the bed's frame (z up, y toward the back): from in front, a little to the
 // right and above, the way one stands at the printer.
@@ -73,7 +74,7 @@ export async function showPrint(figure) {
     figure.classList.add('loading');
     for (const tab of fileTabs) tab.setAttribute('aria-pressed', String(tab.dataset.file === file));
     download.href = file;
-    download.querySelector('span').textContent = `${file.split('/').pop()} 내려받기`;
+    download.querySelector('span').textContent = pick(`${file.split('/').pop()} 내려받기`, `Download ${file.split('/').pop()}`);
     if (!projects.has(file)) {
       const answer = await fetch(file);
       if (!answer.ok) throw new Error(`no ${file}`);

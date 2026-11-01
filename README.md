@@ -10,6 +10,10 @@
 </p>
 
 <p align="center">
+  <b>English</b> · <a href="README.ko.md">한국어</a>
+</p>
+
+<p align="center">
   <a href="LICENSE"><img alt="License: Apache-2.0" src="https://img.shields.io/badge/license-Apache--2.0-e8318a"></a>
   <img alt="ROS 2 Jazzy" src="https://img.shields.io/badge/ROS%202-Jazzy-22314e">
   <img alt="Python 3.12+" src="https://img.shields.io/badge/python-3.12%2B-3776ab">
@@ -18,10 +22,10 @@
 </p>
 
 <p align="center">
-  <a href="https://woolimi.github.io/pinkrab/"><b>Documentation</b></a> ·
-  <a href="https://woolimi.github.io/pinkrab/hardware/bom/">Bill of materials</a> ·
-  <a href="https://woolimi.github.io/pinkrab/hardware/print/">Print files</a> ·
-  <a href="https://woolimi.github.io/pinkrab/start/install/">Install</a>
+  <a href="https://woolimi.github.io/pinkrab/en/"><b>Documentation</b></a> ·
+  <a href="https://woolimi.github.io/pinkrab/en/hardware/bom/">Bill of materials</a> ·
+  <a href="https://woolimi.github.io/pinkrab/en/hardware/print/">Print files</a> ·
+  <a href="https://woolimi.github.io/pinkrab/en/start/install/">Install</a>
 </p>
 
 ---
@@ -35,9 +39,6 @@ with its claws, and so do these arms.
 gripper. It has the same claw, jaw and wrist camera as the arm, so a policy
 trained on video recorded with Hermit sees the same picture when it runs on the
 robot. Demonstrations are collected without the robot in the loop.
-
-> [!NOTE]
-> The documentation site is written in Korean.
 
 [SO-ARM 101]: https://github.com/TheRobotStudio/SO-ARM100
 [UMI]: https://umi-gripper.github.io
@@ -73,12 +74,12 @@ robot. Demonstrations are collected without the robot in the loop.
 
 | Step | Docs |
 |---|---|
-| Buy, print and assemble | [BOM](https://woolimi.github.io/pinkrab/hardware/bom/) · [Print](https://woolimi.github.io/pinkrab/hardware/print/) · [Arm](https://woolimi.github.io/pinkrab/hardware/assemble-arm/) · [Hermit](https://woolimi.github.io/pinkrab/hardware/assemble-hermit/) |
-| Set up and calibrate | [Setup](https://woolimi.github.io/pinkrab/use/setup/) · [First run](https://woolimi.github.io/pinkrab/use/first-run/) |
-| Collect demonstrations | [Collect](https://woolimi.github.io/pinkrab/use/collect/) |
-| Build a dataset | [Curate](https://woolimi.github.io/pinkrab/use/curate/) |
-| Train a policy | [Train](https://woolimi.github.io/pinkrab/use/train/) · [Policies](https://woolimi.github.io/pinkrab/deep/policies/) |
-| Run and correct | [Run](https://woolimi.github.io/pinkrab/use/run/) · [Corrections](https://woolimi.github.io/pinkrab/deep/corrections/) |
+| Buy, print and assemble | [BOM](https://woolimi.github.io/pinkrab/en/hardware/bom/) · [Print](https://woolimi.github.io/pinkrab/en/hardware/print/) · [Arm](https://woolimi.github.io/pinkrab/en/hardware/assemble-arm/) · [Hermit](https://woolimi.github.io/pinkrab/en/hardware/assemble-hermit/) |
+| Set up and calibrate | [Setup](https://woolimi.github.io/pinkrab/en/use/setup/) · [First run](https://woolimi.github.io/pinkrab/en/use/first-run/) |
+| Collect demonstrations | [Collect](https://woolimi.github.io/pinkrab/en/use/collect/) |
+| Build a dataset | [Curate](https://woolimi.github.io/pinkrab/en/use/curate/) |
+| Train a policy | [Train](https://woolimi.github.io/pinkrab/en/use/train/) · [Policies](https://woolimi.github.io/pinkrab/en/deep/policies/) |
+| Run and correct | [Run](https://woolimi.github.io/pinkrab/en/use/run/) · [Corrections](https://woolimi.github.io/pinkrab/en/deep/corrections/) |
 
 ## Hardware
 
@@ -105,12 +106,12 @@ robot. Demonstrations are collected without the robot in the loop.
 | Printer | every part is printed; Bambu Studio projects for the Bambu Lab P2S are included |
 
 The full list, with screws and quantities, is the
-[bill of materials](https://woolimi.github.io/pinkrab/hardware/bom/).
+[bill of materials](https://woolimi.github.io/pinkrab/en/hardware/bom/).
 
 ## Quick start
 
 macOS uses a RoboStack conda environment, Ubuntu 24.04 uses apt ROS 2 Jazzy
-with a venv. The [install page](https://woolimi.github.io/pinkrab/start/install/)
+with a venv. The [install page](https://woolimi.github.io/pinkrab/en/start/install/)
 has the full steps for both.
 
 ```bash

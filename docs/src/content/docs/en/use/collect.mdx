@@ -1,0 +1,75 @@
+---
+title: Demonstration collection
+description: How to record demonstrations with two Hermits. Placement of the top camera and the table marker, the Collect page in studio, the foot pedals, and demonstration verdicts.
+---
+
+import CollectLayout from '../../../../components/CollectLayout.astro';
+import Output from '../../../../components/Output.astro';
+import studio from '../../../../transcripts/studio.txt?raw';
+
+A demonstration is done with one Hermit in each hand, and Pinkrab does not move while recording. The top camera films the UMI markers of both Hermits and the table marker on the desk together, and Hermit's two cameras and the jaw openings are recorded together at the same time. Every demonstration is **done with both hands**, and even a task that uses one hand requires **holding a Hermit in the other hand**.
+
+## Layout
+
+<CollectLayout />
+
+- **Top camera**: Mount it on the demonstrator's head with the head strap, and lower your head so that both the place where the hands will work and the table marker are in the frame. Hermit poses are computed relative to the table marker in every frame, so frames in which the table marker is outside the frame are not used. Turning your head quickly blurs the marker and loses that frame, so move your head slowly.
+- **Table marker**: Place it on the desk right in front of the demonstrator's torso with its `+Y` face pointing away from the demonstrator. **Do not move** the table marker during the demonstration.
+- **Demonstrator**: Stand on the side where the robot will be placed and demonstrate **from the direction in which the robot looks at the workspace**. This is because the scene Hermit's cameras film must be the same as the scene the arm cameras will see later.
+
+Pinkrab computes the table marker as being between the two arms, in front of the board. It treats the demonstrator's chest as being at the board's position and moves the demonstration into the robot coordinate frame, so **the closer you put the table marker to the demonstrator**, the more the demonstration becomes one in which the arm works close to the board.
+
+## Running Pinkrab Studio
+
+```bash
+pinkrab-studio
+```
+
+<Output out={studio} />
+
+Open http://localhost:8730/ in a browser and go to the Collect page. Pressing **Connect** opens the top camera, the two Hermit cameras, and the two jaw servos, and starts marker tracking. Each card shows the tracking status and jaw opening per hand, and the markers found are drawn on the top camera view.
+
+On macOS the foot switch can be opened only with root privileges, so studio runs it with `sudo -n`. At first it fails for lack of permission and the screen shows a line to add to sudoers, so add that line with `sudo visudo`. The foot switch is read only if the terminal app that ran studio also has **Input Monitoring permission** (System Settings > Privacy & Security).
+
+If the top camera does not open, **replug the USB** and press **Retry top camera**.
+
+## Start pose
+
+The top camera view overlays, for each hand, **Hermit as it would be when the robot arm is in the ready pose** as white lines. They are the outlines and corners of the Hermit body, jaw, servo, camera mount, and marker solid, with the remaining distance and angle to ready shown beside them.
+
+Before starting to record, overlap the Hermits in both hands with this drawing. When the distance and angle come within 100 mm and 20°, that hand's lines turn green. The hand that is waiting without working stays at this place throughout the demonstration.
+
+Ready is the pose in which the demonstrator holds the arms comfortably extended forward. When the policy runs, the arm first goes to the pose where the demonstration started; the start pose needs to be similar from take to take for the policy to learn the start well, and straying far from ready can make a pose the arm can reach only by turning the shoulder a lot. Judge the distance by the size of the drawing. If the real Hermit looks larger than the drawing, you are holding it too close.
+
+## Recording
+
+| Pedal | Action on the Collect page |
+|---|---|
+| 2 | Start recording |
+| 3 | Stop recording and save |
+
+Because pedals are used, you never need to take your hands off Hermit while recording. During recording, the status line shows the demonstration name, elapsed time, and frame count per camera. The demonstration is saved in `~/pinkrab/episodes/<name>/`, together with the top camera and Hermit camera video and the marker pose and jaw opening for each frame.
+
+## Good demonstrations
+
+- Keep **the UMI markers of both Hermits continuously visible to the top camera**. If hands or objects often cover a marker, even briefly, that demonstration fails the verdict.
+- Do the work **within about 40 cm of the board**. Farther than that, there are places the arm cannot reach even fully extended.
+- After placing an object, **pull your hand back while lifting it up** from that spot, then stop recording. If many demonstrations stop right after placing, the policy cannot learn the motion that follows the placing, so the verdict checks this too.
+- Record the same task many times, **changing the object's position and orientation slightly**.
+
+## Demonstration verdict
+
+Each saved demonstration gets a verdict in the Episodes list. It is the result of recomputing, for each demonstration, whether the Pinkrab arms can actually follow each hand's demonstration and whether the markers were continuous, and **if even one hand fails**, the demonstration fails.
+
+| Verdict | Criteria |
+|---|---|
+| Fail | A camera has no video, runs below 80 % of its proper fps, has frame gaps longer than 0.25 s, or the image never changes · the total time markers were lost exceeds 1/6 s (5 frames at 30 fps) · markers were found for less than 1 s · fewer than 80 % of frames can be followed by the arm · there is a moment when an arm joint would have to turn faster (over 300°/s) than the real servo · a held object was released without opening the jaw · after releasing the object, the hand was neither lifted more than 20 mm nor pulled back more than 20 mm opposite to the approach direction, and also did not return to the ready pose (the range where the guide is green) |
+| Warning | The arm follows with a joint at its limit (reach edge) · the arm turns shoulder_pan more than 60° from ready to follow the hand · the start pose differs a lot from the other demonstrations · more than 10 % of frames where the jaw could not be read · the jaw does not move |
+
+The moment of releasing the object is when the jaw last opened. For a task that ends while still holding the object, set `keep_min_retract_mm` in the `pinkrab_umi` config to 0 to turn this criterion off.
+
+Pressing ▶ plays the Pinkrab arm following the demonstration, overlaid on the video. The arm moves at the dataset's default fps (50), in the demonstration's real time. A demonstration where the top camera dropped frames does not speed up either. Even after the arm starts in an unreachable pose and folds at a joint limit, it follows again once the hand comes to a reachable place, and a joint that changed a lot at once in between is marked as a jump. **tick failing** selects all failed demonstrations, and **delete ticked** **deletes the selected demonstrations**.
+
+## Next step
+
+Convert the demonstrations that passed the verdict into a LeRobot dataset on the [Curate](../curate/) page of studio.

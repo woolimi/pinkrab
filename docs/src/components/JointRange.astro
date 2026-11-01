@@ -5,6 +5,9 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import Stage3D from './Stage3D.astro';
+import { pick } from '../i18n';
+
+const lang = Astro.locals.starlightRoute.lang;
 
 const SIDE = 'left';
 const JOINTS = ['shoulder_pan', 'shoulder_lift', 'elbow_flex', 'wrist_flex', 'wrist_yaw', 'wrist_roll'];
@@ -24,7 +27,7 @@ const joints = JOINTS.map((key) => {
 ---
 
 <figure class="pk-joints not-content" data-side={SIDE}>
-	<ul class="chips" aria-label="관절">
+	<ul class="chips" aria-label={pick(lang, '관절', 'Joints')}>
 		{joints.map((j) => (
 			<li>
 				<button type="button" data-joint={j.name} aria-pressed="false">
@@ -35,16 +38,16 @@ const joints = JOINTS.map((key) => {
 			</li>
 		))}
 	</ul>
-	<Stage3D label="페그보드에 건 왼팔. 고른 관절이 한쪽 한계에서 다른 쪽 한계까지 움직이고, 움직이는 범위를 부채꼴로 표시합니다." />
+	<Stage3D label={pick(lang, '페그보드에 건 왼팔. 고른 관절이 한쪽 한계에서 다른 쪽 한계까지 움직이고, 움직이는 범위를 부채꼴로 표시합니다.', 'The left arm on the pegboard. The chosen joint moves from one limit to the other, and the range it moves through is shown as a fan.')} />
 	<div class="bar">
-		<button type="button" class="play" aria-pressed="true" aria-label="일시정지">
+		<button type="button" class="play" aria-pressed="true" aria-label={pick(lang, '일시정지', 'Pause')}>
 			<svg class="pause" viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="5" width="4" height="14" rx="1"></rect><rect x="14" y="5" width="4" height="14" rx="1"></rect></svg>
 			<svg class="resume" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13a1 1 0 0 0 1.5.86l10.2-6.5a1 1 0 0 0 0-1.72L9.5 4.64A1 1 0 0 0 8 5.5z"></path></svg>
 		</button>
-		<input type="range" step="1" aria-label="관절 각도" />
+		<input type="range" step="1" aria-label={pick(lang, '관절 각도', 'Joint angle')} />
 		<output class="angle" aria-live="off"></output>
 	</div>
-	<figcaption>각도는 관절 원점(점선) 기준입니다. 부채꼴이 관절이 움직이는 범위입니다.</figcaption>
+	<figcaption>{pick(lang, '각도는 관절 원점(점선) 기준입니다. 부채꼴이 관절이 움직이는 범위입니다.', 'Angles are measured from the joint origin (dotted line). The fan is the range the joint moves through.')}</figcaption>
 </figure>
 
 <script>

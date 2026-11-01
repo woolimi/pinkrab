@@ -3,6 +3,7 @@
 // download; with several projects, a tab each.
 import Download from './Download.astro';
 import Stage3D from './Stage3D.astro';
+import { pick } from '../i18n';
 
 interface Props {
 	/** The projects, by file name in public/print, and what each tab says. */
@@ -11,6 +12,7 @@ interface Props {
 	label: string;
 }
 const { files, label } = Astro.props;
+const lang = Astro.locals.starlightRoute.lang;
 const base = import.meta.env.BASE_URL.replace(/\/$/, '');
 const href = (file: string) => `${base}/print/${file}`;
 ---
@@ -18,7 +20,7 @@ const href = (file: string) => `${base}/print/${file}`;
 <figure class="pk-print not-content">
 	<div class="bar">
 		{files.length > 1 && (
-			<div class="files" role="group" aria-label="프로젝트">
+			<div class="files" role="group" aria-label={pick(lang, '프로젝트', 'Projects')}>
 				{files.map(({ file, label }, i) => (
 					<button type="button" data-file={href(file)} aria-pressed={i === 0 ? 'true' : 'false'}>{label}</button>
 				))}

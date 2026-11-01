@@ -1,15 +1,17 @@
 ---
 // The ChArUco board the lenses are measured against: the page as it prints, and the file.
 import Download from './Download.astro';
+import { isEn } from '../i18n';
 
+const en = isEn(Astro.locals.starlightRoute.lang);
 const base = import.meta.env.BASE_URL.replace(/\/$/, '');
 ---
 
 <figure class="pk-board not-content">
 	<img src={`${base}/print/lens_charuco_a4.svg`} width="1188" height="840" loading="lazy"
-		alt="A4 가로 한 장에 9 × 6 칸의 ChArUco 보드. 흰 칸마다 ArUco 마커가 있고, 보드 아래에 규격이 적혀 있습니다." />
+		alt={en ? 'A ChArUco board of 9 × 6 squares on one landscape A4 sheet. Each white square holds an ArUco marker, and the size is written below the board.' : 'A4 가로 한 장에 9 × 6 칸의 ChArUco 보드. 흰 칸마다 ArUco 마커가 있고, 보드 아래에 규격이 적혀 있습니다.'} />
 	<figcaption>
-		<span>A4 가로, 100 % 로 출력합니다. 보드 아래에 적힌 크기(270 × 180 mm)를 자로 재어 확인합니다.</span>
+		<span>{en ? 'Print on landscape A4 at 100 %. Measure the size written below the board (270 × 180 mm) with a ruler to check.' : 'A4 가로, 100 % 로 출력합니다. 보드 아래에 적힌 크기(270 × 180 mm)를 자로 재어 확인합니다.'}</span>
 		<Download file="lens_charuco_a4.pdf" />
 	</figcaption>
 </figure>

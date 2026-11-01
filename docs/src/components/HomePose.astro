@@ -1,10 +1,13 @@
 ---
 // The home pose an arm is held in when it is calibrated.
 import Stage3D from './Stage3D.astro';
+import { pick } from '../i18n';
+
+const lang = Astro.locals.starlightRoute.lang;
 ---
 
 <figure class="pk-home not-content">
-	<Stage3D label="페그보드에 건 두 팔의 home 자세. 위팔은 베이스 윗면 위로 젖혀 눕고, 아래팔은 위팔 위로 접혀 있습니다." />
+	<Stage3D label={pick(lang, '페그보드에 건 두 팔의 home 자세. 위팔은 베이스 윗면 위로 젖혀 눕고, 아래팔은 위팔 위로 접혀 있습니다.', 'The home pose of the two arms on the pegboard. The upper arm lies back over the top of the base, and the forearm is folded over the upper arm.')} />
 </figure>
 
 <script>

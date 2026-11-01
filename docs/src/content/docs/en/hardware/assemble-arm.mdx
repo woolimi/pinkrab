@@ -1,0 +1,19 @@
+---
+title: Pinkrab assembly
+description: The order for assembling one Pinkrab arm from printed parts and 7 STS3215 servos. The parts and screws attached at each step, from the base to the fingertip.
+---
+
+import Assembly from '../../../../components/Assembly.astro';
+import ScrewTotals from '../../../../components/ScrewTotals.astro';
+
+One arm is assembled from printed parts, 7 STS3215 servos, one servo board, and one camera. From the base to the fingertip, you alternate between a servo and the part that servo turns, and the servo ids are **1–7 starting from the base**. The left and right arms are mirror images of each other, so the order is the same.
+
+<Assembly kind="arm" />
+
+- Servo ids are set after assembly, in [Setup](../../use/setup/#servo-id), by **connecting the servos one at a time**.
+
+## Screws
+
+The count is the sum of the screws used in each step.
+
+<ScrewTotals kind="arm" />

@@ -1,0 +1,90 @@
+---
+title: Dataset curation
+description: How to make a LeRobot dataset from demonstrations that passed the verdict. The Curate page in studio, keep labels, the computer to run SAM 3 on, review, randomised backgrounds, and conversion.
+---
+
+On the **Curate** page of studio (`http://localhost:8730/curate`), convert the demonstrations gathered in [Demonstration collection](../collect/) into a LeRobot dataset. You can leave the background of the gripper video as it is, or keep only the gripper and the task objects and replace everything else with a random pattern.
+
+## Stages
+
+The page has three stages, from top to bottom.
+
+1. **Keep labels**: For each demonstration, mark the region to keep in each frame of the gripper video. The result is `masks/` in the demonstration folder, and the video itself is not changed.
+2. **Review**: For each demonstration, check the marked region overlaid on the video.
+3. **Convert**: Convert the demonstrations that passed the verdict into a LeRobot dataset. It reads the marks from stage 1 and paints everything outside the region to keep with a different pattern for each demonstration.
+
+A dataset with painted backgrounds is made in stage 3. With only stage 1 done, there are marks but no dataset.
+
+## Why change the background
+
+The policy sees only the images of the two gripper cameras, and besides the gripper and the task objects, those images also show the room, the person demonstrating, and Hermit's body and markers. These do not look the same when the robot runs the policy, so if the policy learns to rely on them, it moves strangely at run time. So each demonstration's background is painted with a different pattern before it goes into the dataset, training the policy to act by looking only at the gripper and the task objects.
+
+## Keep label
+
+A keep label is a picture that records, for each frame of the gripper video, **the region to keep**. What is kept is below, and everything else is background.
+
+- The gripper the camera is mounted on: claw, jaw, servo, camera bracket
+- The gripper of the other hand: the claw, jaw, servo, camera, and bracket that the robot's other arm will show
+- Task objects: things used in the task, such as a mat, blocks, and bowls
+- Lens rim: the black part outside the fisheye image circle. It looks equally black in the robot's cameras
+
+The gripper is not found in the video but **drawn from the description's geometry**. The camera is placed at its position in camera.yaml, the lens by the Kannala-Brandt fit recorded with the demonstration, the jaw by its opening at that moment, and the other hand by the relative position of the two hands measured by the top camera. Hermit's body and markers are not drawn, so they become background. The lens rim is found by fitting a circle to the outer region that never becomes bright in the whole demonstration video, so dark objects at the edge of the screen are not picked up as the rim.
+
+Task objects are found by [SAM 3](https://github.com/facebookresearch/sam3) from English names. On the left of Keep labels is one gripper photo from a demonstration that passed the verdict; you can change the demonstration, the Left or Right camera, and the frame. When you enter object names one at a time in **Things to keep** on the right (for example `black cube`), SAM 3 finds them in that photo right away and marks them with a pink outline and a label, and the list shows how many it found in that frame. Hovering over a row in the list paints only that object. The gripper appears with a white dotted line, and the region to discard appears darkened. If something wrong is picked up or nothing is, change the name and enter it again (if `black cube` picks up a power strip, use `small black cube`).
+
+When the objects are picked up correctly in the photo, press **Make labels**. For each demonstration that passed the verdict and has no keep label made with those objects, it tracks the two gripper videos to the end. An object found once in any frame is tracked forwards and backwards, so an object that is not visible in the preview frame can be found in another frame. If several objects have the same name, all are found. The progress bar shows the demonstration, video, and object in progress, and you can stop with **Stop**. Keep labels are saved in `masks/` in the demonstration folder.
+
+SAM 3 must be installed separately. The installation steps are in [SAM 3 environment in Install](../../start/install/#sam-3-environment). On a Mac, one demonstration with three objects takes a few minutes.
+
+### Computer to run SAM 3 on
+
+Choose the computer to run SAM 3 on in **SAM 3 on**, above Things to keep. The list is `this machine` and the computers added to [Sources on the Train page](../train/#remote-gpu-computer). A computer not in the list can be added right away with **Add** next to it by entering the ssh line and the working folder, and then SAM 3 runs on that computer and it is also added to Sources on the Train page. If you choose a computer with an NVIDIA GPU, the time per demonstration drops to about a third of the Mac's. With three objects on an 8 GB GPU, a 6-second demonstration takes a little over 2 minutes.
+
+| Item | Behavior |
+|---|---|
+| Preparation | When you choose it, studio creates the SAM 3 environment (`sam3-env`) in that computer's Sources folder (default `~/pinkrab-train`) and downloads the weights. The first time takes a few minutes, and progress is shown under the selection field. After that it becomes `ready` in a few seconds |
+| Demonstrations | The demonstrations stay on this computer; only the gripper video is sent and the keep labels are brought back |
+| Preview and Make labels | They share the one SAM 3 on the same computer. While Make labels is running, the preview draws only the gripper, and when it ends it finds the objects again |
+| Stop, connection lost | SAM 3 on that computer also stops right away, freeing the GPU |
+| 1 minute unused | SAM 3 is stopped to free the GPU, so training can be launched on that computer right away; the next time it is first used it takes about 10 seconds more to load the model again |
+
+SAM 3's weights can be downloaded only after approval, so the first time that computer downloads the weights it needs a Hugging Face login. If you are not logged in, the command to run appears under the selection field, so run it on that computer and press **Try again**. After the weights are downloaded, no login is needed.
+
+## Review
+
+The Review list shows, for each demonstration whose recording is finished, its [verdict](../collect/#demonstration-verdict) and the state of its keep label. Only **demonstrations that passed the verdict** go into the dataset.
+
+| Column | Content |
+|---|---|
+| verdict | The verdict result. For a demonstration that failed, the reason is shown in bold |
+| keep labels | The task objects entered when the keep label was made. If different from the objects entered now, `(other things)` |
+| flags | The number of segments to review because the tracking looks doubtful |
+
+**Review** at the end of a row plays the demonstration's two gripper videos overlaid with the keep label. The region to keep is outlined in pink and the rest is darkened. The painted background is viewed in the dataset after conversion.
+
+The red segments on the timeline and the list below it are places where tracking looks doubtful.
+
+| Mark | Meaning |
+|---|---|
+| lost | An object that did not touch the screen edge disappeared. It did not leave the view; the tracking lost it |
+| jumped | The object's area changed by more than 3 times within one frame. Something else was picked up as the object, or only part of it was |
+
+In a frame where an object is lost, that object is painted as background, so the policy cannot see the object in that frame. If the lost segment is long, change the object name and make the keep label again, or leave that demonstration out of the conversion.
+
+## Convert
+
+In the **Convert** stage, enter a dataset name and a task description and press **Convert** to convert all demonstrations that passed the verdict. Demonstrations that failed are left out even if you have not deleted them, and the progress line shows the reason they were left out. Write the task description as an **English sentence** describing the demonstrated task (for example `pick and place the block`). The dataset is saved in `~/pinkrab/datasets/<name>/` and appears in the Datasets list.
+
+The conversion settings are not chosen separately.
+
+- **Background**: If even one demonstration has a keep label, backgrounds are painted, and demonstrations without a label are left out. If no demonstration has a label, they go in as recorded. The line under the button shows how many go in each way.
+- **Pattern**: One per demonstration, made of one of stripes, checks, or blotches layered over smoothly blending colors. It does not change within a demonstration, and the same demonstration gets the same pattern every time it is converted.
+- **fps**: `dataset_fps` (50) in the core settings, and the trained policy **runs at this rate**. How the gaps between camera frames are filled is in [fps of the dataset](../../deep/convert/#dataset-fps).
+
+When the conversion finishes, open the dataset with **View the dataset** under the progress line, or **View** on its row in the Datasets list. On the left are the episodes and the demonstrations they came from, and the two gripper videos play exactly as stored in the dataset. This is the picture training reads.
+
+The same conversion can also be done with a command. The command converts the given demonstrations as they are, without the verdict, and adding `--randomised` paints the background.
+
+```bash
+pinkrab-umi convert --randomised --out pick_place --task "pick and place the block" <episode> <episode> ...
+```

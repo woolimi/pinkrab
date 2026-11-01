@@ -1,19 +1,22 @@
 ---
 // Every screw an assembly takes, by size, read off its steps: for one, and
 // for the pair the robot has.
-import { ARM, HERMIT, screwTotals } from '../data/assembly';
+import { stepsOf, screwTotals } from '../data/assembly';
+import { isEn } from '../i18n';
 
 interface Props {
 	kind: 'arm' | 'hermit';
 }
 const { kind } = Astro.props;
-const totals = screwTotals(kind === 'arm' ? ARM : HERMIT);
-const one = kind === 'arm' ? 'Pinkrab 팔 하나' : 'Hermit 하나';
+const lang = Astro.locals.starlightRoute.lang;
+const en = isEn(lang);
+const totals = screwTotals(stepsOf(kind, lang));
+const one = kind === 'arm' ? (en ? 'One Pinkrab arm' : 'Pinkrab 팔 하나') : (en ? 'One Hermit' : 'Hermit 하나');
 ---
 
 <table>
 	<thead>
-		<tr><th>나사</th><th>{one}</th><th>한 벌(2개)</th></tr>
+		<tr><th>{en ? 'Screw' : '나사'}</th><th>{one}</th><th>{en ? 'Pair (2)' : '한 벌(2개)'}</th></tr>
 	</thead>
 	<tbody>
 		{totals.map(({ size, count }) => (
