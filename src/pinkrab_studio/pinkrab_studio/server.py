@@ -50,7 +50,7 @@ from pinkrab_core.jaw import gripper_band
 from pinkrab_core.urdf import DescriptionError, expand_for_meshes
 from pinkrab_mujoco import physics as physics_module
 from pinkrab_umi.config import SETTINGS as UMI
-from pinkrab_umi.episode import EPISODE_NAME, EpisodeError, delete_episode
+from pinkrab_umi.episode import EPISODE_NAME, EpisodeError, delete_correction, delete_episode
 from pinkrab_umi.desk_solid import PlacementError, chest_x, solid_in_world, world_T_desk
 from pinkrab_umi.markers import solid_stl, face_poses, marker_modules
 
@@ -1323,8 +1323,18 @@ def make_handler(state: StudioState, allowed_hosts: frozenset[str] | None = None
 
             if path == "/rig/live/episode/delete":
                 # One name, or a list of them: the shelf deletes what was ticked.
+                # A name with a correction is that correction of a rollout only.
                 payload = self._body()
                 if payload is None:
+                    return
+                if payload.get("correction") is not None:
+                    try:
+                        delete_correction(str(payload.get("name") or ""), int(payload["correction"]))
+                    except (EpisodeError, TypeError, ValueError) as exc:
+                        self._send_json({"error": str(exc)}, 404)
+                        return
+                    state.feeds.touch("episodes", "verdicts", "home", "dagger")
+                    self._send_json({"ok": True, "deleted": [payload["name"]]})
                     return
                 names = payload.get("names") or [payload.get("name") or ""]
                 gone, errors = [], []

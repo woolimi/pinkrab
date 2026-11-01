@@ -70,7 +70,8 @@ first hand's camera the clock, each tool's pose the arm's forward kinematics
 at each exposure (its joints, read off the robot, interpolated), the
 openings the arms' own jaws, and only the corrections - the readings whose
 `controller` is `human`, the hands driving the arms - are kept, but for a
-correction thrown away and made again (a `redo` in events.jsonl). One recorded
+correction thrown away and made again (a `redo` in events.jsonl) or deleted
+from the shelf (`deleted`). One recorded
 on an arm as it was built before - its meta.json names the description its
 angles are of - is skipped. The poses are turned into the handheld's tool
 convention (TOOL_TURN, which rollout turns back), so a correction's deltas

@@ -20,6 +20,7 @@ what cannot be recovered afterwards. One directory per episode:
                      `description` says which build of each arm the angles
                      are of)
     events.jsonl     start and stop, and in a rollout each correction redone
+                     or deleted
     meta.json        clocks, calibration, where the desk solid stands, counts,
                      what kind of episode it is, what each camera was opened
                      as, every marker's corners on its solid and each gripper
@@ -42,8 +43,8 @@ read off the robot - and every reading says who had the arms then:
 
 The videos run through all of it; which stretches are learned from
 (`learned_from`) is read from `controller`: the corrections, but for one
-thrown away and made again. The shelf lists those (`corrections`), and
-convert keeps only them.
+thrown away and made again or deleted from the shelf. The shelf lists those
+(`corrections`), and convert keeps only them.
 
 Every line carries `host_ts`, this machine's clock at the moment the frame
 or reading arrived - the master clock the three cameras and the jaws are
@@ -480,10 +481,12 @@ def _lines(path: Path) -> list[dict]:
 
 def learned_from(readings: list[dict], events: list[dict]) -> tuple[np.ndarray, int]:
     """Which of a rollout's readings its dataset learns from: the hands driving
-    the arms (`controller` human), in a correction not thrown away and made
-    again (a `redo` event). And how many were redone."""
+    the arms (`controller` human), in a correction neither thrown away and made
+    again (a `redo` event) nor deleted from the shelf (`deleted`). And how
+    many were redone."""
     redone = {e.get("correction") for e in events if e.get("event") == "redo"}
-    return np.array([r.get("controller") == "human" and r.get("correction") not in redone
+    deleted = {e.get("correction") for e in events if e.get("event") == "deleted"}
+    return np.array([r.get("controller") == "human" and r.get("correction") not in redone | deleted
                      for r in readings], dtype=bool), len(redone)
 
 
@@ -566,6 +569,22 @@ def delete_episode(name: str, root: Path | None = None) -> None:
         raise EpisodeError(f"no episode {name!r}")
     shutil.rmtree(path)
     _CORRECTIONS.pop(path, None)
+
+
+def delete_correction(name: str, correction: int, root: Path | None = None) -> None:
+    """One correction of a closed rollout left out of every dataset made from
+    it: a `deleted` event in its events.jsonl. The run itself - its videos and
+    readings, its other corrections - stays, for the policy page."""
+    root = root or SETTINGS.episodes_dir
+    if not EPISODE_NAME.match(name):
+        raise EpisodeError(f"{name!r} is not an episode name")
+    path = root / name
+    if not (path / "meta.json").is_file():
+        raise EpisodeError(f"no closed episode {name!r}")
+    if not any(c["correction"] == correction for c in corrections(path)):
+        raise EpisodeError(f"{name!r} has no correction {correction} to delete")
+    with open(path / "events.jsonl", "a") as events:
+        events.write(json.dumps({"host_ts": time.time(), "event": "deleted", "correction": correction}) + "\n")
 
 
 # What the person watching a rollout says of it. Nothing the recording holds

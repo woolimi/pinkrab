@@ -449,8 +449,8 @@ deleteTicked.addEventListener('click', async () => {
   showTicks();
 });
 
-// A row deleted or ticked here is a demonstration's: a correction is part of
-// its rollout, which the policy page keeps and deletes.
+// A row ticked here is a demonstration's. A correction is deleted on its own
+// row: it leaves the datasets, and its rollout stays on the policy page.
 function tickable(row) { return row.complete && !row.correction; }
 
 // The shelf's rows of the episodes on disk: a demonstration as it is, a
@@ -526,13 +526,13 @@ function drawShelf() {
     }
     const td = document.createElement('td');
     tr.append(td);
-    if (c) return tr;
     const del = document.createElement('button'); del.textContent = 'delete';
+    if (c) del.title = 'leave this correction out of every dataset - the run stays on the policy page';
     // Twice to delete: the second click, within a few seconds, is the yes.
     del.addEventListener('click', async () => {
       if (!del.classList.contains('sure')) { del.classList.add('sure'); del.textContent = 'sure?'; setTimeout(() => { del.classList.remove('sure'); del.textContent = 'delete'; }, 4000); return; }
       del.disabled = true;
-      await ask('/rig/live/episode/delete', { name: ep.name }).catch(() => {});
+      await ask('/rig/live/episode/delete', c ? { name: ep.name, correction: c.correction } : { name: ep.name }).catch(() => {});
     });
     td.append(del);
     return tr;
