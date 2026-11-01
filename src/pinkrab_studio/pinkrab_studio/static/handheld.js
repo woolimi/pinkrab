@@ -331,14 +331,14 @@ function soundReady(ready) {
   }
 }
 
-// Each step said aloud, in Korean, so the person at the handhelds hears it
+// Each step said aloud, in English, so the person at the handhelds hears it
 // without looking; the tones where the browser has no voice.
 function say(text, kind) {
   const speech = window.speechSynthesis;
   if (!speech || !window.SpeechSynthesisUtterance) { beep(kind); return; }
   const line = new SpeechSynthesisUtterance(text);
-  line.lang = 'ko-KR';
-  const voice = speech.getVoices().find((v) => v.lang.replace('_', '-').startsWith('ko'));
+  line.lang = 'en-US';
+  const voice = speech.getVoices().find((v) => v.lang.replace('_', '-').startsWith('en'));
   if (voice) line.voice = voice;
   speech.speak(line);
 }
@@ -364,16 +364,16 @@ function showEpisode(ep) {
     recLine.textContent = running ? 'not recording' : 'not connected';
     recLine.title = '';
   }
-  if (!was && recording) say('녹화 시작', 'start');
+  if (!was && recording) say('Recording', 'start');
   // Stopped: the videos finish (closing) before it is kept; cancelled, it is
   // closed and deleted instead.
   if (was && !recording) {
     const end = [ep?.closing, ep?.closed].find((e) => e?.name === was);
-    if (end?.cancelled) say('녹화 취소', 'stop');
-    else { saving = was; if (ep?.closing?.name === was) say('저장 중', 'stop'); }
+    if (end?.cancelled) say('Recording cancelled', 'stop');
+    else { saving = was; if (ep?.closing?.name === was) say('Saving', 'stop'); }
   }
   if (saving && ep?.closed?.name === saving && ep?.closing?.name !== saving) {
-    say(ep.closed.cancelled ? '녹화 취소' : '저장 완료', 'stop');
+    say(ep.closed.cancelled ? 'Recording cancelled' : 'Saved', 'stop');
     saving = null;
   }
 }
