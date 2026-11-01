@@ -45,7 +45,7 @@ gripper:
   sensor: [1920, 1200]
   resolution: [1280, 960]
   region: [160, 0, 1600, 1200]
-  fps: 60            # the same mode runs to 120
+  fps: 30            # the same mode runs to 120
   fourcc: MJPG
   # How long after exposure a frame reaches this host, for laying the
   # handheld's streams on the top camera's exposures: the module stamps
