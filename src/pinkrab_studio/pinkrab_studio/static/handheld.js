@@ -280,26 +280,38 @@ function beep(kind) {
 }
 
 // A hand reaching where the ready pose holds it - its guide turning green in
-// the top camera's picture - chimes once, the left hand low and the right
-// high, so each is told apart without looking. It chimes again only after
-// READY_REARM_MS read off green: a hand whose marker is lost for a moment is
-// not off green, and one sitting on the edge does not chime on every flicker.
+// the top camera's picture - chimes once, and leaving it sounds once a tone
+// sliding down, another kind of sound: the left hand low and the right high,
+// so each is told apart without looking. Leaving is READY_REARM_MS read off
+// green: a hand whose marker is lost for a moment is not off green, and one
+// sitting on the edge does not sound on every flicker.
 const READY_REARM_MS = 600;
-const CHIMES = { left: [[523.25, 0], [783.99, 0.1]], right: [[1046.5, 0], [1567.98, 0.1]] };
+const CHIMES = { left: [523.25, 783.99], right: [1046.5, 1567.98] };
 const readyHands = { left: { armed: true, off: 0 }, right: { armed: true, off: 0 } };
 
-function chime(side) {
+function chime(side, arriving) {
+  const [low, high] = CHIMES[side];
   try {
     audio = audio || new (window.AudioContext || window.webkitAudioContext)();
-    for (const [hz, at] of CHIMES[side]) {
+    const t = audio.currentTime;
+    if (!arriving) {
+      // A slide from the high note to below the low one, soft at both ends.
+      const osc = audio.createOscillator(); const gain = audio.createGain();
+      osc.type = 'triangle'; osc.connect(gain); gain.connect(audio.destination);
+      osc.frequency.setValueAtTime(high, t); osc.frequency.exponentialRampToValueAtTime(low * 0.6, t + 0.3);
+      gain.gain.setValueAtTime(0.0001, t); gain.gain.exponentialRampToValueAtTime(0.2, t + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.32);
+      osc.start(t); osc.stop(t + 0.33);
+      return;
+    }
+    for (const [hz, at] of [[low, 0], [high, 0.1]]) {
       // A struck tone: a sine and its octave, gone in a third of a second.
       for (const [mult, level] of [[1, 0.25], [2, 0.06]]) {
         const osc = audio.createOscillator(); const gain = audio.createGain();
         osc.frequency.value = hz * mult; osc.connect(gain); gain.connect(audio.destination);
-        const t = audio.currentTime + at;
-        gain.gain.setValueAtTime(0.0001, t); gain.gain.exponentialRampToValueAtTime(level, t + 0.005);
-        gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.35);
-        osc.start(t); osc.stop(t + 0.36);
+        gain.gain.setValueAtTime(0.0001, t + at); gain.gain.exponentialRampToValueAtTime(level, t + at + 0.005);
+        gain.gain.exponentialRampToValueAtTime(0.0001, t + at + 0.35);
+        osc.start(t + at); osc.stop(t + at + 0.36);
       }
     }
   } catch { /* no audio here */ }
@@ -311,10 +323,10 @@ function soundReady(ready) {
     const hand = readyHands[side];
     if (ready[side] === true) {
       hand.off = 0;
-      if (hand.armed) { chime(side); hand.armed = false; }
+      if (hand.armed) { chime(side, true); hand.armed = false; }
     } else if (ready[side] === false) {
       hand.off = hand.off || now;
-      if (now - hand.off >= READY_REARM_MS) hand.armed = true;
+      if (!hand.armed && now - hand.off >= READY_REARM_MS) { chime(side, false); hand.armed = true; }
     }
   }
 }
