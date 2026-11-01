@@ -19,6 +19,7 @@ episode, so asking is quick once the shelf has been through it.
 from __future__ import annotations
 
 import collections
+import itertools
 import json
 import threading
 from pathlib import Path
@@ -90,6 +91,7 @@ def judge(root: Path, answer: dict) -> dict:
                                  f"back {moved['back_mm']:.0f} mm, and not back at ready")
     feasible = [per[hand]["feasible"] for hand in ARMS]
     return {"hands": per, "lost_s": max(per[h]["lost_s"] for h in ARMS),
+            "gap_s": max(per[h]["gap_s"] for h in ARMS),
             "held_s": min(per[h]["held_s"] for h in ARMS),
             "feasible": None if None in feasible else min(feasible),
             "flags": dict(sum((collections.Counter(per[h]["flags"]) for h in ARMS), collections.Counter())),
@@ -102,14 +104,18 @@ def _hand(poses: list[dict], answer: dict, hand: str, fps: float) -> tuple[dict,
     frames = len(poses)
     # Tracking, as UMI counts it: the hand's solid solved. The jaw read is
     # counted apart, and only warned about.
-    held = sum(1 for p in poses if (p.get("solids") or {}).get(f"handheld_{hand}", {}).get("solved")
-               and p["solids"][f"handheld_{hand}"].get("pose") is not None)
+    tracked = [bool((p.get("solids") or {}).get(f"handheld_{hand}", {}).get("solved"))
+               and p["solids"][f"handheld_{hand}"].get("pose") is not None for p in poses]
+    held = sum(tracked)
     jaws = [p["jaw"][hand] for p in poses if (p.get("jaw") or {}).get(hand) is not None]
     lost_s = (frames - held) / fps
     held_s = held / fps
+    # The longest the hand was lost at once: convert bridges a hole up to
+    # convert_max_hole_s and cuts the take at a longer one.
+    gap_s = longest(tracked, False) / fps
     # The hand's frames the replay placed it in. One it could not place
     # ("lost": solid unsolved, or only the jaw unread) is left out: the
-    # tracking judges the first (lost_s), the jaw's reading warns of the
+    # tracking judges the first (gap_s), the jaw's reading warns of the
     # second (jaw_read); neither is the arm's.
     # A joint at its band is not a frame lost: the arm still lands on the
     # target, at the edge of its reach, and when that edge does harm - a
@@ -132,8 +138,10 @@ def _hand(poses: list[dict], answer: dict, hand: str, fps: float) -> tuple[dict,
     fails, warns = [], []
     if hand in (answer.get("unplaced") or {}):
         fails.append(f"hand not on the desk - {answer['unplaced'][hand]}")
-    if lost_s > UMI.keep_max_lost_s:
-        fails.append(f"lost {lost_s:.2f} s")
+    if gap_s > UMI.convert_max_hole_s:
+        fails.append(f"lost {gap_s:.2f} s at once")
+    elif frames and (frames - held) / frames > UMI.keep_warn_lost_share:
+        warns.append(f"lost {(frames - held) / frames:.0%} of frames, {gap_s:.2f} s at most at once")
     # How far round the arm swings from ready to follow its hand, over the
     # frames it followed.
     pan = [abs(np.degrees(f["joints"][f"{hand}_shoulder_pan"]) - READY_DEG[hand]["shoulder_pan"])
@@ -141,17 +149,17 @@ def _hand(poses: list[dict], answer: dict, hand: str, fps: float) -> tuple[dict,
     swung = max(pan, default=0.0)
     if hand in answer.get("hands", []) and swung > UMI.keep_warn_pan_from_ready_deg:
         warns.append(f"shoulder_pan {swung:.0f} deg from ready")
-    # The fastest any joint turns between two moments the arm followed: past
-    # what the servos turn, the arm cannot do what the take asks there - a
-    # flip to another shape of the arm, as a reach runs out - and the gate
-    # smears it into something else.
-    # The replay follows at that speed at most, so an arm only keeping up
-    # with a quick hand turns at it exactly; past it is a jump the follower
-    # did not make itself.
+    # The fastest any joint turns between two moments the arm followed. The
+    # replay follows at the servos' speed at most, so an arm only keeping up
+    # with a quick hand turns at it exactly; past it is the replay solving
+    # the arm afresh into another shape of itself, as a reach runs out - the
+    # hand reached, the arm got there another way. Pointed out: a policy
+    # taught many such reaches meets the same edge at rollout. A hand the arm
+    # could not reach is failed by the share it follows.
     fastest = fastest_joint(answer["trajectory"], hand) if hand in answer.get("hands", []) else None
     if fastest is not None and fastest[1] > CORE.max_joint_speed_dps * SPEED_SLACK:
-        fails.append(f"{fastest[0].removeprefix(hand + '_')} {fastest[1]:.0f} deg/s, "
-                     f"past the arm's {CORE.max_joint_speed_dps:.0f}")
+        warns.append(f"{fastest[0].removeprefix(hand + '_')} {fastest[1]:.0f} deg/s, "
+                     f"past the arm's {CORE.max_joint_speed_dps:.0f} - the arm changed shape at the edge of its reach")
     if held_s < UMI.keep_min_held_s:
         fails.append(f"held {held_s:.1f} s")
     if unjudged:
@@ -167,7 +175,8 @@ def _hand(poses: list[dict], answer: dict, hand: str, fps: float) -> tuple[dict,
                      f"({joint.removeprefix(hand + '_')} at its limit)")
     if jaw_read < UMI.keep_warn_jaw_read:
         warns.append(f"jaw read {jaw_read:.0%}")
-    return ({"lost_s": round(lost_s, 2), "held_s": round(held_s, 1), "pan_from_ready_deg": round(swung, 1),
+    return ({"lost_s": round(lost_s, 2), "gap_s": round(gap_s, 2), "held_s": round(held_s, 1),
+             "pan_from_ready_deg": round(swung, 1),
              "fastest_dps": None if fastest is None else round(fastest[1]),
              "feasible": None if feasible is None else round(feasible, 3), "flags": flags,
              "jaw_read": round(jaw_read, 3), "jaw_spread": round(jaw_spread, 3)}, fails, warns)
@@ -379,11 +388,16 @@ def retract(poses: list[dict], meta: dict, hand: str) -> dict | None:
     return {"lift_mm": round(lift * 1000.0, 1), "back_mm": round(back * 1000.0, 1), "opened": opened}
 
 
+def longest(seq, value) -> int:
+    """The longest run of `value` in `seq`."""
+    return max((len(list(run)) for v, run in itertools.groupby(seq) if v == value), default=0)
+
+
 def _rollout(answer: dict) -> dict:
     """A rollout's verdict, from the robot's readings its replay is made of:
     what convert learns from is the arms' joints, so the hands' solids going
     unseen is no hole in it - the arms only held still. It fails on readings
-    missing. A run with too short a correction in it is only pointed out -
+    missing for longer at once than convert bridges. A run with too short a correction in it is only pointed out -
     convert takes nothing from it, and it is kept for what the policy did -
     and so is a correction whose jaws did not move, as one may put the reach
     right alone."""
@@ -393,19 +407,22 @@ def _rollout(answer: dict) -> dict:
     flags = dict(collections.Counter(flag for f in frames for flag in f["flags"].get(arms[0], [])))
     corrected = [f for f in frames if not f["flags"].get(arms[0])]
     held_s, lost_s = len(corrected) / fps, flags.get("lost", 0) / fps
+    gap_s = longest(["lost" in f["flags"].get(arms[0], []) for f in frames], True) / fps
     spread = {}
     for arm in arms:
         band = gripper_band(arm)
         jaws = [aperture_of(arm, f["joints"][f"{arm}_gripper"], band) for f in corrected]
         spread[arm] = round((max(jaws) - min(jaws)) if jaws else 0.0, 3)
     fails, warns = [], []
-    if lost_s > UMI.keep_max_lost_s:
-        fails.append(f"robot unread {lost_s:.2f} s")
+    if gap_s > UMI.convert_max_hole_s:
+        fails.append(f"robot unread {gap_s:.2f} s at once")
+    elif frames and lost_s * fps / len(frames) > UMI.keep_warn_lost_share:
+        warns.append(f"robot unread {lost_s * fps / len(frames):.0%} of frames, {gap_s:.2f} s at most at once")
     if held_s < UMI.keep_min_held_s:
         warns.append(f"corrected {held_s:.1f} s")
     elif all(s < UMI.keep_min_jaw_spread for s in spread.values()):
         warns.append("no jaw moved")
-    return {"kind": "rollout", "lost_s": round(lost_s, 2), "held_s": round(held_s, 1),
+    return {"kind": "rollout", "lost_s": round(lost_s, 2), "gap_s": round(gap_s, 2), "held_s": round(held_s, 1),
             "feasible": 1.0, "flags": flags, "jaw_read": 1.0, "jaw_spread": spread,
             "fails": fails, "warns": warns}
 

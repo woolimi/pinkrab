@@ -4,7 +4,9 @@ take stops. Hand poses made up in the desk's frame, the top camera standing
 at the desk's origin so the recorded poses are the desk's. And of its
 shoulder_pan rule: a take whose replay swings an arm far round from the
 ready pose is pointed out on that arm, and of its joint speed rule: one
-turned faster than the servos turn fails. And of where a hand ended against the ready
+turned faster than the servos turn is pointed out. And of its tracking rule: a
+hand lost longer at once than convert bridges fails, lost a frame at a time
+it is only pointed out. And of where a hand ended against the ready
 pose, which excuses a short retract. No camera.
 
     python src/pinkrab_studio/test/retract_check.py
@@ -136,6 +138,31 @@ def main() -> int:
     turns[5]["flags"]["right"] = ["lost"]
     check("not across a moment the arm did not follow", abs(fastest_joint(turns, "right")[1] - 100) < 1e-6,
           f"{fastest_joint(turns, 'right')[1]:.0f} deg/s")
+
+    followed = [dict(f, flags={"right": []}) for f in turns]
+    _, fails, warns = _hand(take(reach, held), {"trajectory": followed, "hands": ["right"]}, "right", 30.0)
+    check("and a take with one is pointed out, not failed",
+          not any("deg/s" in f for f in fails) and any("deg/s" in w for w in warns), f"{fails} {warns}")
+
+    print("\ntracking")
+    still = [(0.30, 0.0, 0.05)] * 60
+    hole = round(UMI.convert_max_hole_s * 30)
+
+    def judged(missing: set[int]) -> tuple[list[str], list[str]]:
+        lines = take(still, [0.5] * 60)
+        for i in missing:
+            lines[i]["solids"]["handheld_right"]["solved"] = False
+        frames = [{"t": i / 30, "flags": {"right": []}, "joints": {"right_elbow_flex": 0.0}} for i in range(60)]
+        return _hand(lines, {"trajectory": frames, "hands": ["right"]}, "right", 30.0)[1:]
+
+    fails, warns = judged(set(range(0, 60, 6)))
+    check("a hand lost a frame at a time does not fail, however often",
+          not any(f.startswith("lost") for f in fails), str(fails))
+    check("and past the share is pointed out", any(w.startswith("lost") for w in warns), str(warns))
+    fails, _ = judged(set(range(20, 20 + hole)))
+    check("lost as long as convert bridges does not fail", not any(f.startswith("lost") for f in fails), str(fails))
+    fails, _ = judged(set(range(20, 21 + hole)))
+    check("lost longer at once fails", any(f.startswith("lost") for f in fails), str(fails))
 
     print("\nshoulder_pan from ready")
     seen = take(reach + out, [0.3] * 10 + [0.9] * 5)

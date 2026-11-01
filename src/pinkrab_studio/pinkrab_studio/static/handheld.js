@@ -490,9 +490,10 @@ function fillVerdicts() {
     // Each hand's jaw, as far as it moved across its travel.
     const jaws = Object.entries(v.jaw_spread || {}).map(([hand, s]) => `${hand} ${Math.round(s * 100)}%`).join(', ');
     cell.title = v.kind === 'rollout'
-      ? `rollout · corrected ${v.held_s} s · robot unread ${v.lost_s} s · jaws moved ${jaws} of their travel`
-        + ` · frames flagged: ${flags}`
-      : `held ${v.held_s} s · lost ${v.lost_s} s (the worse hand) · jaws moved ${jaws} of their travel, `
+      ? `rollout · corrected ${v.held_s} s · robot unread ${v.lost_s} s, ${v.gap_s} s at most at once`
+        + ` · jaws moved ${jaws} of their travel · frames flagged: ${flags}`
+      : `held ${v.held_s} s · lost ${v.lost_s} s, ${v.gap_s} s at most at once (the worse hand)`
+        + ` · jaws moved ${jaws} of their travel, `
         + `read ${Math.round(v.jaw_read * 100)}% · frames the replay flagged: ${flags}`;
   }
   showTicks();

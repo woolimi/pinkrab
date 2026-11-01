@@ -480,20 +480,26 @@ class Settings:
 
     # --- what a take must hold to be trained on ------------------------------
     # The shelf judges each take by these, after UMI's own dataset plan, which
-    # drops a video with more than ten frames lost to tracking or fewer than
-    # sixty tracked, at 60 fps: stated here in seconds, so they hold at any rate.
-    # The working hand is the one whose jaw moved; a frame is tracked when its
+    # drops a video with fewer than sixty frames tracked, at 60 fps: stated
+    # here in seconds, so they hold at any rate. A frame is tracked when its
     # solid solved, as UMI counts tracking, and the jaw's reading is counted
     # apart (keep_warn_jaw_read).
-    keep_max_lost_s: float = 10 / 60
+    #
     # A hole this short or shorter in a take - a frame or few without a hand's
     # solid, the desk solid or a gripper picture just then - is bridged when
     # it is converted rather than cut: each pose interpolated across it from
     # the frames either side, each picture the last one taken. Two hands and
     # three cameras make one such frame every second or two, and a cut there
-    # leaves two short pieces, one of them starting mid-task. The shelf lets
-    # a take lose this much (keep_max_lost_s).
+    # leaves two short pieces, one of them starting mid-task. A hand lost for
+    # longer than this at once fails the take on the shelf: there the take
+    # is cut.
     convert_max_hole_s: float = 10 / 60
+    # UMI also drops a video with more than ten frames lost in all. Lost a
+    # frame or two at a time, every hole is bridged and the take converts
+    # whole - a resting hand at 60 fps, 45 frames in 39 holes of two at most
+    # (2026-11-01) - so past this share of its frames lost a take is only
+    # pointed out, its tracking being on the edge.
+    keep_warn_lost_share: float = 0.05
 
     # --- what of the gripper pictures is kept (keep_masks) -------------------
     # SAM 3 tracks the task's things in an environment of its own: it wants a
@@ -523,7 +529,7 @@ class Settings:
     # those the replay could not place left out, the ones the arm follows: no
     # miss, jump or contact, a joint at its limit being only pointed out;
     # none for a hand the replay never placed. A frame is not placed
-    # when the solid was not solved, which keep_max_lost_s judges, or when only
+    # when the solid was not solved, which convert_max_hole_s judges, or when only
     # the jaw went unread, which keep_warn_jaw_read warns of.
     keep_min_feasible: float = 0.80
     # UMI warns, and keeps the take, below this share of frames with the
