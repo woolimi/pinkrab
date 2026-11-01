@@ -388,8 +388,8 @@ class Settings:
     # How much the arm's solve weighs the tool's attitude against its place: a
     # wrist that cannot reach both is let off the turn first.
     policy_orientation_weight: float = 0.1
-    # Ready is a place, not a joint vector: the arm is there when every joint
-    # the ready pose names is this close to it.
+    # The start Ask walks to is a place, not a joint vector: the arm is there
+    # when every joint it names is this close to it.
     policy_ready_tol_deg: float = 3.0
     # A checkpoint looks at its pictures (pinkrab-picture-swap) when, on every
     # hand, its answer with another frame's pictures points no closer than

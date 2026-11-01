@@ -5,7 +5,8 @@ gripper cameras see - what the HANDHELDS' cameras saw while the takes were
 made - and, with two hands, where one tool stands from the other. Shown a
 start from somewhere else, the policy is shown pictures and an arrangement
 of the hands it has never seen, and what comes back is noise. So before a
-policy drives, each arm is taken to where its hand began: the mean of the
+policy is asked (the studio's Ask, a simulated run), each arm is taken to
+where its hand began: the mean of the
 demonstrations' first tool poses, carried into the robot's world as the
 hands were while the takes were made - the desk solid at the operator's
 chest stands for the robot's board (pinkrab_umi.desk_solid.world_T_desk), so

@@ -20,9 +20,10 @@ own jaw as a fraction of its band and the tools' relative pose, which is what
 the dataset carried.
 
 Driving happens in one mode: the gate publishes `TeleopState`, and unless it
-says armed and MODE_POLICY nothing is solved or published. The mode begins at
-the ready pose, walked to slowly, as the handheld mode does, and then each
-arm walks to where its hand began the takes (pinkrab_core.demo_start).
+says armed and MODE_POLICY nothing is solved or published. The policy
+takes the arms where they stand when the mode begins: nothing is walked
+first. The studio's Ask leaves them where the takes began
+(pinkrab_core.demo_start), and its Ready button at the ready pose.
 
 The solve keeps every joint limit_margin_deg inside its band: that is the
 stop a policy drives against. The run ends - nothing more published, the gate
@@ -37,8 +38,8 @@ joints turn is the gate's to hold (inference.policy_dps).
 A correction (DAgger) is the handhelds taking the arms over mid-run
 (MODE_CORRECT) and handing them back: the mode returns to policy straight
 from the correction, and the policy goes on from where the hands left the
-arms - no walk to ready, its own memory of the last step cleared - which
-also lifts a run that had stopped at an arm's reach.
+arms, its own memory of the last step cleared - which also lifts a run that
+had stopped at an arm's reach.
 
     ros2 run pinkrab_policy rollout --ros-args -p checkpoint:=/path/to/pretrained_model
 
@@ -542,9 +543,7 @@ def node_main() -> None:
     from rclpy.node import Node
     from sensor_msgs.msg import JointState
 
-    from pinkrab_core.origin import ready_pose
     from pinkrab_core.parent import watch_parent
-    from pinkrab_core.walk import Approach
 
     class RolloutNode(Node):
         def __init__(self) -> None:
@@ -571,8 +570,7 @@ def node_main() -> None:
             except (inference.InferenceError, RuntimeError) as exc:
                 raise SystemExit(f"rollout: {exc}") from exc
             # Set when the checkpoint's dataset has changed since it learned:
-            # no start can be trusted, so nothing is driven - known here, so
-            # the arms are not even walked to ready first.
+            # nothing it is shown can be trusted, so nothing is driven.
             self.refused = ""
             from pinkrab_core.demo_start import (
                 DatasetChanged,
@@ -585,7 +583,7 @@ def node_main() -> None:
                 self.refused = str(exc)
                 self.get_logger().error(f"not driving: {exc}")
             except (DemoStartError, OSError, ValueError):
-                pass    # no dataset to check here; the demo start says so when it is asked
+                pass    # no dataset to check here
             try:
                 self.observer = Observer(self.driver.sizes)
             except (LensMissing, ValueError) as exc:
@@ -602,8 +600,6 @@ def node_main() -> None:
             # Why the run stopped at an arm's reach, until a correction lifts it.
             self.halted = ""
             self.tracking = Tracking(CORE.reading_stale_s, CORE.policy_follow_lag_deg, CORE.policy_follow_hold_s)
-            self.approach: Approach | None = None
-            self.at_start = False      # ready reached, the demo start is the leg after
             self.started = False
             self._said = 0.0
             self.period = self.driver.brain.period
@@ -620,27 +616,6 @@ def node_main() -> None:
                 "pictures from the live view's shared frames"
                 + (f", told {self.driver.brain.task!r}" if self.driver.brain.task else ""))
 
-        def _demo_start_leg(self) -> dict[str, float] | None:
-            """The joints that put each tool where its hand began the takes, or None."""
-            from pinkrab_core.demo_start import DatasetChanged, dataset_of_checkpoint, start_joints
-            try:
-                joints, info = start_joints(dataset_of_checkpoint(Path(self.checkpoint)), self.driver.chains, carry)
-            except DatasetChanged as exc:
-                self.refused = str(exc)
-                self.get_logger().error(f"not driving: {exc}")
-                self._report({"phase": "refused", "reason": self.refused})
-                return None
-            except (RuntimeError, OSError, ValueError) as exc:   # the solver's own failures too
-                self.get_logger().warn(f"no demo start - driving from ready: {exc}")
-                return None
-            for hand, found in info["arms"].items():
-                self.get_logger().info(
-                    f"walking the {hand} arm to the demo start: tool {found['pitch_deg']:.0f} deg down, "
-                    f"{found['height_m'] * 1000:.0f} mm above the desk, {found['margin_deg']:.0f} deg from "
-                    f"the nearest stop ({info['episodes']} episodes)")
-            return {name: math.radians(float(v)) for hand, chain in self.driver.chains.items()
-                    for name, v in zip(chain.joint_names, joints[hand])}
-
         def _on_state(self, message: JointState) -> None:
             if message.name and len(message.name) == len(message.position):
                 self.at.update(dict(zip(message.name, (float(v) for v in message.position))))
@@ -653,21 +628,14 @@ def node_main() -> None:
             if driving == self.driving:
                 return
             self.driving = driving
-            if driving and before == TeleopState.MODE_CORRECT:
-                # Handed back: on from where the hands left the arms.
-                self.approach = None
-                self.at_start = True
+            if driving:
+                # From where the arms are: a new run, or the hands handing back.
                 self.started = False
-                self.halted = ""
-                self.get_logger().info("handed back - the policy goes on from where the arms are")
-            elif driving:
-                self.approach = Approach(ready_pose(), self.driver.brain.common["ready_tol_deg"])
-                self.at_start = False
-                self.started = False
-                self.halted = ""   # a new run is not the one that stopped
-                self.get_logger().info(f"policy mode: walking to the ready pose first, {CORE.park_speed_dps:g} deg/s")
+                self.halted = ""   # a new run, or a correction, is not the one that stopped
+                self.get_logger().info("handed back - the policy goes on from where the arms are"
+                                       if before == TeleopState.MODE_CORRECT
+                                       else "policy mode: the policy takes the arms where they are")
             else:
-                self.approach = None
                 self.started = False
                 self.get_logger().info("not driving - the arms hold where they are")
 
@@ -682,29 +650,6 @@ def node_main() -> None:
                     self._said = now
                     self.get_logger().error(f"not driving: {self.refused or self.halted}")
                     self._report({"phase": "refused", "reason": self.refused or self.halted})
-                return
-            if self.approach is not None:
-                command = self.approach.step(self.at, time.monotonic())
-                if self.approach.arrived:
-                    self.approach = None
-                    if not self.at_start:
-                        # Ready reached; now where the takes began, so the
-                        # first picture the policy sees is one it was shown.
-                        self.at_start = True
-                        leg = self._demo_start_leg()
-                        if self.refused:
-                            return
-                        if leg is not None:
-                            self.approach = Approach(leg, self.driver.brain.common["ready_tol_deg"])
-                            return
-                    self.get_logger().info("at the start - the policy takes over")
-                    return
-                to_go = self.approach.to_go_deg(self.at)
-                self.get_logger().info(f"walking to the {'start' if self.at_start else 'ready pose'}: {to_go:.0f} deg to go",
-                                       throttle_duration_sec=1.0)
-                self._report({"phase": "walking", "to_go_deg": round(float(to_go), 1)})
-                if command:
-                    self._publish(command)
                 return
             now = time.monotonic()
             if not self.started:

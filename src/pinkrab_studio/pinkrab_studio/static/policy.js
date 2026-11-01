@@ -691,9 +691,8 @@ askEl.addEventListener('click', async () => {
   updateButtons();
 });
 
-// Hand the arms to the rollout node. It walks them to ready and the start
-// itself, then drives; what it asked for arrives as steps and is drawn like
-// the asking loop's.
+// Hand the arms to the rollout node. It drives them from where they stand;
+// what it asked for arrives as steps and is drawn like the asking loop's.
 driveEl.addEventListener('click', async () => {
   askEl.disabled = true; driveEl.disabled = true;
   noteEl.textContent = '';
@@ -717,8 +716,7 @@ function showPolicy(s) {
   policyState = s;
   showSettingsInUse(s);
   if (s.driving) {
-    statusEl.textContent = s.phase === 'walking' ? `walking to the start · ${s.to_go_deg ?? '?'}°`
-      : s.phase === 'driving' ? 'driving'
+    statusEl.textContent = s.phase === 'driving' ? 'driving'
       : s.phase === 'refused' ? `refused: ${s.refused}`
       : 'starting';
   } else if (s.loading) {

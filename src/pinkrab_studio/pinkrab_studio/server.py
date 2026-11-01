@@ -1105,9 +1105,9 @@ def make_handler(state: StudioState, allowed_hosts: frozenset[str] | None = None
             if path == "/policy/drive":
                 # The rollout node, with the checkpoint the page chose - it
                 # drives the arms the checkpoint was trained for - and the
-                # gate handed to it. The node walks to ready on
-                # its own once it sees policy mode, then drives; each step it
-                # takes comes back to /policy/step. The run is recorded from
+                # gate handed to it. The node drives the arms from where they
+                # stand once it sees policy mode; each step it takes comes
+                # back to /policy/step. The run is recorded from
                 # here to its stop (dagger.py), and not driven unrecorded.
                 payload = self._body()
                 if payload is None:

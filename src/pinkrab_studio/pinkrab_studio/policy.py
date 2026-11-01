@@ -164,7 +164,6 @@ class PolicyRun:
         # history is what the node said.
         self._driving = False
         self._phase = ""
-        self._to_go_deg: float | None = None
         self._refused = ""
         self._beat = 0.0
 
@@ -178,7 +177,6 @@ class PolicyRun:
                 "running": running or self._driving,
                 "driving": self._driving,
                 "phase": self._phase,
-                "to_go_deg": self._to_go_deg,
                 "refused": self._refused,
                 "loading": self._loading,
                 "checkpoint": self._checkpoint,
@@ -277,7 +275,6 @@ class PolicyRun:
             self._driving = True
             self._settings = None
             self._phase = "starting"
-            self._to_go_deg = None
             self._refused = ""
             self._beat = 0.0
         return hands
@@ -286,7 +283,6 @@ class PolicyRun:
         with self._lock:
             self._driving = False
             self._phase = ""
-            self._to_go_deg = None
             self._refused = ""
 
     def record(self, report: dict) -> None:
@@ -312,10 +308,7 @@ class PolicyRun:
             # Not refused now: a refusal after this is news again.
             self._refused = ""
             if phase != "driving":
-                to_go = report.get("to_go_deg")
-                self._to_go_deg = float(to_go) if isinstance(to_go, (int, float)) else None
                 return
-            self._to_go_deg = None
             said = report.get("arms") or {}
             if set(said) != set(self._hands):
                 return

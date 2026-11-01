@@ -33,10 +33,10 @@ Press the Policy card on the studio home screen. The top bar has the connection 
 | Button | Action |
 |---|---|
 | Ask | Moves both arms through the Ready pose to the pose where the demonstrations started, then asks the policy and only draws its answer on the screen. The arms do not move further |
-| Drive | Moves both arms to the same start pose, then moves them as the policy answers |
+| Drive | Moves both arms as the policy answers, starting right from the pose they are in. The arms are not moved anywhere first |
 | Stop | Stops in place. The servos hold the stopped position |
 
-The start pose is the average of the first poses of the demonstrations, so the two arms start as far apart as the two hands were in the demonstrations, facing each other. For a checkpoint you run for the first time, it is safer to **look at the answer with Ask first** and then move on to Drive.
+The start pose is the average of the first poses of the demonstrations, so the two arms start as far apart as the two hands were in the demonstrations, facing each other. Pressing Drive after stopping Ask starts the arms from this start pose, and pressing the Ready button first starts them from the Ready pose. For a checkpoint you run for the first time, it is safer to **look at the answer with Ask first** and then move on to Drive.
 
 **The run stops** if the policy answers with a non-number (NaN), or if a joint keeps moving away from its target while at its limit. Commands sent to the arms still pass the safety gate's joint range, collision, and speed checks during a run.
 

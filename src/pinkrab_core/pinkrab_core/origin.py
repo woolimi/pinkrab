@@ -1,4 +1,4 @@
-"""The pose the arms wait in - walked to by the page's ready button and on the way into a policy run.
+"""The pose the arms wait in - walked to by the page's ready button and on the way into Ask.
 
 The description's zero is where the ARMS park: the upper arm lying back over its
 base, the forearm folded forward on it, the hand against the shoulder - a pose
@@ -40,7 +40,7 @@ centre nor any of the distances above - it only says which way round the jaw
 opens - and it is stated at 34 degrees, mirrored, the way round the operator's
 jaw opened.
 
-Both the page's ready button and a policy run's walk want these numbers, and
+Both the page's ready button and Ask's walk want these numbers, and
 numbers kept in two places end up different in two places. They are here, and
 both ask. Home is a different pose and needs no numbers: it is the description's
 zero, every joint at 0, where the arms park. The walk between the two is

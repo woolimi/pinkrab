@@ -12,8 +12,8 @@ simulation.
 
 A take placed in the robot's world (`tool_absolute_target`): the hand's tool
 pose against the desk solid, carried in by where the solid is reckoned to
-stand there - what the shelf's replay judges a take by and where a policy
-run starts its arms (pinkrab_core.demo_start).
+stand there - what the shelf's replay judges a take by and where Ask and a
+simulated run start the arms (pinkrab_core.demo_start).
 """
 from __future__ import annotations
 

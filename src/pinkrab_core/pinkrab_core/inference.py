@@ -150,7 +150,7 @@ COMMON_KNOBS: tuple[Knob, ...] = (
          "how far one tick's solve may fall short of the turn asked for before the run ends - and the misses summed at a stop, deg",
          default=SETTINGS.policy_slip_deg, minimum=1.0, maximum=90.0),
     Knob("ready_tol_deg", "float",
-         "how close every joint must come to the ready pose before the policy takes the arm",
+         "how close every joint must come to the start before Ask asks the policy",
          default=SETTINGS.policy_ready_tol_deg, minimum=0.5, maximum=15.0),
 )
 
