@@ -3,6 +3,7 @@ title: Demonstration collection
 description: How to record demonstrations with two Hermits. Placement of the top camera and the table marker, the Collect page in studio, the foot pedals, and demonstration verdicts.
 ---
 
+import Clip from '../../../../components/Clip.astro';
 import CollectLayout from '../../../../components/CollectLayout.astro';
 import Output from '../../../../components/Output.astro';
 import studio from '../../../../transcripts/studio.txt?raw';
@@ -50,6 +51,8 @@ Ready is the pose in which the demonstrator holds the arms comfortably extended 
 | 3 | Stop recording and save |
 
 Each step is announced aloud: "Recording" when recording starts, "Saving" and then "Saved" when it stops, and "Recording cancelled" when it is deleted. The video is encoded while recording, so after stopping only a short time is needed to finish the last frames.
+
+<Clip src="https://woolimi.cdn.prismic.io/woolimi/iSM6DLar1b9XcnMK_pinkrab-studio-collect.mp4" label="On the Collect page, once both Hermits are laid over the ready drawings in the top camera view their lines turn green, recording starts with the pedal, and after the demonstration it stops and saves. Left are the two Hermit cameras, right the top camera view" caption="Recording a demonstration — the Collect page" />
 
 Because pedals are used, you never need to take your hands off Hermit while recording. During recording, the status line shows the demonstration name, elapsed time, and frame count per camera. The demonstration is saved in `~/pinkrab/episodes/<name>/`, together with the top camera and Hermit camera video and the marker pose and jaw opening for each frame.
 
