@@ -392,14 +392,14 @@ function showWants() {
   const { wants, answers } = fed();
   if (!checkpointEl.value || !wants.length) { wantsEl.replaceChildren(); return; }
   const parts = wants.map((key) => {
-    const name = `${sideOf(key)} gripper camera`;
+    const name = `${sideOf(key)} gripper`;
     const el = document.createElement('span');
     el.className = answers[key] ? '' : 'missing';
-    el.textContent = `${name} ${answers[key] ? '✓' : (camsUp ? '✗ not answering' : '— cameras off')}`;
+    el.textContent = answers[key] ? name : `${name} ${camsUp ? 'not answering' : 'off'}`;
     return el;
   });
   const lead = document.createElement('b');
-  lead.textContent = 'this checkpoint looks at: ';
+  lead.textContent = 'cameras: ';
   wantsEl.replaceChildren(lead, ...parts.flatMap((p, i) => (i ? [document.createTextNode('  ·  '), p] : [p])));
   updateButtons();
 }
@@ -627,7 +627,7 @@ settingsSave.addEventListener('click', async () => {
                                                    values: setOnes(kindForm), common: setOnes(commonForm) });
     if (answer.error) { settingsNote.textContent = answer.error; settingsSave.disabled = false; return; }
     drawSettings(answer);
-    settingsNote.textContent = 'saved - the next Ask or Drive runs with these, the gate its speed when the robot next starts';
+    settingsNote.textContent = 'saved';
   } catch (err) { settingsNote.textContent = String(err); settingsSave.disabled = false; }
 });
 
@@ -655,7 +655,7 @@ function nearReady(angles, ready, tolDeg) {
 // What follows is drawn from the readings; the button only orders the walk.
 async function poseButton(which) {
   noteEl.textContent = '';
-  statusEl.textContent = `walking to the ${which} pose ...`;
+  statusEl.textContent = `walking to ${which}`;
   const answer = await ask('/policy/goto', { pose: which });
   if (answer.error) { noteEl.textContent = answer.error; statusEl.textContent = ''; }
   updateButtons();
@@ -674,14 +674,14 @@ askEl.addEventListener('click', async () => {
     if (answer.error) { noteEl.textContent = answer.error; updateButtons(); return; }
     const start = answer.ready || {};
     if (answer.note) noteEl.textContent = answer.note;
-    statusEl.textContent = 'walking to the start ...';
+    statusEl.textContent = 'walking to the start';
     // The readings as they come, until the arms are there or 45 s have gone.
     const there = await until('servo', (st) => {
-      statusEl.textContent = `walking to the start ...${st?.fresh ? '' : ' (no readings yet)'}`;
+      statusEl.textContent = `walking to the start${st?.fresh ? '' : ' · no readings'}`;
       return !!st?.fresh && nearReady(st.angles_rad || {}, start, answer.ready_tol_deg);
     }, 45000, { fresh: true });
-    if (!there) { noteEl.textContent = 'the arms did not reach the start - are they armed, and is the driver holding them?'; statusEl.textContent = ''; updateButtons(); return; }
-    statusEl.textContent = 'at the start - asking';
+    if (!there) { noteEl.textContent = 'the arms did not reach the start'; statusEl.textContent = ''; updateButtons(); return; }
+    statusEl.textContent = 'asking';
     const started = await ask('/policy/start', { checkpoint: checkpointEl.value, task: command() });
     if (started.error) { noteEl.textContent = started.error; statusEl.textContent = ''; }
   } catch (err) {
@@ -707,7 +707,7 @@ haltEl.addEventListener('click', async () => {
   haltEl.disabled = true;
   const answer = await ask('/policy/halt', {});
   if (answer.error) noteEl.textContent = answer.error;
-  statusEl.textContent = 'stopped - the arms hold where they are';
+  statusEl.textContent = 'stopped';
   updateButtons();
 });
 
@@ -716,14 +716,14 @@ function showPolicy(s) {
   policyState = s;
   showSettingsInUse(s);
   if (s.driving) {
-    statusEl.textContent = s.phase === 'walking' ? `driving: walking to the start, ${s.to_go_deg ?? '?'} deg to go`
-      : s.phase === 'driving' ? 'driving: the policy has the arms'
-      : s.phase === 'refused' ? `not driving - ${s.refused}`
-      : 'driving: the rollout node is starting ...';
+    statusEl.textContent = s.phase === 'walking' ? `walking to the start · ${s.to_go_deg ?? '?'}°`
+      : s.phase === 'driving' ? 'driving'
+      : s.phase === 'refused' ? `refused: ${s.refused}`
+      : 'starting';
   } else if (s.loading) {
-    statusEl.textContent = 'loading the checkpoint ...';
+    statusEl.textContent = 'loading';
   } else if (s.running) {
-    statusEl.textContent = 'at the start - asking; nothing moves';
+    statusEl.textContent = 'asking';
   }
   updateButtons();
   if (s.note) noteEl.textContent = s.note;
@@ -849,7 +849,7 @@ function drawPath() {
   ctx.beginPath(); ctx.arc(px(0), py(0), 3, 0, Math.PI * 2); ctx.fill();
 
   document.getElementById('path-hint').textContent =
-    `${(half * 2 * 1000).toFixed(0)} mm across · ${steps.length} steps · each from where its tool started`;
+    `${(half * 2 * 1000).toFixed(0)} mm across · ${steps.length} steps`;
 }
 
 // --- what the studio says, as it changes ---------------------------------------
@@ -905,11 +905,11 @@ function showDagger(d) {
   dagger = d;
   if (!d) return;
   updateButtons();
-  // The run's time recorded and the hand's share of it, as the live view counts them.
+  // The run's time recorded, as the live view counts it.
   const episode = lastStats?.episode?.active ? lastStats.episode : null;
   const recorded = episode
-    ? `${(episode.seconds ?? 0).toFixed(1)} s, corrected ${(episode.controlled?.human ?? 0).toFixed(1)} s - `
-    : d.driving ? 'not recording - ' : '';
+    ? `${(episode.seconds ?? 0).toFixed(1)} s · `
+    : d.driving ? 'not recording · ' : '';
   // The hands may have the arms though not taken over from here - a studio
   // started again mid-correction; 2 still hands them back.
   const handHas = d.hand_has;
@@ -919,17 +919,11 @@ function showDagger(d) {
   const throws = d.correcting && !d.thrown && !d.redoing;
   corr.dot.className = 'rec-dot' + (d.recording ? ' on' : '');
   const kept = d.redone ? ` (${d.redone} redone)` : '';
-  corr.line.textContent = d.redoing
-    ? `${recorded}redoing - the arms walk back to where they were taken over, held there; 3 stops`
-    : d.thrown
-    ? `${recorded}correction thrown away, the arms hold: put the desk back as it was, then 2 walks them back to where they were taken over; 3 stops the run`
-    : handHas
-    ? (d.following
-      ? `${recorded}correction ${d.corrections}${kept}: the arms follow the hands; 1 holds them, 2 hands them back, ${throws ? '3 throws it away' : '3 stops'}`
-      : `${recorded}correction ${d.corrections}${kept}: the arms hold; set each hand as its arm holds its tool, then 1 to follow`)
-    : d.driving ? `${recorded}the policy drives the arms; 2 takes them over, 3 stops and keeps the run`
+  corr.line.textContent = d.redoing ? `${recorded}redoing`
+    : d.thrown ? `${recorded}correction thrown away`
+    : handHas ? `${recorded}correction ${d.corrections}${kept} · ${d.following ? 'following' : 'holding'}`
+    : d.driving ? `${recorded}policy driving`
     : 'not driving';
-  corr.line.title = corr.line.textContent;
   corr.toggle.querySelector('.word').textContent = d.thrown || d.redoing ? 'redo' : handHas ? 'hand back' : 'take over';
   corr.toggle.classList.toggle('on', handHas);
   // Taking over wants the hands followed: the loop up. The top camera that
@@ -942,8 +936,8 @@ function showDagger(d) {
   // The stop stays at hand while another order waits: the server never makes it wait.
   corr.stop.disabled = !(handHas || d.driving);
   const headFailed = lastStats?.head === false && !lastStats.head_opening && !lastStats.head_off;
-  if (!teleopUp && d.driving && !handHas) corr.note.textContent = 'the handheld follower is not running - Connect again to correct';
-  else if (handHas && headFailed) corr.note.textContent = `the top camera did not open - the arms hold until it does: ${(lastStats.head_reason || '').split(':').pop().trim()}`;
+  if (!teleopUp && d.driving && !handHas) corr.note.textContent = 'handheld follower off';
+  else if (handHas && headFailed) corr.note.textContent = 'top camera did not open';
   else if (d.note && !corr.note.textContent) corr.note.textContent = d.note;
   showJaws(d);
   showHead();
@@ -970,15 +964,13 @@ function takenOver(c) { return (c.controlled?.human ?? 0) > 0; }
 function showTally() {
   const runs = Object.values(rollouts).filter((e) => e.policy && e.policy === checkpointEl.value);
   const all = Object.values(rollouts).length;
-  const shelf = all ? `${all} rollout${all === 1 ? '' : 's'} on the shelf` : '';
-  if (!runs.length) { corr.count.textContent = shelf; return; }
+  if (!runs.length) { corr.count.textContent = all ? `${all} rollout${all === 1 ? '' : 's'}` : ''; return; }
   const over = runs.filter(takenOver).length;
   const succeeded = runs.filter((e) => !takenOver(e) && e.outcome === 'succeeded').length;
   const failed = runs.filter((e) => !takenOver(e) && e.outcome === 'failed').length;
   const unjudged = runs.length - over - succeeded - failed;
-  corr.count.textContent = `this checkpoint: ${succeeded} of ${succeeded + failed + over} succeeded`
-    + (over ? ` (${over} taken over, counted as failed)` : '')
-    + (unjudged ? ` · ${unjudged} not judged` : '') + (shelf ? ` · ${shelf}` : '');
+  corr.count.textContent = `${succeeded} / ${succeeded + failed + over} succeeded`
+    + (unjudged ? ` · ${unjudged} not judged` : '');
 }
 
 // Each hand's opening against its arm's grip - what that jaw was last sent:
@@ -993,8 +985,7 @@ function showJaws(d) {
     if (!apart) continue;
     el.querySelector('.hand').style.left = `${(hand * 100).toFixed(1)}%`;
     el.querySelector('.arm').style.left = `${(grip * 100).toFixed(1)}%`;
-    el.querySelector('.words').textContent = `hand ${hand.toFixed(2)} · arm grips at ${grip.toFixed(2)} - `
-      + (hand > grip ? 'close' : 'open') + ' the hand to it to take the jaw';
+    el.querySelector('.words').textContent = `${hand > grip ? 'close' : 'open'} to ${grip.toFixed(2)}`;
   }
 }
 
@@ -1107,9 +1098,8 @@ async function order(path) {
   showDagger(dagger);
   try {
     const answer = await ask(path, {});
-    corr.note.textContent = answer.error || (answer.handed_back ? 'handed back - the policy drives again'
-      : answer.redone ? 'redone - the arms are back where they were taken over, held; 1 to follow'
-      : answer.thrown ? 'thrown away - the arms hold; put the desk back, then 2 walks them back' : '');
+    corr.note.textContent = answer.error || (answer.handed_back ? 'handed back'
+      : answer.redone ? 'redone' : answer.thrown ? 'thrown away' : '');
   } catch (err) {
     corr.note.textContent = String(err);
   }
@@ -1127,7 +1117,7 @@ corr.stop.addEventListener('click', async () => {
     return;
   }
   const answer = await ask('/policy/halt', {});
-  corr.note.textContent = answer.error || 'stopped - the arms hold where they are; the run\'s recording is kept';
+  corr.note.textContent = answer.error || 'stopped · recording kept';
 });
 
 // A press on the floor flashes its pedal here, as on the collect page.

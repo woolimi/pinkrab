@@ -835,7 +835,7 @@ async function readyPose() {
 // lets go when the mode leaves it), and walk them there slowly, through the
 // gate like anything else. Useful before a session and in the middle of one,
 // when the arm has wandered somewhere the hand cannot follow from.
-async function poseButton(pose, what) {
+async function poseButton(pose, what, openJaws = false) {
   if (!sim.real) {
     // The page jogs the arms there, as on the metal.
     await drive(MODE_STUDIO);
@@ -848,10 +848,11 @@ async function poseButton(pose, what) {
   walkSeen = false;
   setMoving(true);
   await drive(MODE_STUDIO);
-  await askRobot({ kind: 'goto', pose });
+  await askRobot({ kind: 'goto', pose, open_jaws: openJaws });
 }
 document.getElementById('ready').addEventListener('click', async () => {
-  poseButton(await readyPose(), 'ready pose');
+  // Both jaws open wide as the arms set off and close again on the way to ready.
+  poseButton(await readyPose(), 'ready pose', true);
 });
 document.getElementById('home').addEventListener('click', () => {
   poseButton(homePose(), 'home pose');

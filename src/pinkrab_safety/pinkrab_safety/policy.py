@@ -144,6 +144,10 @@ class Gate:
         self._resting: dict[tuple[str, str], float] = {}
         self._now: dict[tuple[str, str], float] = {}
         self._off_tip: set[tuple[str, str]] = set()
+        # The hand contacts at the setpoint a step starts from, per pair - the
+        # pose the servos were last sent, which an arm pressed onto the desk
+        # does not reach and so reads shallower than (see `_stands`).
+        self._sent_depth: dict[tuple[str, str], float] = {}
         self.mode = MODE_IDLE
         # Set by the stop and cleared only by a deliberate return to idle, so a
         # second press of the same button can never be what re-arms the robot.
@@ -290,6 +294,7 @@ class Gate:
         step = rate * dt
 
         stepped: dict[str, float] = {}
+        start: dict[str, float] = {}
         unseen: list[str] = []
         for name, value in wanted.items():
             here = self.at.get(name)
@@ -303,8 +308,9 @@ class Gate:
             # command passes, so a refused one does not carry the ramp ahead
             # of what the arm was sent.
             anchor = self._ramp.get(name, here)
+            start[name] = anchor
             stepped[name] = anchor + _clamp(value - anchor, step)
-        allowed = self._passes(stepped, clamped, unseen, unknown, limp)
+        allowed = self._passes(stepped, clamped, unseen, unknown, limp, start)
         if allowed is not None and rate > 0:
             self._ramp.update(allowed)
         return allowed
@@ -393,7 +399,8 @@ class Gate:
             for group, brake in ((braked - jaws, True), (here.keys() - braked - jaws, False)):
                 if not group:
                     continue
-                step = shape_step({k: here[k] for k in group}, self._target, dt, *self._limits(), brake=brake)
+                step = shape_step({k: here[k] for k in group}, self._target, dt, *self._limits(), brake=brake,
+                                  in_line=self.mode in HAND_MODES)
                 if step is None:
                     self.reason = "the shaping found no trajectory to the command"
                     self._hold()
@@ -403,7 +410,8 @@ class Gate:
         pose, held = self.scene.clamp({k: q for k, (q, _, _) in shaped.items()})
         shaped = {k: (pose[k], 0.0, 0.0) if k in held else shaped[k] for k in pose}
         clamped, unknown, limp = self._target_notes
-        allowed = self._passes(pose, sorted(set(clamped) | set(held)), unseen, unknown, limp)
+        allowed = self._passes(pose, sorted(set(clamped) | set(held)), unseen, unknown, limp,
+                               {k: q for k, (q, _, _) in here.items()})
         if allowed is None:
             self._hold()
             return None
@@ -492,11 +500,19 @@ class Gate:
         return wanted, clamped, unknown, limp
 
     def _passes(self, stepped: dict[str, float], clamped: list[str], unseen: list[str],
-                unknown: list[str], limp: list[str]) -> dict[str, float] | None:
-        """The stepped pose held to the scene: itself, or None - `reason` says why, or what was held."""
+                unknown: list[str], limp: list[str], start: dict[str, float]) -> dict[str, float] | None:
+        """The stepped pose held to the scene: itself, or None - `reason` says
+        why, or what was held. `start` is the setpoint each joint steps on from."""
         if not stepped:
             self.reason = f"no reading yet for {sorted(unseen)}"
             return None
+
+        self._sent_depth = {}
+        if start:
+            for c in self.scene.touching({**self.at, **start}):
+                if c.get("hand") and pressing(c):
+                    key = (c["a"], c["b"])
+                    self._sent_depth[key] = max(self._sent_depth.get(key, 0.0), c["depth"])
 
         # The whole robot at the target, not just the joints being commanded: the
         # other arm is where it is, and whether these two meet is a question about
@@ -550,14 +566,24 @@ class Gate:
         meets them as last read. And a part
         of the fingers away from their tips - the camera bracket shares the
         claw's link - may not come onto the desk because the tips already
-        rest there."""
+        rest there.
+
+        A moving hand's fingers are also met as they stand at the setpoint
+        the step starts from (`_sent_depth`): pressed onto the desk, the arm
+        stops short of where its servos were sent and reads shallower, and a
+        step out of the setpoint, judged only by the reading, would still be
+        deeper than the arm reads and be refused every tick. The setpoint is a
+        pose already sent, not a reading, so holding it or coming out of it
+        lets nothing further in."""
         if not pressing(contact):
             return True
         key = (contact["a"], contact["b"])
+        arm = contact.get("hand")
+        if arm is not None and arm in moving and contact["depth"] <= self._sent_depth.get(key, -1.0):
+            return True
         rest = self._resting.get(key)
         if rest is None:
             return False
-        arm = contact.get("hand")
         if arm is None:
             # Parts that already touch may come no deeper than they have been
             # read, and may come back out by any amount.
@@ -575,12 +601,19 @@ def _clamp(value: float, bound: float) -> float:
 
 
 def shape_step(state: dict[str, tuple[float, float, float]], target: dict[str, float], dt: float,
-               vmax: float, amax: float, jmax: float, brake: bool = False) -> dict[str, tuple[float, float, float]] | None:
+               vmax: float, amax: float, jmax: float, brake: bool = False,
+               in_line: bool = False) -> dict[str, tuple[float, float, float]] | None:
     """Each joint's setpoint, speed and acceleration (`state`), `dt` seconds
     along the quickest trajectory to `target` that keeps the speed under
     `vmax`, the acceleration under `amax` and the jerk under `jmax` and stops
     there - or, with `brake`, to a standstill wherever the joint gets to.
-    Each joint on its own (Ruckig, no synchronisation); radians and seconds.
+    Each joint on its own (Ruckig, no synchronisation), or with `in_line`
+    phase-synchronised toward the target: from rest the joints then move in
+    proportion, a straight line in joint space, the path a walk is checked
+    along. Joints each on their own set off in a direction of their own: a
+    hand pressed onto the desk and walked toward a pose out of it would go a
+    hair deeper first, which the gate refuses, and from rest again every
+    tick. Radians and seconds.
     None when no trajectory is found."""
     names = list(state)
     n = len(names)
@@ -594,7 +627,7 @@ def shape_step(state: dict[str, tuple[float, float, float]], target: dict[str, f
     given.max_velocity = [vmax] * n
     given.max_acceleration = [amax] * n
     given.max_jerk = [jmax] * n
-    given.synchronization = Synchronization.No
+    given.synchronization = Synchronization.Phase if in_line and not brake else Synchronization.No
     if brake:
         given.control_interface = ControlInterface.Velocity
     path = Trajectory(n)

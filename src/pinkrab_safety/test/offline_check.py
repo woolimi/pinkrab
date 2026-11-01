@@ -477,6 +477,37 @@ def main() -> int:
         check("but may lift them out part of the way, still past the allowance",
               between is not None and found.check(between) is not None, found.reason)
 
+        # Pressed onto the desk, the arm stops short of its setpoint and reads
+        # shallower than it was sent. A shaped walk out starts from that
+        # setpoint and must get out: judged by the reading alone, every step
+        # was deeper than the arm read and the walk was refused every tick.
+        if between is not None:
+            ticks = [0.0]
+            pressed = Gate(scene, clock=lambda: ticks[0])
+            pressed.set_mode(MODE_STUDIO)
+            pressed.observe(deep)
+            sent_deep = pressed.shaping and pressed.aim(deep) and pressed.tick() is not None
+            pressed.observe(between)
+            passed = 0
+            for i in range(1, 121):
+                ticks[0] = i / 60
+                pressed.aim(clear)
+                if pressed.tick() is not None:
+                    passed += 1
+                pressed.observe(between)
+            check("a setpoint pressed deeper than the arm reads may walk out of the desk",
+                  sent_deep and passed > 100, f"{passed} of 120 ticks passed; {pressed.reason}")
+            ticks[0] = 10.0
+            sunk = Gate(scene, clock=lambda: ticks[0])
+            sunk.set_mode(MODE_STUDIO)
+            sunk.observe(between)
+            sunk.aim(between)
+            sunk.tick()
+            ticks[0] += 1 / 60
+            sunk.aim(deep)
+            check("while a setpoint no deeper than the reading still may not be walked further in",
+                  sunk.tick() is None, sunk.reason)
+
     print("\nboth arms, corrected by the handhelds")
     both = Gate(scene, clock=lambda: clock[0])
     both.observe(ready)

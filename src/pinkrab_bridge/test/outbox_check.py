@@ -77,6 +77,8 @@ def node() -> bridge.Bridge:
     b._wanted = {}
     b._torque = None
     b._angles, b._read_at = {}, {}
+    b._jaws_wide, b._jaws_opened, b._walk_span = {}, set(), None
+    b._still_at, b._still_angles = None, {}
     return b
 
 
@@ -164,6 +166,42 @@ def main() -> int:
     check("is not driven toward", len(published) == 1 and list(published[0].name) == ["right_elbow_flex"],
           str([list(m.name) for m in published]))
     check("and is dropped from the goal", list(b._goal) == ["right_elbow_flex"])
+
+    print("\na walk to ready that opens the jaws on the way")
+    clock = [100.0]
+    real_time = bridge.time
+    bridge.time = SimpleNamespace(monotonic=lambda: clock[0])
+    try:
+        b = node()
+        published = []
+        b.commands = SimpleNamespace(publish=published.append)
+        b.get_clock = lambda: SimpleNamespace(now=lambda: rclpy.time.Time())
+        b._ask = lambda request: b._start_walk(request) if request.get("kind") == "goto" else None
+        b._angles = {"right_shoulder_lift": 2.0, "right_elbow_flex": -1.0, "right_gripper": 0.3}
+        ready = {"right_shoulder_lift": 1.6, "right_elbow_flex": -0.66, "right_gripper": 0.0}
+        b._start_walk({"poses": [ready], "speed_dps": 30.0, "jaws_wide": {"right_gripper": 1.4}})
+        trace = []
+        for _ in range(3000):
+            clock[0] += 1 / 60
+            b._read_at = dict.fromkeys(b._angles, clock[0])
+            b._drive()
+            if published:
+                last = published[-1]
+                b._angles.update(zip(last.name, last.position))
+            trace.append((dict(b._angles), b._walk is not None))
+            if b._walk is None:
+                break
+        lift = [a["right_shoulder_lift"] for a, _ in trace]
+        jaw = [a["right_gripper"] for a, _ in trace]
+        widest = max(range(len(jaw)), key=jaw.__getitem__)
+        check("the walk ends at ready", b._walk is None and abs(lift[-1] - 1.6) < 0.01, f"{lift[-1]:.3f}")
+        check("the jaw opens wide on the way", jaw[widest] > 1.35, f"{jaw[widest]:.3f}")
+        check("while the arm is already moving", 1.6 < lift[widest] < 2.0 - 0.01, f"{lift[widest]:.3f}")
+        check("and is closed again when the arm arrives", abs(jaw[-1]) < 0.01, f"{jaw[-1]:.3f}")
+        check("the arm does not wait for the jaw before it sets off",
+              lift[len(lift) // 10] < 2.0 - 0.01, f"{lift[len(lift) // 10]:.3f}")
+    finally:
+        bridge.time = real_time
 
     print()
     if FAILURES:

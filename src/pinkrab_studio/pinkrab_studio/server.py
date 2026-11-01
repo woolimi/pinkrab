@@ -220,8 +220,15 @@ class StudioState:
                 self.real.request("mode", mode=MODE_IDLE)
         self.dagger.stop(halt, settle=idle)
 
-    def walk(self, poses: list[dict[str, float]]) -> int | None:
+    def walk(self, poses: list[dict[str, float]], open_jaws: bool = False) -> int | None:
         """Ask the bridge to walk the arms through `poses`; the last one becomes the page's target.
+
+        With `open_jaws` both jaws open wide as the arms set off for the
+        first of `poses` and close again before they get there: the way to
+        ready. A jaw left closed on a block or on the desk is let go of as
+        the arm lifts away - closing one pressed on the desk is a press the
+        gate refuses, and the walk would stall there - and it arrives closed,
+        as at home.
 
         The walk is the bridge's, but what the page shows as asked for is this
         server's target; left alone it would still show whatever was asked
@@ -236,7 +243,12 @@ class StudioState:
         simulation - leaves no target to set: None is also what the bridge
         reports when it walks nothing.
         """
-        queued = self.real.request("goto", poses=poses, speed_dps=float(SETTINGS.park_speed_dps))
+        jaws_wide = {}
+        if open_jaws:
+            jaws_wide = {f"{arm}_gripper": gripper_band(arm)[1] for arm in ARMS}
+            poses = [{**poses[0], **dict.fromkeys(jaws_wide, 0.0)}, *poses[1:]]
+        queued = self.real.request("goto", poses=poses, speed_dps=float(SETTINGS.park_speed_dps),
+                                   jaws_wide=jaws_wide)
         if queued is not None:
             with self._walk_lock:
                 self._walk_target = (queued, dict(poses[-1]))
@@ -1062,7 +1074,7 @@ def make_handler(state: StudioState, allowed_hosts: frozenset[str] | None = None
                     except Exception as exc:  # noqa: BLE001 - the start is a convenience; ready is the fallback
                         note = f"no demo start, ready instead: {exc}"
                 state.real.drive(MODE_STUDIO)
-                queued = state.walk(legs)
+                queued = state.walk(legs, open_jaws=True)
                 self._send_json({"queued": queued, "ready": start, "ready_tol_deg": tol_deg, "note": note})
                 return
 
@@ -1086,7 +1098,7 @@ def make_handler(state: StudioState, allowed_hosts: frozenset[str] | None = None
                     self._send_json({"error": "a policy has the arm - stop it first"}, 409)
                     return
                 state.real.drive(MODE_STUDIO)
-                queued = state.walk([goal])
+                queued = state.walk([goal], open_jaws=which == "ready")
                 self._send_json({"queued": queued, "pose": which})
                 return
 
@@ -1537,7 +1549,7 @@ def make_handler(state: StudioState, allowed_hosts: frozenset[str] | None = None
                         self._send_json({"error": "goto needs a pose: {joint: radians}"}, 400)
                         return
                     goal = {k: float(v) for k, v in pose.items()}
-                    self._send_json({"queued": state.walk([goal])})
+                    self._send_json({"queued": state.walk([goal], open_jaws=bool(fields.get("open_jaws")))})
                     return
                 if kind == "mode" and not state.real.expected:
                     # A stop on the simulation: nothing drives the arms.

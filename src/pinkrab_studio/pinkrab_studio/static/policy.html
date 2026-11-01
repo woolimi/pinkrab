@@ -63,7 +63,6 @@
           <h2>Checkpoint</h2>
           <span class="step-state" id="checkpoint-state"></span>
         </div>
-        <p class="step-why">The trained policy to run.</p>
         <div class="checkpoint-row">
           <select id="checkpoint" aria-label="checkpoint"><option value="">looking…</option></select>
           <button id="settings-open" class="icon" title="settings: the cameras, and how the checkpoint is asked" aria-label="settings">
@@ -83,7 +82,6 @@
           <span class="step-no" aria-hidden="true">2</span>
           <h2>Run</h2>
         </div>
-        <p class="step-why">Ask walks the arms to the start and only asks - nothing moves. Drive lets the policy move them. Stop holds them where they are.</p>
         <!-- What the checkpoint wants fed to it, and whether it is being fed.
              A missing camera here is why the run will not start. -->
         <p class="wants" id="wants"></p>
@@ -184,7 +182,7 @@
     <!-- Shown once something has been asked. -->
     <section class="traces" id="traces" hidden>
       <div class="panel">
-        <h3>what it asked for, step by step</h3>
+        <h3>asked steps</h3>
         <!-- dx, dy, dz in each tool's own frame, the turn, and the jaw. A
              canvas per arm, the two on one scale and one tick axis, so the
              arms can be read against each other. -->
@@ -198,11 +196,11 @@
           <li><i class="k-dz"></i>dz</li>
           <li><i class="k-rot"></i>turn</li>
           <li><i class="k-grip"></i>gripper</li>
-          <li class="wild"><i></i>refused by the gate's numbers</li>
+          <li class="wild"><i></i>refused</li>
         </ul>
       </div>
       <div class="panel narrow">
-        <h3>where those steps lead</h3>
+        <h3>tool path</h3>
         <!-- Each arm's deltas composed, seen from above. Not a claim about the
              room: each is the path from wherever its tool started. -->
         <canvas id="path" width="420" height="420"></canvas>
@@ -210,7 +208,7 @@
           <li><i class="k-left"></i>left</li>
           <li><i class="k-right"></i>right</li>
         </ul>
-        <p class="hint" id="path-hint">from wherever each tool started</p>
+        <p class="hint" id="path-hint"></p>
       </div>
     </section>
   </main>
@@ -263,7 +261,6 @@
     <h2>The rig is not set up yet</h2>
     <p id="bringup-what"></p>
     <ul id="bringup-list" class="needs"></ul>
-    <p class="hint">Run these in a terminal on this machine, then come back. The cameras and the gate come up without them; the driver will not hold the arms until they are there.</p>
     <div class="choice">
       <button id="bringup-cancel">Cancel</button>
       <button id="bringup-retry">Check again</button>

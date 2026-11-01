@@ -144,6 +144,13 @@ WALK_LEAD = math.radians(10.0)
 WALK_EASE_S = SETTINGS.park_ease_s
 WALK_SLOW = math.radians(SETTINGS.park_slow_deg)
 
+# Jaws a walk opens on the way (a walk's `jaws_wide`) move at this many times
+# the walk's speed: open in the first part of the walk, closed again by its end.
+# They open toward their wide pose and start closing to the leg's pose once
+# they read within LEG_EPS of it and the rest of the arm is half way there.
+JAW_RATE_X = 2.0
+JAW_CLOSE_AT = 0.5
+
 # A walk sends nothing while a joint of it has not been read for
 # SETTINGS.reading_stale_s, and ends, stopped, once that has lasted
 # WALK_BLIND_S. A bus whose reads fail still takes writes: stepped on from the
@@ -247,6 +254,12 @@ class Bridge(Node):
         # pose whole from then on - and when the whole leg had, for the settle.
         self._landed: set[str] = set()
         self._settle_since: float | None = None
+        # Jaws the walk's first leg opens on the way and closes again, by
+        # joint: how wide (`jaws_wide`), which have read open, and how far the
+        # rest of the arm had to go when the leg began.
+        self._jaws_wide: dict[str, float] = {}
+        self._jaws_opened: set[str] = set()
+        self._walk_span: float | None = None
         # When each joint was last read, and since when a walk has had a
         # joint not read recently enough to step it (WALK_BLIND_S).
         self._read_at: dict[str, float] = {}
@@ -333,6 +346,9 @@ class Bridge(Node):
         self._settle_since = None
         self._blind_since = None
         self._wanted = {}
+        self._jaws_wide = {}
+        self._jaws_opened = set()
+        self._walk_span = None
 
     def _push(self) -> None:
         with self._lock:
@@ -461,6 +477,10 @@ class Bridge(Node):
             self._settle_since = None
             self._blind_since = None
             self._walk_id = request.get("id")
+            self._jaws_wide = {str(k): float(v) for k, v in dict(request.get("jaws_wide") or {}).items()
+                               if str(k) in legs[0] and math.isfinite(float(v))}
+            self._jaws_opened = set()
+            self._walk_span = None
         self.get_logger().info(
             f"walking {len(legs[-1])} joints to a pose at {math.degrees(self._walk_rate):.0f} deg/s"
             + (f", through {len(legs) - 1} pose(s) on the way" if len(legs) > 1 else "")
@@ -584,15 +604,20 @@ class Bridge(Node):
             return
         near = LEG_EPS if on_the_way else ARRIVED_EPS
         finished = False
+        with self._lock:
+            for name, wide in self._jaws_wide.items():
+                if name in angles and abs(angles[name] - wide) <= LEG_EPS:
+                    self._jaws_opened.add(name)
+            closed_yet = {k for k in self._jaws_wide if k not in self._jaws_opened}
         arrived = [
             name for name, value in goal.items()
-            if name in angles and abs(angles[name] - value) <= near
+            if name in angles and abs(angles[name] - value) <= near and name not in closed_yet
         ]
         stuck = False
         if walking:
             still = self._still_for(goal, angles)
             near_all = all(k in angles and abs(angles[k] - v) <= SETTLED_NEAR for k, v in goal.items())
-            if still >= SETTLED_S and near_all:
+            if still >= SETTLED_S and near_all and not closed_yet:
                 arrived = list(goal)
             elif still >= STUCK_S and self._settle_since is None:   # settling is still on purpose
                 stuck = True
@@ -642,6 +667,7 @@ class Bridge(Node):
                     self._walk_at = None
                     self._walk_started = None
                     self._still_angles = {}
+                    self._jaws_wide, self._jaws_opened, self._walk_span = {}, set(), None
                     self.get_logger().info(
                         f"on the way - {len(self._legs) + 1} pose(s) left to walk")
                     goal = dict(self._goal)
@@ -692,17 +718,34 @@ class Bridge(Node):
             if here is not None:
                 anchor = here + max(-WALK_LEAD, min(WALK_LEAD, anchor - here))
             anchors[name] = anchor
-        furthest = max(abs(goal[n] - a) for n, a in anchors.items())
+        with self._lock:
+            jaws, opened = dict(self._jaws_wide), set(self._jaws_opened)
+        # Jaws opened on the way are stepped on their own; the rest of the arm
+        # walks in proportion, and how far it has got says when they close.
+        line = {n: a for n, a in anchors.items() if n not in jaws}
+        furthest = max((abs(goal[n] - a) for n, a in line.items()), default=0.0)
+        if self._walk_span is None:
+            self._walk_span = furthest
+        done = 1.0 - furthest / self._walk_span if self._walk_span > ARRIVED_EPS else 1.0
         scale = min(1.0, (now - self._walk_started) / WALK_EASE_S, max(0.1, furthest / WALK_SLOW))
         step = self._walk_rate * scale * dt
         out = {}
         # In proportion, so every joint arrives together: a straight line in
         # joint space is the path that was checked, and joints each stepping at
         # the full speed take a different one.
-        for name, anchor in anchors.items():
+        for name, anchor in line.items():
             gap = goal[name] - anchor
             share = abs(gap) / furthest if furthest > 0 else 0.0
             sent = anchor + max(-step * share, min(step * share, gap))
+            self._walk_sent[name] = sent
+            out[name] = sent
+        for name, wide in jaws.items():
+            if name not in anchors:
+                continue
+            closing = name in opened and done >= JAW_CLOSE_AT
+            gap = (goal[name] if closing else wide) - anchors[name]
+            jaw_step = JAW_RATE_X * self._walk_rate * min(1.0, (now - self._walk_started) / WALK_EASE_S) * dt
+            sent = anchors[name] + max(-jaw_step, min(jaw_step, gap))
             self._walk_sent[name] = sent
             out[name] = sent
         return out
