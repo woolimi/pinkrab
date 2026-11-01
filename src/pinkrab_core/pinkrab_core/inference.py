@@ -99,6 +99,20 @@ KINDS: dict[str, Kind] = {
         shown=("chunk_size", "n_obs_steps", "vision_backbone"),
         check=_act_check,
     ),
+    "flowva": Kind(
+        "FlowVA",
+        (
+            Knob("n_action_steps", "int",
+                 "steps of each predicted chunk run before the camera is looked at again: "
+                 "a tenth of a second's worth is a new look ten times a second, the chunk's length runs it whole",
+                 default=lambda fps: steps_in(SETTINGS.policy_action_s, fps), minimum=1,
+                 maximum=lambda cfg: cfg.chunk_size),
+            Knob("num_flow_steps", "int",
+                 "Euler steps the flow is integrated over for each chunk: fewer is a faster, rougher answer",
+                 minimum=1, maximum=100),
+        ),
+        shown=("chunk_size", "n_obs_steps"),
+    ),
 }
 
 COMMON_KNOBS: tuple[Knob, ...] = (
