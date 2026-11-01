@@ -574,6 +574,8 @@ def live_stats() -> dict:
                           "reproj_px": c.get("reproj_px"), "distance_mm": c.get("distance_mm"),
                           "world": c.get("world_pose") is not None}
                   for name, c in (last.get("solids") or {}).items()},
+        # Each hand standing at its ready pose (the guide in green), by arm.
+        "ready": last.get("ready") or {},
         "gripper": stats.get("gripper") or {},
         "head": stats.get("head", True),
         "head_reason": stats.get("head_reason") or "",

@@ -146,6 +146,7 @@ function showStats(s) {
   }
   const w = s.world;
   showEpisode(s.episode);
+  soundReady(s.ready || {});
   if (s.head === false) { for (const c of Object.values(cards)) metric(c, '—', 'no top camera', ''); feedStartup(s, null); return; }
   if (!w) metric(cards.desk, '—', '', '');
   else if (w.tracking) metric(cards.desk, `${w.faces} faces`, `${w.reproj_px.toFixed(1)} px`, 'ok');
@@ -276,6 +277,46 @@ function beep(kind) {
       osc.start(t); osc.stop(t + 0.12);
     }
   } catch { /* no audio here */ }
+}
+
+// A hand reaching where the ready pose holds it - its guide turning green in
+// the top camera's picture - chimes once, the left hand low and the right
+// high, so each is told apart without looking. It chimes again only after
+// READY_REARM_MS read off green: a hand whose marker is lost for a moment is
+// not off green, and one sitting on the edge does not chime on every flicker.
+const READY_REARM_MS = 600;
+const CHIMES = { left: [[523.25, 0], [783.99, 0.1]], right: [[1046.5, 0], [1567.98, 0.1]] };
+const readyHands = { left: { armed: true, off: 0 }, right: { armed: true, off: 0 } };
+
+function chime(side) {
+  try {
+    audio = audio || new (window.AudioContext || window.webkitAudioContext)();
+    for (const [hz, at] of CHIMES[side]) {
+      // A struck tone: a sine and its octave, gone in a third of a second.
+      for (const [mult, level] of [[1, 0.25], [2, 0.06]]) {
+        const osc = audio.createOscillator(); const gain = audio.createGain();
+        osc.frequency.value = hz * mult; osc.connect(gain); gain.connect(audio.destination);
+        const t = audio.currentTime + at;
+        gain.gain.setValueAtTime(0.0001, t); gain.gain.exponentialRampToValueAtTime(level, t + 0.005);
+        gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.35);
+        osc.start(t); osc.stop(t + 0.36);
+      }
+    }
+  } catch { /* no audio here */ }
+}
+
+function soundReady(ready) {
+  const now = performance.now();
+  for (const side of ['left', 'right']) {
+    const hand = readyHands[side];
+    if (ready[side] === true) {
+      hand.off = 0;
+      if (hand.armed) { chime(side); hand.armed = false; }
+    } else if (ready[side] === false) {
+      hand.off = hand.off || now;
+      if (now - hand.off >= READY_REARM_MS) hand.armed = true;
+    }
+  }
 }
 
 // Each step said aloud, in Korean, so the person at the handhelds hears it

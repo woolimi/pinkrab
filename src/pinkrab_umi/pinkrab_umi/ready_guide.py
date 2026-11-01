@@ -177,6 +177,15 @@ def apart(now: np.ndarray, want: np.ndarray) -> tuple[float, float]:
     return mm, deg
 
 
+def at_ready(cam_T_desk: np.ndarray, arm: str, cam_T_solid: np.ndarray, guide: Guide) -> tuple[float, float, bool]:
+    """How far hand `arm`'s tool, its solid solved at `cam_T_solid`, is from
+    where the ready pose holds it - mm and degrees - and whether that is
+    within ready_guide_mm and ready_guide_deg, where the guide turns green."""
+    solid_T_tcp = SETTINGS.for_solid(f"handheld_{arm}").solid_T_tcp
+    mm, deg = apart(np.linalg.inv(cam_T_desk) @ cam_T_solid @ solid_T_tcp, guide.tools[arm])
+    return mm, deg, mm <= SETTINGS.ready_guide_mm and deg <= SETTINGS.ready_guide_deg
+
+
 def _label(canvas: np.ndarray, text: str, at: np.ndarray, colour) -> None:
     x, y = int(at[0]) - 40, int(at[1]) - 14
     cv2.putText(canvas, text, (x, y), cv2.FONT_HERSHEY_SIMPLEX, 0.8, SHADOW, 5, cv2.LINE_AA)
@@ -189,14 +198,13 @@ def draw(canvas: np.ndarray, intrinsics: Intrinsics, cam_T_desk: np.ndarray,
     `canvas`, the desk solid at `cam_T_desk` in the picture: `hands` is each
     hand's solid as solved now (cam_T_solid), or None where it was not, and
     `guide` load()'s answer."""
-    desk_T_cam = np.linalg.inv(cam_T_desk)
     for arm, want in guide.tools.items():
         solid_T_tcp = SETTINGS.for_solid(f"handheld_{arm}").solid_T_tcp
         colour, words = GUIDE_COLOUR, ""
         now = hands.get(arm)
         if now is not None:
-            mm, deg = apart(desk_T_cam @ now @ solid_T_tcp, want)
-            if mm <= SETTINGS.ready_guide_mm and deg <= SETTINGS.ready_guide_deg:
+            mm, deg, matched = at_ready(cam_T_desk, arm, now, guide)
+            if matched:
                 colour = MATCHED_COLOUR
             words = f"  {mm:.0f} mm  {deg:.0f} deg"
         shape = guide.hermits[arm]

@@ -407,6 +407,14 @@ class Live:
                    if answer.ok and not answer.reason and answer.pose is not None}
                   if placed else {})
         world_pose = worlds.get(primary)
+        # Which hands stand where the ready pose holds their tool - the guide
+        # in green - for the collect page to sound each one as it gets there.
+        guide = self._ready_guide
+        ready = ({name.removeprefix("handheld_"):
+                  ready_guide.at_ready(desk.pose, name.removeprefix("handheld_"), answer.pose, guide)[2]
+                  for name, answer in hands.items()
+                  if name.startswith("handheld_") and answer.ok and not answer.reason and answer.pose is not None}
+                 if placed and guide is not None else {})
         # What the recording keeps: the same composition of the poses as the
         # filter chose them, not averaged with the frames before.
         held_cam = np.linalg.inv(desk.held) if placed else None
@@ -468,6 +476,7 @@ class Live:
                 # the recording; teleop follows each solid's world_pose (solids, above).
                 "world_pose": None if world_pose is None else
                               [[float(v) for v in row] for row in world_pose],
+                "ready": ready,
             }
             if result.pose is not None:
                 translation = result.pose[:3, 3]
