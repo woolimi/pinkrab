@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/src/assets/photos/arms.jpg" alt="Two pink Pinkrab arms mounted on a pegboard above a desk" width="720">
+  <img src="docs/src/assets/photos/arms-hermit.jpg" alt="Two pink Pinkrab arms on a pegboard, with a left-hand and a right-hand Hermit on the desk in front of them" width="720">
 </p>
 
 <h1 align="center">Pinkrab</h1>
@@ -25,6 +25,7 @@
   <a href="https://woolimi.github.io/pinkrab/en/"><b>Documentation</b></a> ·
   <a href="https://woolimi.github.io/pinkrab/en/hardware/bom/">Bill of materials</a> ·
   <a href="https://woolimi.github.io/pinkrab/en/hardware/print/">Print files</a> ·
+  <a href="https://makerworld.com/en/models/3527244-pinkrab-hermit-6-dof-1-gripper">MakerWorld</a> ·
   <a href="https://woolimi.github.io/pinkrab/en/start/install/">Install</a>
 </p>
 
@@ -39,6 +40,9 @@ with its claws, and so do these arms.
 gripper. It has the same claw, jaw and wrist camera as the arm, so a policy
 trained on video recorded with Hermit sees the same picture when it runs on the
 robot. Demonstrations are collected without the robot in the loop.
+
+Everything from printing the parts to running a policy is in the
+**[documentation](https://woolimi.github.io/pinkrab/en/)**.
 
 [SO-ARM 101]: https://github.com/TheRobotStudio/SO-ARM100
 [UMI]: https://umi-gripper.github.io
@@ -63,23 +67,21 @@ robot. Demonstrations are collected without the robot in the loop.
 
 ## Workflow
 
-```
- Collect  ───►  Curate  ─────►  Train  ───►  Run
- Hermit +       verdicts,       ACT          Pinkrab,
- top camera     SAM 3 random                 safety gate
-                backgrounds                       │
-    ▲                                             │
-    └────────────── corrections with Hermit ◄─────┘
-```
+<p align="center">
+  <img src="docs/src/assets/readme/workflow-en.svg" alt="Workflow: Collect with Hermit and the top camera, Curate, Train ACT, Run Pinkrab behind the safety gate, and take over with Hermit to add corrections back to Collect" width="100%">
+</p>
 
 | Step | Docs |
 |---|---|
 | Buy, print and assemble | [BOM](https://woolimi.github.io/pinkrab/en/hardware/bom/) · [Print](https://woolimi.github.io/pinkrab/en/hardware/print/) · [Arm](https://woolimi.github.io/pinkrab/en/hardware/assemble-arm/) · [Hermit](https://woolimi.github.io/pinkrab/en/hardware/assemble-hermit/) |
+| Install the software | [Install](https://woolimi.github.io/pinkrab/en/start/install/) |
 | Set up and calibrate | [Setup](https://woolimi.github.io/pinkrab/en/use/setup/) · [First run](https://woolimi.github.io/pinkrab/en/use/first-run/) |
 | Collect demonstrations | [Collect](https://woolimi.github.io/pinkrab/en/use/collect/) |
 | Build a dataset | [Curate](https://woolimi.github.io/pinkrab/en/use/curate/) |
 | Train a policy | [Train](https://woolimi.github.io/pinkrab/en/use/train/) · [Policies](https://woolimi.github.io/pinkrab/en/deep/policies/) |
 | Run and correct | [Run](https://woolimi.github.io/pinkrab/en/use/run/) · [Corrections](https://woolimi.github.io/pinkrab/en/deep/corrections/) |
+| Try it without hardware | [Simulation](https://woolimi.github.io/pinkrab/en/use/simulation/) |
+| Find your way in the code | [Repository layout](https://woolimi.github.io/pinkrab/en/deep/repository/) |
 
 ## Hardware
 
@@ -103,82 +105,10 @@ robot. Demonstrations are collected without the robot in the loop.
 | Pose accuracy | joint error ≤ 0.8°, tool tip 1 mm on average (measured) |
 | Cameras | ELP AR0234 global-shutter fisheye on each wrist and each Hermit, one AR0234 top camera |
 | Power and bus | one 12 V 6 A adapter for both arms, one Seeed XIAO bus servo board per arm over USB |
-| Printer | every part is printed; Bambu Studio projects for the Bambu Lab P2S are included |
+| Printer | every part is printed; Bambu Studio projects for the Bambu Lab P2S are included and also on [MakerWorld](https://makerworld.com/en/models/3527244-pinkrab-hermit-6-dof-1-gripper) |
 
 The full list, with screws and quantities, is the
 [bill of materials](https://woolimi.github.io/pinkrab/en/hardware/bom/).
-
-## Quick start
-
-macOS uses a RoboStack conda environment, Ubuntu 24.04 uses apt ROS 2 Jazzy
-with a venv. The [install page](https://woolimi.github.io/pinkrab/en/start/install/)
-has the full steps for both.
-
-```bash
-git clone https://github.com/woolimi/pinkrab.git
-cd pinkrab
-
-# macOS
-mamba env create -f requirements/environment.yml
-mamba activate pinkrab
-pip install -e src/pinkrab_core -e src/pinkrab_cli -e src/pinkrab_mujoco \
-  -e src/pinkrab_studio -e src/pinkrab_umi -e src/pinkrab_policy \
-  -e lerobot-plugin
-
-# Ubuntu 24.04
-./scripts/setup.sh && source /opt/ros/jazzy/setup.bash && source .venv/bin/activate
-rosdep install --from-paths src --ignore-src -r -y
-
-colcon build --symlink-install && source install/setup.bash
-pinkrab doctor          # checks the environment, boards and description without moving anything
-```
-
-On macOS, `colcon build` needs the Python and NumPy paths of the environment;
-see the install page.
-
-With the arms built and plugged in:
-
-```bash
-pinkrab ports detect                         # tell the two identical boards apart, once
-pinkrab check                                # every servo answers
-pinkrab calibrate left                       # one arm at a time
-ros2 launch pinkrab_bringup robot.launch.py  # servo driver and safety gate
-pinkrab-studio                               # http://localhost:8730/
-```
-
-Calibration, port assignment and datasets live in `~/pinkrab`, outside the
-checkout. They describe your rig, so they are never committed.
-
-### Simulation
-
-`pinkrab-sim` runs the whole loop in MuJoCo with no hardware: a simulated
-Hermit records takes, the same converter builds the dataset, and the simulated
-arms run the trained policy. Rendering is headless (EGL).
-
-```bash
-pinkrab-sim demos --scene bowls --count 200 --batch b
-pinkrab-sim convert b --out sim-b
-pinkrab-sim evaluate <checkpoint> --scene bowls
-```
-
-See [src/pinkrab_sim/README.md](src/pinkrab_sim/README.md).
-
-## Repository layout
-
-| Path | Contents |
-|---|---|
-| `src/pinkrab_core` | Rig config, ports, servo bus, angles, URDF, kinematics, LeRobot robot classes |
-| `src/pinkrab_cli` | The `pinkrab` CLI: ports, servo check, calibration, cameras, lens fit |
-| `src/pinkrab_description` | URDF/xacro, meshes, MJCF scene, printable parts and 3MF projects |
-| `src/pinkrab_umi` | Hermit: recording, marker tracking, conversion to LeRobot datasets, print files |
-| `src/pinkrab_studio` | The browser workbench, foot switch and remote training |
-| `src/pinkrab_policy` | Rollout, training launcher, run log |
-| `src/pinkrab_sim` | The UMI loop in simulation |
-| `src/pinkrab_mujoco` | The rig in MuJoCo, stepped headless, asked about contact |
-| `src/pinkrab_driver` · `pinkrab_safety` · `pinkrab_teleop` · `pinkrab_bridge` | ROS 2 nodes: servo driver, safety gate, Hermit teleoperation, studio bridge |
-| `src/pinkrab_bringup` · `pinkrab_interfaces` | Launch files, messages and services |
-| `lerobot-plugin` | `bi_pinkrab_follower` as a LeRobot robot type |
-| `docs` | The documentation site (Starlight) |
 
 ## Acknowledgements
 

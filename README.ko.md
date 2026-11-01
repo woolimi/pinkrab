@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/src/assets/photos/arms.jpg" alt="책상 위 페그보드에 걸린 분홍색 Pinkrab 팔 두 개" width="720">
+  <img src="docs/src/assets/photos/arms-hermit.jpg" alt="페그보드에 걸린 분홍색 Pinkrab 팔 두 개와 그 앞 책상 위의 왼손용·오른손용 Hermit" width="720">
 </p>
 
 <h1 align="center">Pinkrab</h1>
@@ -25,6 +25,7 @@
   <a href="https://woolimi.github.io/pinkrab/"><b>문서</b></a> ·
   <a href="https://woolimi.github.io/pinkrab/hardware/bom/">부품 목록</a> ·
   <a href="https://woolimi.github.io/pinkrab/hardware/print/">출력 파일</a> ·
+  <a href="https://makerworld.com/ko/models/3527244-pinkrab-hermit-6-dof-1-gripper">MakerWorld</a> ·
   <a href="https://woolimi.github.io/pinkrab/start/install/">설치</a>
 </p>
 
@@ -38,6 +39,8 @@ L 자 베이스를 새로 달았습니다. 몸체를 벽에 고정한 채 집게
 **Hermit** 은 팔의 claw 에 손잡이를 단 [UMI] 방식의 손잡이 그리퍼입니다. 팔과 같은
 claw, jaw, 손목 카메라를 쓰기 때문에 Hermit 으로 녹화한 영상으로 학습한 policy 는
 로봇에서 실행될 때도 같은 화면을 봅니다. 시연은 로봇 없이 수집합니다.
+
+부품 출력부터 policy 실행까지 모든 과정은 **[문서](https://woolimi.github.io/pinkrab/)** 에 있습니다.
 
 [SO-ARM 101]: https://github.com/TheRobotStudio/SO-ARM100
 [UMI]: https://umi-gripper.github.io
@@ -60,23 +63,21 @@ claw, jaw, 손목 카메라를 쓰기 때문에 Hermit 으로 녹화한 영상�
 
 ## 작업 흐름
 
-```
- Collect  ───►  Curate  ─────►  Train  ───►  Run
- Hermit +       판정,           ACT          Pinkrab,
- 탑 카메라      SAM 3 배경                   safety gate
-                무작위화                          │
-    ▲                                             │
-    └──────────────── Hermit 으로 교정 ◄──────────┘
-```
+<p align="center">
+  <img src="docs/src/assets/readme/workflow-ko.svg" alt="작업 흐름: Hermit 과 탑 카메라로 Collect, Curate, ACT 로 Train, safety gate 를 거쳐 Pinkrab 으로 Run, Hermit 으로 넘겨받은 교정이 다시 Collect 로" width="100%">
+</p>
 
 | 단계 | 문서 |
 |---|---|
 | 구매, 출력, 조립 | [부품 목록](https://woolimi.github.io/pinkrab/hardware/bom/) · [부품 출력](https://woolimi.github.io/pinkrab/hardware/print/) · [Pinkrab 조립](https://woolimi.github.io/pinkrab/hardware/assemble-arm/) · [Hermit 조립](https://woolimi.github.io/pinkrab/hardware/assemble-hermit/) |
+| 소프트웨어 설치 | [설치](https://woolimi.github.io/pinkrab/start/install/) |
 | 설정과 calibration | [준비](https://woolimi.github.io/pinkrab/use/setup/) · [첫 구동](https://woolimi.github.io/pinkrab/use/first-run/) |
 | 시연 수집 | [시연 수집](https://woolimi.github.io/pinkrab/use/collect/) |
 | dataset 만들기 | [dataset 정리](https://woolimi.github.io/pinkrab/use/curate/) |
 | policy 학습 | [학습](https://woolimi.github.io/pinkrab/use/train/) · [policy](https://woolimi.github.io/pinkrab/deep/policies/) |
 | 실행과 교정 | [실행](https://woolimi.github.io/pinkrab/use/run/) · [교정 데이터](https://woolimi.github.io/pinkrab/deep/corrections/) |
+| 하드웨어 없이 해 보기 | [시뮬레이션](https://woolimi.github.io/pinkrab/use/simulation/) |
+| 코드 둘러보기 | [리포 구성](https://woolimi.github.io/pinkrab/deep/repository/) |
 
 ## 하드웨어
 
@@ -100,80 +101,9 @@ claw, jaw, 손목 카메라를 쓰기 때문에 Hermit 으로 녹화한 영상�
 | 자세 정확도 | 관절 오차 ≤ 0.8°, tool 끝 평균 1 mm (실측) |
 | 카메라 | 손목과 Hermit 마다 ELP AR0234 global shutter 어안 카메라, AR0234 탑 카메라 1대 |
 | 전원과 bus | 양팔 공용 12 V 6 A 어댑터 1개, 팔마다 USB 로 연결하는 Seeed XIAO bus servo board 1개 |
-| 프린터 | 모든 부품을 출력합니다. Bambu Lab P2S 용 Bambu Studio 프로젝트가 들어 있습니다 |
+| 프린터 | 모든 부품을 출력합니다. Bambu Lab P2S 용 Bambu Studio 프로젝트가 들어 있고 [MakerWorld](https://makerworld.com/ko/models/3527244-pinkrab-hermit-6-dof-1-gripper) 에도 올라가 있습니다 |
 
 나사와 수량까지 담은 전체 목록은 [부품 목록](https://woolimi.github.io/pinkrab/hardware/bom/)에 있습니다.
-
-## 빠른 시작
-
-macOS 는 RoboStack conda 환경을, Ubuntu 24.04 는 apt 로 설치한 ROS 2 Jazzy 와 venv 를
-씁니다. 두 OS 의 전체 절차는 [설치](https://woolimi.github.io/pinkrab/start/install/) 페이지에 있습니다.
-
-```bash
-git clone https://github.com/woolimi/pinkrab.git
-cd pinkrab
-
-# macOS
-mamba env create -f requirements/environment.yml
-mamba activate pinkrab
-pip install -e src/pinkrab_core -e src/pinkrab_cli -e src/pinkrab_mujoco \
-  -e src/pinkrab_studio -e src/pinkrab_umi -e src/pinkrab_policy \
-  -e lerobot-plugin
-
-# Ubuntu 24.04
-./scripts/setup.sh && source /opt/ros/jazzy/setup.bash && source .venv/bin/activate
-rosdep install --from-paths src --ignore-src -r -y
-
-colcon build --symlink-install && source install/setup.bash
-pinkrab doctor          # 아무것도 움직이지 않고 환경, 보드, description 을 검사
-```
-
-macOS 에서는 `colcon build` 에 환경의 Python 과 NumPy 경로를 알려 줘야 합니다.
-설치 페이지를 참고하세요.
-
-팔을 조립하고 연결한 뒤:
-
-```bash
-pinkrab ports detect                         # 똑같이 생긴 보드 두 개를 구분, 한 번만
-pinkrab check                                # 모든 서보가 응답하는지
-pinkrab calibrate left                       # 한 번에 팔 하나씩
-ros2 launch pinkrab_bringup robot.launch.py  # 서보 driver 와 safety gate
-pinkrab-studio                               # http://localhost:8730/
-```
-
-calibration, 포트 지정, dataset 은 체크아웃 밖의 `~/pinkrab` 에 있습니다. 각자의
-rig 를 기술하는 값이라 커밋하지 않습니다.
-
-### 시뮬레이션
-
-`pinkrab-sim` 은 하드웨어 없이 MuJoCo 에서 전체 과정을 돌립니다. 시뮬레이션
-Hermit 이 take 를 녹화하고, 같은 converter 가 dataset 을 만들고, 시뮬레이션 팔이
-학습한 policy 를 실행합니다. 렌더링은 headless(EGL)입니다.
-
-```bash
-pinkrab-sim demos --scene bowls --count 200 --batch b
-pinkrab-sim convert b --out sim-b
-pinkrab-sim evaluate <checkpoint> --scene bowls
-```
-
-[src/pinkrab_sim/README.md](src/pinkrab_sim/README.md) 를 참고하세요.
-
-## 리포지토리 구성
-
-| 경로 | 내용 |
-|---|---|
-| `src/pinkrab_core` | rig 설정, 포트, servo bus, 각도, URDF, kinematics, LeRobot robot class |
-| `src/pinkrab_cli` | `pinkrab` CLI: 포트, 서보 검사, calibration, 카메라, 렌즈 fit |
-| `src/pinkrab_description` | URDF/xacro, 메시, MJCF scene, 출력 부품과 3MF 프로젝트 |
-| `src/pinkrab_umi` | Hermit: 녹화, 마커 추적, LeRobot dataset 변환, 출력 파일 |
-| `src/pinkrab_studio` | 브라우저 작업대, 페달, 원격 학습 |
-| `src/pinkrab_policy` | rollout, 학습 launcher, run 기록 |
-| `src/pinkrab_sim` | 시뮬레이션의 UMI 과정 |
-| `src/pinkrab_mujoco` | MuJoCo 의 rig. headless 로 진행하고 접촉을 검사 |
-| `src/pinkrab_driver` · `pinkrab_safety` · `pinkrab_teleop` · `pinkrab_bridge` | ROS 2 노드: 서보 driver, safety gate, Hermit teleoperation, studio bridge |
-| `src/pinkrab_bringup` · `pinkrab_interfaces` | launch 파일, message, service |
-| `lerobot-plugin` | LeRobot robot type `bi_pinkrab_follower` |
-| `docs` | 문서 사이트(Starlight) |
 
 ## 기반 프로젝트
 

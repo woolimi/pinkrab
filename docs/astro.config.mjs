@@ -105,6 +105,7 @@ export default defineConfig({
 						{ label: 'dataset 정리', translations: { en: 'Curating a dataset' }, slug: 'use/curate' },
 						{ label: '학습', translations: { en: 'Training' }, slug: 'use/train' },
 						{ label: '실행', translations: { en: 'Running' }, slug: 'use/run' },
+						{ label: '시뮬레이션', translations: { en: 'Simulation' }, slug: 'use/simulation' },
 					],
 				},
 				{
@@ -122,6 +123,7 @@ export default defineConfig({
 								{ label: 'ACT', slug: 'deep/policies/act' },
 							],
 						},
+						{ label: '리포 구성', translations: { en: 'Repository layout' }, slug: 'deep/repository' },
 					],
 				},
 			],

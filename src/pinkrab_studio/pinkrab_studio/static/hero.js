@@ -35,17 +35,31 @@ const HERMITS = [
   { side: 'left', at: [0.58, 0.13], jaws: [0.33, -0.94], up: -1 },
 ];
 const HERMIT_JAW = 0.2;                       // rad
-// A phone's picture has room for the arms alone: no Hermits there.
-const NARROW = '(max-width: 560px)';
+// The camera's distance (m from what it looks at): close for a wide picture,
+// farther back for a tall one. If the board, the arms, the Hermits and the disc
+// under them do not fit there - each within this much of the picture's half-width and
+// half-height - the camera puts the board and arms in the middle and stands
+// back until they do.
+const VIEW_R = { wide: 1.4, tall: 2.0 };
+const VIEW_FILL = 0.94;
+// The disc on the desk: its colour, and its radius as a share of the farthest part's distance from its centre.
+const DISC_COLOR = 0xfde6f0;
+const DISC_GROW = 0.8;
+// A label given a time to appear draws its line out from the robot, then shows its words.
+const LINE_S = 0.4;
+const WORDS_S = 0.25;
 
 // The labels over the picture: each pinned to a point on the robot and drawn
-// out to its words, re-pinned every frame the picture changes.
+// out to its words, re-pinned every frame the picture changes. A label whose
+// data-draw-at holds a time on the page clock (ms) appears then, line first;
+// "wait" keeps it out of sight; without the attribute it is drawn whole.
+// Returns whether a label is still appearing, so the caller keeps drawing.
 function callouts(canvas, camera, points) {
   const layer = canvas.parentElement;
   const svg = layer.querySelector('svg.leaders');
   const items = [...layer.querySelectorAll('.callouts [data-at]')];
   const at = new THREE.Vector3();
-  return function place() {
+  return function place(now = performance.now()) {
     const w = canvas.clientWidth;
     const h = canvas.clientHeight;
     svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
@@ -53,6 +67,7 @@ function callouts(canvas, camera, points) {
     const lo = 16 - box.left;
     const hi = document.documentElement.clientWidth - 16 - box.left;
     const lines = [];
+    let appearing = false;
     for (const item of items) {
       const point = points[item.dataset.at];
       if (!point || !point(at)) { item.hidden = true; continue; }
@@ -72,11 +87,20 @@ function callouts(canvas, camera, points) {
       const edge = west ? Math.max(ex - 16, width + lo) : Math.min(ex + 16, hi - width);
       item.style.left = `${edge}px`;
       item.style.top = `${ey}px`;
+      const from = item.dataset.drawAt;
+      const t = from === undefined ? Infinity : (now - Number(from)) / 1000;
+      const line = Number.isNaN(t) ? 0 : THREE.MathUtils.clamp(t / LINE_S, 0, 1);
+      const words = Number.isNaN(t) ? 0 : THREE.MathUtils.clamp((t - LINE_S) / WORDS_S, 0, 1);
+      if (!Number.isNaN(t) && words < 1) appearing = true;
+      item.style.opacity = String(words);
+      if (line === 0) continue;
       const d = `M${x.toFixed(1)} ${y.toFixed(1)}L${ex.toFixed(1)} ${ey.toFixed(1)}H${edge.toFixed(1)}`;
+      const dash = line < 1 ? ` pathLength="1" stroke-dasharray="1" stroke-dashoffset="${(1 - line).toFixed(3)}"` : '';
       // Drawn twice, paper under ink, so the line reads over the black board too.
-      lines.push(`<path class="halo" d="${d}"/><path d="${d}"/><circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="3"/>`);
+      lines.push(`<path class="halo"${dash} d="${d}"/><path${dash} d="${d}"/><circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="3"/>`);
     }
     svg.innerHTML = lines.join('');
+    return appearing;
   };
 }
 
@@ -144,10 +168,8 @@ export async function showRobot(canvas, sources = STUDIO) {
   world.updateMatrixWorld(true);
 
   // The Hermits, lying on the desk in front of the arms: each set down on its
-  // lowest point. Put down once the picture is wide enough to have them.
+  // lowest point.
   const lying = [];
-  const narrow = matchMedia(NARROW);
-  let laying = null;
   async function layHermit({ side, at, jaws, up }) {
     const built = await hermit(robot, side, hands[side], sources.hermitMeshes).catch(() => null);
     if (!built) return;
@@ -171,11 +193,48 @@ export async function showRobot(canvas, sources = STUDIO) {
     hand.userData.lyingSide = side;
     lying.push(hand);
   }
-  function layHermits() {
-    laying ??= Promise.all(HERMITS.filter(({ side }) => hands[side]).map(layHermit));
-    return laying;
+  await Promise.all(HERMITS.filter(({ side }) => hands[side]).map(layHermit));
+  // Everything the picture has to hold, as the corners of each part's box: all
+  // but the floor, which is only its shadow. The board and the arms, the heavy
+  // part of the picture, apart: they are what is put in the middle.
+  const corners = [];
+  const heavy = [];
+  const part = new THREE.Box3();
+  const held = new Set();
+  for (const hand of lying) hand.traverse((o) => held.add(o));
+  world.traverse((o) => {
+    if (!o.isMesh || o === floor || o.material === HULL) return;
+    part.setFromObject(o);
+    for (let i = 0; i < 8; i += 1) {
+      const c = new THREE.Vector3(i & 1 ? part.max.x : part.min.x, i & 2 ? part.max.y : part.min.y, i & 4 ? part.max.z : part.min.z);
+      corners.push(c);
+      if (!held.has(o)) heavy.push(c);
+    }
+  });
+
+  // A pale pink disc on the desk under the board, the arms and the Hermits,
+  // just below the floor so their shadows fall on it.
+  // Centred from the board out to the Hermits, and across on the board.
+  const box = (points) => {
+    const local = points.map((c) => world.worldToLocal(c.clone()));
+    return [local.reduce((m, c) => m.min(c), new THREE.Vector3(Infinity, Infinity, Infinity)),
+            local.reduce((m, c) => m.max(c), new THREE.Vector3(-Infinity, -Infinity, -Infinity))];
+  };
+  const [lo, hi] = box(corners);
+  const [blo, bhi] = box(heavy);
+  const ground = corners.map((c) => world.worldToLocal(c.clone()));
+  const centre = new THREE.Vector2((lo.x + hi.x) / 2, (blo.y + bhi.y) / 2);
+  const reach = Math.max(...ground.map((c) => centre.distanceTo(new THREE.Vector2(c.x, c.y))));
+  const disc = new THREE.Mesh(new THREE.CircleGeometry(reach * DISC_GROW, 96), new THREE.MeshBasicMaterial({ color: DISC_COLOR }));
+  disc.position.set(centre.x, centre.y, floor.position.z - 0.001);
+  world.add(disc);
+  world.updateMatrixWorld(true);
+  // Its rim is in the picture too.
+  for (let i = 0; i < 24; i += 1) {
+    const a = (i / 24) * Math.PI * 2;
+    corners.push(world.localToWorld(new THREE.Vector3(
+      centre.x + Math.cos(a) * reach * DISC_GROW, centre.y + Math.sin(a) * reach * DISC_GROW, disc.position.z)));
   }
-  if (!narrow.matches) await layHermits();
 
   // One reach per arm, from the point between its fingers. The pointer is
   // read where its ray crosses the plane through the hands, square to the
@@ -204,20 +263,42 @@ export async function showRobot(canvas, sources = STUDIO) {
     if (!w || !h) return;
     renderer.setSize(w, h, false);
     camera.aspect = w / h;
-    // A narrow picture stands back, so both arms stay in it.
-    const r = camera.aspect < 1 ? 2.0 : 1.4;
-    camera.position.set(target.x + r * Math.cos(VIEW_AZ), target.y + 0.3, target.z + r * Math.sin(VIEW_AZ));
-    camera.lookAt(target);
     camera.updateProjectionMatrix();
+    const at = new THREE.Vector3();
+    const look = new THREE.Vector3();
+    const right = new THREE.Vector3();
+    const up = new THREE.Vector3();
+    const extent = (points = corners) => {
+      let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+      for (const c of points) {
+        at.copy(c).project(camera);
+        x0 = Math.min(x0, at.x); x1 = Math.max(x1, at.x); y0 = Math.min(y0, at.y); y1 = Math.max(y1, at.y);
+      }
+      return { x0, x1, y0, y1 };
+    };
+    const fits = ({ x0, x1, y0, y1 }) => Math.max(-x0, x1) <= VIEW_FILL && Math.max(-y0, y1) <= VIEW_FILL;
+    const near = camera.aspect < 1 ? VIEW_R.tall : VIEW_R.wide;
+    camera.position.set(target.x + near * Math.cos(VIEW_AZ), target.y + 0.3, target.z + near * Math.sin(VIEW_AZ));
+    camera.lookAt(target);
+    camera.updateMatrixWorld();
+    if (!fits(extent())) for (let r = near; r < near * 3; r += 0.05) {
+      camera.position.set(target.x + r * Math.cos(VIEW_AZ), target.y + 0.3, target.z + r * Math.sin(VIEW_AZ));
+      camera.lookAt(target);
+      camera.updateMatrixWorld();
+      const e = extent();
+      const mid = extent(heavy);
+      const halfH = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * camera.position.distanceTo(target);
+      right.setFromMatrixColumn(camera.matrixWorld, 0).multiplyScalar(((mid.x0 + mid.x1) / 2) * halfH * camera.aspect);
+      up.setFromMatrixColumn(camera.matrixWorld, 1).multiplyScalar(((e.y0 + e.y1) / 2) * halfH);
+      camera.position.add(right).add(up);
+      look.copy(target).add(right).add(up);
+      camera.lookAt(look);
+      camera.updateMatrixWorld();
+      if (fits(extent())) break;
+    }
     dirty = true;
   }
   new ResizeObserver(size).observe(canvas);
-  // Narrowed after they were drawn: hidden, not taken away.
-  narrow.addEventListener('change', async () => {
-    if (!narrow.matches) await layHermits();
-    for (const hand of lying) hand.visible = !narrow.matches;
-    dirty = true;
-  });
   size();
 
   // The pointer, anywhere on the page: over the words laid across the
@@ -262,7 +343,7 @@ export async function showRobot(canvas, sources = STUDIO) {
     claw: robot.links.has('right_jaw_link') && ((v) => robot.links.get('right_jaw_link').getWorldPosition(v)),
     // The right hand's Hermit, in front of the right arm; none while there is none to point at.
     hermit: (v) => {
-      const held = lying.find((h) => h.visible && h.userData.lyingSide === 'right');
+      const held = lying.find((h) => h.userData.lyingSide === 'right');
       return held ? new THREE.Box3().setFromObject(held).getCenter(v) : null;
     },
   };
@@ -271,6 +352,7 @@ export async function showRobot(canvas, sources = STUDIO) {
   // Exposed for the console, as the teleop view exposes its own.
   window.pinkrabHero = { renderer, scene, camera, world, robot, target, arms, plane, lying, label };
   let last = performance.now();
+  let appearing = false;
   function frame(now) {
     const dt = Math.min(0.1, (now - last) / 1000);
     last = now;
@@ -290,12 +372,12 @@ export async function showRobot(canvas, sources = STUDIO) {
       robot.setJoint(`${arm.side}_gripper`, arm.jaw);
       dirty = true;
     }
-    if (dirty) {
-      renderer.render(scene, camera);
-      label();
-      dirty = false;
-    }
+    if (dirty) renderer.render(scene, camera);
+    if (dirty || appearing) appearing = label(now);
+    dirty = false;
     requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);
+  // For a page that sets its labels' times after the robot is up: draw again.
+  return { redraw() { dirty = true; } };
 }

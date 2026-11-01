@@ -16,51 +16,66 @@ const SKADIS: Record<string, string> = {
 	en: 'https://www.ikea.com/us/en/p/skadis-pegboard-black-50534378/',
 };
 const skadis = SKADIS[lang] ?? SKADIS.en;
+const makerworld = `https://makerworld.com/${en ? 'en' : 'ko'}/models/3527244-pinkrab-hermit-6-dof-1-gripper`;
 ---
 
 <div class="pk-landing not-content">
+	<!-- With scripts, everything waits for the robot and then comes in one by one; without, it is all there. -->
+	<script is:inline>document.currentScript.parentElement.classList.add('pending');</script>
 	<section class="pk-hero">
+		<div class="pk-loading" role="status">
+			<svg class="claw" viewBox="0 0 64 64" aria-hidden="true"><g fill="currentColor"><g stroke="currentColor" stroke-width="5.5" stroke-linejoin="round"><path d="M55.5 25.5A18.5 18.5 0 1 1 47.2 10.6A12.5 12.5 0 1 0 55.5 25.5Z"></path><ellipse cx="26" cy="38" rx="14" ry="12" transform="rotate(-45 26 38)"></ellipse></g><path d="M19.6 44.4L13.3 50.7" fill="none" stroke="currentColor" stroke-width="12" stroke-linecap="round"></path></g></svg>
+			<span>{en ? 'Loading' : '불러오는 중'}</span>
+			<i class="bar" aria-hidden="true"></i>
+		</div>
 		<div class="pk-hero-text">
-			<h1 class="wordmark">
+			<h1 class="wordmark" data-step="wordmark">
 				<span class="sr">Pinkrab</span>
 				<span class="tilt" id="wordmark" aria-hidden="true">
 					<svg class="layer-pin" viewBox="0 0 466 102">
 						<g fill="none" stroke="currentColor" stroke-width="20" stroke-linecap="round" stroke-linejoin="round">
-							<path d="M11 89V11H38A21.5 21.5 0 0 1 38 54H11"></path>
-							<path d="M91.5 89V44"></path>
-							<path d="M123.5 89V44M123.5 65A21 21 0 0 1 165.5 65V89"></path>
-							<path d="M197.5 89V11"></path>
-							<path d="M203 66L239 44M203 66L241 89"></path>
+							<path data-g="1" d="M11 89V11H38A21.5 21.5 0 0 1 38 54H11"></path>
+							<path data-g="2" d="M91.5 89V44"></path>
+							<path data-g="3" d="M123.5 89V44M123.5 65A21 21 0 0 1 165.5 65V89"></path>
+							<path data-g="4" d="M197.5 89V11"></path>
+							<path data-g="4" d="M203 66L239 44M203 66L241 89"></path>
 						</g>
-						<circle fill="currentColor" cx="91.5" cy="12" r="10.5"></circle>
+						<circle data-g="2" fill="currentColor" cx="91.5" cy="12" r="10.5"></circle>
 					</svg>
 					<svg class="layer-crab" viewBox="0 0 466 102">
 						<g fill="none" stroke="currentColor" stroke-width="20" stroke-linecap="round" stroke-linejoin="round">
-							<path d="M276 89V44M276 66A22 22 0 0 1 298 44H302"></path>
-							<circle cx="354.5" cy="66.5" r="22.5"></circle><path d="M377 44V89"></path>
-							<path d="M409 89V11"></path><circle cx="431.5" cy="66.5" r="22.5"></circle>
+							<path data-g="5" d="M276 89V44M276 66A22 22 0 0 1 298 44H302"></path>
+							<circle data-g="6" cx="354.5" cy="66.5" r="22.5"></circle><path data-g="6" d="M377 44V89"></path>
+							<path data-g="7" d="M409 89V11"></path><circle data-g="7" cx="431.5" cy="66.5" r="22.5"></circle>
 						</g>
-						<path fill="none" stroke="currentColor" stroke-width="27.0" stroke-linecap="round" d="M203.0 66.0L242.4 41.9M203.0 66.0L244.4 91.1"></path>
-						<path fill="currentColor" d="M232.8 32.0Q251.0 21.4 263.9 46.4Q250.8 40.3 247.1 49.6ZM234.9 101.1Q253.1 111.5 265.9 86.5Q252.8 92.6 249.1 83.4Z"></path>
-						<circle fill="currentColor" cx="203.0" cy="66.0" r="14.0"></circle>
+						<path data-g="4" fill="none" stroke="currentColor" stroke-width="27.0" stroke-linecap="round" d="M203.0 66.0L242.4 41.9M203.0 66.0L244.4 91.1"></path>
+						<path data-g="4" fill="currentColor" d="M232.8 32.0Q251.0 21.4 263.9 46.4Q250.8 40.3 247.1 49.6ZM234.9 101.1Q253.1 111.5 265.9 86.5Q252.8 92.6 249.1 83.4Z"></path>
+						<circle data-g="4" fill="currentColor" cx="203.0" cy="66.0" r="14.0"></circle>
 					</svg>
 				</span>
 			</h1>
-			<p class="lede">{en ? 'A wall-mounted 6-DOF dual-arm robot and Hermit, a UMI gripper' : '벽에 부착하는 6-DOF 양팔 로봇과 UMI 그리퍼 Hermit'}</p>
-			<div class="actions">
-				<a class="go primary" href={link('start/introduction/')}><b>Introduction</b><span>{en ? 'Read the Pinkrab docs' : 'Pinkrab 문서 보러가기'}</span></a>
-				<a class="go with-icon" href="https://github.com/woolimi/pinkrab"><Icon name="github" size="1.6rem" /><b>GitHub</b><span>{en ? 'Hardware and software' : '하드웨어와 소프트웨어'}</span></a>
+			<p class="lede" data-step="lede">{en ? 'A wall-mounted 6-DOF dual-arm robot and Hermit, a UMI gripper' : '벽에 부착하는 6-DOF 양팔 로봇과 UMI 그리퍼 Hermit'}</p>
+			<div class="actions" data-step="actions">
+				<a class="go" href={link('start/introduction/')}>
+					<span class="badge"><svg class="claw" viewBox="0 0 64 64" aria-hidden="true"><g fill="currentColor"><g stroke="currentColor" stroke-width="5.5" stroke-linejoin="round"><path d="M55.5 25.5A18.5 18.5 0 1 1 47.2 10.6A12.5 12.5 0 1 0 55.5 25.5Z"></path><ellipse cx="26" cy="38" rx="14" ry="12" transform="rotate(-45 26 38)"></ellipse></g><path d="M19.6 44.4L13.3 50.7" fill="none" stroke="currentColor" stroke-width="12" stroke-linecap="round"></path></g></svg></span>
+					<span class="words"><b>Introduction</b><small>{en ? 'Read the Pinkrab docs' : 'Pinkrab 문서 보러가기'}</small></span>
+					<span class="go-arrow"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"></path></svg></span>
+				</a>
 			</div>
+			<ul class="links" data-step="links">
+				<li><a href="https://github.com/woolimi/pinkrab"><Icon name="github" size="1.125rem" />GitHub</a></li>
+				<li><a href={makerworld}><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2.5 20.5 7.25v9.5L12 21.5l-8.5-4.75v-9.5z"></path><path d="M3.5 7.25 12 12l8.5-4.75M12 12v9.5"></path></svg>MakerWorld</a></li>
+			</ul>
 		</div>
-		<figure class="scene">
+		<figure class="scene" data-step="robot">
 			<canvas id="hero-robot" aria-label={en ? 'Two arms hung on a pegboard and a Hermit on the desk in front of them. The arms reach after the pointer.' : '페그보드에 걸린 팔 두 개와 그 앞 책상 위의 Hermit. 팔이 포인터를 따라 손을 뻗습니다.'}></canvas>
 			<svg class="leaders" aria-hidden="true"></svg>
 			<ul class="callouts">
-				<li data-at="board" data-dx="0.12" data-dy="-0.12" hidden><b><a href={skadis}>IKEA SKÅDIS {en ? 'pegboard' : '페그보드'}</a></b><span>{en ? 'The wall the arms hang on' : '팔을 거는 벽'}</span></li>
-				<li data-at="joints" data-dx="0.045" data-dy="-0.15" hidden><b>{en ? '6-DoF arm' : '6-DoF 팔'}</b><span>5-DoF SO&#8209;ARM&nbsp;101 + wrist yaw</span></li>
-				<li data-at="pink" data-dx="-0.13" data-dy="-0.024" hidden><b>HotPink</b><span>{en ? 'The Pink of Pinkrab' : 'Pinkrab 의 Pink'}</span></li>
-				<li data-at="claw" data-dx="-0.005" data-dy="0.233" hidden><b>{en ? 'Claw gripper' : 'Claw 그리퍼'}</b><span>{en ? 'The krab of Pinkrab, a crab claw' : 'Pinkrab 의 krab, 게의 집게'}</span></li>
-				<li data-at="hermit" data-dx="-0.01" data-dy="0.15" hidden><b>Hermit</b><span>{en ? 'UMI handheld gripper' : 'UMI Handheld 그리퍼'}</span></li>
+				<li data-draw-at="wait" data-at="board" data-dx="0.12" data-dy="-0.12" hidden><b><a href={skadis}>IKEA SKÅDIS {en ? 'pegboard' : '페그보드'}</a></b><span>{en ? 'The wall the arms hang on' : '팔을 거는 벽'}</span></li>
+				<li data-draw-at="wait" data-at="joints" data-dx="0.045" data-dy="-0.15" hidden><b>{en ? '6-DoF arm' : '6-DoF 팔'}</b><span>5-DoF SO&#8209;ARM&nbsp;101 + wrist yaw</span></li>
+				<li data-draw-at="wait" data-at="pink" data-dx="-0.13" data-dy="-0.024" hidden><b>HotPink</b><span>{en ? 'The Pink of Pinkrab' : 'Pinkrab 의 Pink'}</span></li>
+				<li data-draw-at="wait" data-at="claw" data-dx="-0.005" data-dy="0.233" hidden><b>{en ? 'Claw gripper' : 'Claw 그리퍼'}</b><span>{en ? 'The krab of Pinkrab, a crab claw' : 'Pinkrab 의 krab, 게의 집게'}</span></li>
+				<li data-draw-at="wait" data-at="hermit" data-dx="-0.01" data-dy="0.15" hidden><b>Hermit</b><span>{en ? 'UMI handheld gripper' : 'UMI Handheld 그리퍼'}</span></li>
 			</ul>
 		</figure>
 	</section>
@@ -76,10 +91,52 @@ const skadis = SKADIS[lang] ?? SKADIS.en;
 		tilt(wordmark);
 	}
 
+	// The first screen waits for the robot, then comes in one by one: the name,
+	// letter by letter; the robot; each label, its line drawn out from the robot
+	// and then its words; then the words and links under the name.
+	const landing = document.querySelector('.pk-landing');
+	const hero = document.querySelector('.pk-hero');
+	const scene = document.querySelector<HTMLElement>('.pk-hero .scene');
+	const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
+	const WAIT_MS = 12000;      // the longest the words wait for a robot that is slow to come
+	const START_MS = 250;       // the loading claw gone first
+	const ROBOT_MS = 650;       // the robot, once the name has started
+	const LABELS_MS = 1250;     // the first label
+	const LABEL_GAP_MS = 260;   // between labels
+	const WORDS_GAP_MS = 150;   // between the lines of words under the name
+
+	const show = (step: string, at: number) =>
+		setTimeout(() => landing?.querySelector(`[data-step="${step}"]`)?.classList.add('in'), still ? 0 : START_MS + at);
+
+	let api: { redraw(): void } | null = null;
+	let shown = false;
+	function drawLabels(from: number) {
+		const now = performance.now();
+		document.querySelectorAll<HTMLElement>('.pk-hero .callouts [data-at]').forEach((item, i) => {
+			if (still) delete item.dataset.drawAt;
+			else item.dataset.drawAt = String(now + START_MS + from + i * LABEL_GAP_MS);
+		});
+		api?.redraw();
+	}
+	function reveal() {
+		if (shown) return;
+		shown = true;
+		landing?.classList.add('loaded');
+		show('wordmark', 0);
+		let after = 300;
+		if (api) {
+			show('robot', ROBOT_MS);
+			drawLabels(LABELS_MS);
+			after = LABELS_MS + document.querySelectorAll('.pk-hero .callouts [data-at]').length * LABEL_GAP_MS;
+		}
+		['lede', 'actions', 'links'].forEach((step, i) => show(step, after + i * WORDS_GAP_MS));
+	}
+
 	const robot = `${import.meta.env.BASE_URL.replace(/\/$/, '')}/robot`;
 	const canvas = document.getElementById('hero-robot') as HTMLCanvasElement | null;
-	// A page whose robot does not load shows the words without an empty frame.
-	if (canvas) {
+	setTimeout(reveal, WAIT_MS);
+	if (!canvas) reveal();
+	else {
 		import('../../../src/pinkrab_studio/pinkrab_studio/static/hero.js')
 			.then(({ showRobot }) =>
 				showRobot(canvas, {
@@ -91,9 +148,20 @@ const skadis = SKADIS[lang] ?? SKADIS.en;
 					hermitMeshes: `${robot}/hermit/meshes`,
 				}),
 			)
+			// The first frame is drawn on the next animation frame: start after it.
+			.then((handle) => requestAnimationFrame(() => requestAnimationFrame(() => {
+				api = handle;
+				// Came after the words gave up waiting: in now, labels and all.
+				if (shown) {
+					scene?.classList.add('in');
+					drawLabels(400);
+				} else reveal();
+			})))
+			// A page whose robot does not load shows the words without an empty frame.
 			.catch(() => {
-				document.querySelector('.pk-hero .scene')?.remove();
-				document.querySelector('.pk-hero')?.classList.add('no-robot');
+				scene?.remove();
+				hero?.classList.add('no-robot');
+				reveal();
 			});
 	}
 </script>
@@ -110,9 +178,16 @@ const skadis = SKADIS[lang] ?? SKADIS.en;
 		grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
 		align-items: center;
 		gap: 8px;
-		min-height: min(640px, 76vh);
-		margin: 0 0 2rem;
+		/* The viewport under the nav bar, less the content panel's padding above and
+		 * below and its 1px top border: the words and the robot sit in the middle of
+		 * what the first screen shows, and the page does not scroll. */
+		min-height: calc(100svh - var(--sl-nav-height) - 3rem - 1px);
+		margin: 0;
 	}
+	/* The first screen is the whole page: no room below it for the main column's
+	 * bottom padding or Starlight's footer, which has nothing to say here. */
+	main:has(.pk-landing) { padding-bottom: 0; }
+	main:has(.pk-landing) footer { display: none; }
 	.pk-hero.no-robot { grid-template-columns: minmax(0, 1fr); min-height: 0; padding: 3rem 0; }
 	.pk-hero-text { position: relative; z-index: 2; pointer-events: none; }
 	.pk-hero-text .actions { pointer-events: auto; }
@@ -142,30 +217,82 @@ const skadis = SKADIS[lang] ?? SKADIS.en;
 
 	.pk-hero .lede { margin: 0 0 1.75rem; max-width: 17em; font-size: 1.375rem; line-height: 1.4; color: var(--pk-text); }
 	.pk-hero .actions { display: flex; gap: 12px; flex-wrap: wrap; }
+	/* The way in: a deep pink slab, the claw on a white badge, the words, and an
+	 * arrow in its own ring that fills on hover. */
 	.pk-landing a.go {
-		display: grid;
-		gap: 2px;
-		padding: 13px 22px 14px;
-		border-radius: 14px;
-		border: 1.5px solid var(--pk-line);
-		background: var(--pk-panel);
-		color: var(--pk-text);
+		--go-ink: #fff;
+		--go-soft: #ffe1ee;
+		display: inline-grid;
+		grid-template-columns: auto minmax(0, 1fr) auto;
+		align-items: center;
+		column-gap: 14px;
+		min-width: 300px;
+		padding: 12px 14px 12px 12px;
+		border-radius: 20px;
+		border: 1px solid #9a2156;
+		background: linear-gradient(135deg, #c93a7d 0%, #a8285f 100%);
+		color: var(--go-ink);
 		text-decoration: none;
-		transition: border-color 0.15s, background-color 0.15s, transform 0.15s;
+		text-align: left;
+		box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25), 0 14px 30px -16px #a8285f, 0 2px 6px -2px rgba(120, 20, 70, 0.35);
+		transition: transform 0.2s cubic-bezier(0.2, 0.7, 0.2, 1), box-shadow 0.2s;
 	}
-	.pk-landing a.go b { font-size: 1rem; font-weight: 700; }
-	/* A button with a mark: the mark beside both lines of words. */
-	.pk-landing a.go.with-icon { grid-template-columns: auto minmax(0, 1fr); column-gap: 12px; align-items: center; }
-	.pk-landing a.go.with-icon svg { grid-row: 1 / span 2; }
-	.pk-landing a.go span { font-size: 0.8rem; color: var(--pk-dim); }
-	.pk-landing a.go:hover { border-color: var(--pk-shell); transform: translateY(-1px); }
-	.pk-landing a.go.primary { background: var(--pk-shell); border-color: var(--pk-shell); color: #fff; box-shadow: 0 10px 24px -12px var(--pk-shell-deep); }
-	.pk-landing a.go.primary span { color: rgba(255, 255, 255, 0.86); }
-	.pk-landing a.go.primary:hover { background: var(--pk-shell-deep); border-color: var(--pk-shell-deep); }
+	.pk-landing a.go:hover { transform: translateY(-2px); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25), 0 20px 36px -16px #a8285f, 0 3px 8px -2px rgba(120, 20, 70, 0.35); }
+	.pk-landing a.go:active { transform: translateY(0); }
+	.pk-landing a.go .badge { display: grid; place-items: center; width: 48px; height: 48px; border-radius: 14px; background: #fff; color: var(--pk-shell-deep); box-shadow: 0 2px 6px -2px rgba(120, 20, 70, 0.4); }
+	.pk-landing a.go .badge .claw { width: 28px; height: 28px; }
+	.pk-landing a.go .words { display: grid; gap: 2px; }
+	.pk-landing a.go b { font-size: 1.2rem; font-weight: 800; line-height: 1.2; letter-spacing: -0.01em; }
+	.pk-landing a.go small { font-size: 0.875rem; color: var(--go-soft); line-height: 1.3; }
+	.pk-landing a.go .go-arrow { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 50%; border: 1.5px solid var(--go-soft); color: var(--go-ink); transition: background-color 0.2s, color 0.2s, transform 0.2s; }
+	.pk-landing a.go .go-arrow svg { width: 18px; height: 18px; }
+	.pk-landing a.go:hover .go-arrow { background: #fff; color: #a8285f; transform: translateX(3px); }
 	.pk-landing a.go:focus-visible { outline: 2px solid var(--pk-shell); outline-offset: 3px; }
+
+	/* The code and the print files: small links under the button. */
+	.pk-hero .links { display: flex; gap: 20px; flex-wrap: wrap; margin: 1.25rem 0 0; padding: 0; list-style: none; pointer-events: auto; }
+	.pk-hero .links li { margin: 0; }
+	.pk-hero .links a { display: inline-flex; align-items: center; gap: 6px; font-size: 0.875rem; font-weight: 600; color: var(--pk-dim); text-decoration: none; white-space: nowrap; }
+	.pk-hero .links a:hover { color: var(--pk-shell-deep); }
+	.pk-hero .links a:focus-visible { outline: 2px solid var(--pk-shell); outline-offset: 3px; border-radius: 4px; }
 
 	.pk-landing .scene { position: relative; z-index: 1; margin: 0; }
 	#hero-robot { display: block; width: 100%; height: min(640px, 72vh); touch-action: pan-y; }
+
+	/* Until the robot is drawn the first screen shows only this: the claw, nipping, and a bar that runs. */
+	.pk-hero { position: relative; }
+	.pk-loading { display: none; }
+	.pk-landing.pending .pk-loading {
+		position: absolute; inset: 0; z-index: 3; display: grid; place-content: center; justify-items: center; gap: 12px;
+		color: var(--pk-dim); font-size: 0.875rem; font-weight: 600; pointer-events: none; transition: opacity 0.3s, visibility 0.3s;
+	}
+	.pk-landing.loaded .pk-loading { opacity: 0; visibility: hidden; }
+	.pk-loading .claw { width: 52px; height: 52px; color: var(--pk-shell); animation: pk-nip 1.2s ease-in-out infinite; }
+	.pk-loading .bar { position: relative; display: block; width: 120px; height: 3px; overflow: hidden; border-radius: 2px; background: var(--pk-line); }
+	.pk-loading .bar::after { content: ''; position: absolute; inset: 0 auto 0 0; width: 40%; border-radius: 2px; background: var(--pk-shell); animation: pk-run 1.1s ease-in-out infinite; }
+	@keyframes pk-nip { 0%, 100% { transform: rotate(0deg); } 50% { transform: rotate(-12deg); } }
+	@keyframes pk-run { 0% { transform: translateX(-100%); } 100% { transform: translateX(250%); } }
+
+	/* Each part held back until its turn. */
+	.pk-landing.pending [data-step] { transition: opacity 0.6s ease, transform 0.6s cubic-bezier(0.2, 0.7, 0.2, 1); }
+	.pk-landing.pending [data-step]:not(.in):not([data-step="wordmark"]) { opacity: 0; transform: translateY(16px); }
+	.pk-landing.pending [data-step="robot"]:not(.in) { transform: translateY(24px) scale(0.97); }
+	/* The name pops in letter by letter, the same letter in every layer of its thickness at once. */
+	.pk-landing.pending .wordmark [data-g] { transform-box: fill-box; transform-origin: 50% 80%; }
+	.pk-landing.pending .wordmark:not(.in) [data-g] { opacity: 0; }
+	.pk-landing.pending .wordmark.in [data-g] { animation: pk-pop 0.55s cubic-bezier(0.3, 1.5, 0.5, 1) both; }
+	.pk-landing.pending .wordmark.in [data-g="2"] { animation-delay: 0.07s; }
+	.pk-landing.pending .wordmark.in [data-g="3"] { animation-delay: 0.14s; }
+	.pk-landing.pending .wordmark.in [data-g="4"] { animation-delay: 0.21s; }
+	.pk-landing.pending .wordmark.in [data-g="5"] { animation-delay: 0.28s; }
+	.pk-landing.pending .wordmark.in [data-g="6"] { animation-delay: 0.35s; }
+	.pk-landing.pending .wordmark.in [data-g="7"] { animation-delay: 0.42s; }
+	@keyframes pk-pop {
+		0% { opacity: 0; transform: translateY(18%) scale(0.2); }
+		55% { opacity: 1; transform: translateY(-6%) scale(1.15); }
+		78% { transform: translateY(1%) scale(0.95); }
+		100% { opacity: 1; transform: none; }
+	}
 	.scene svg.leaders { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
 	.leaders path { fill: none; stroke: var(--pk-text); stroke-width: 1; }
 	.leaders path.halo { stroke: var(--sl-color-black); stroke-width: 3; opacity: 0.8; }
@@ -182,23 +309,36 @@ const skadis = SKADIS[lang] ?? SKADIS.en;
 	.pk-landing .callouts a:hover { color: var(--pk-shell-deep); }
 
 
+	/* Stacked: the words centred over the robot, the robot wider than tall so the
+	 * camera stands close, and both on the first screen. */
 	@media (max-width: 860px) {
-		.pk-hero { grid-template-columns: minmax(0, 1fr); min-height: 0; gap: 0; margin-bottom: 1.25rem; }
-		.wordmark .tilt { width: 100%; }
+		.pk-hero { grid-template-columns: minmax(0, 1fr); align-content: center; gap: 0; }
+		.pk-hero-text { display: flex; flex-direction: column; align-items: center; text-align: center; }
+		.pk-hero h1.wordmark { margin: 0 auto 1.25rem; }
+		.wordmark .tilt { width: clamp(260px, 64vw, 440px); }
+		.pk-hero .lede { max-width: 22em; margin: 0 auto 1.5rem; }
+		.pk-hero .actions, .pk-hero .links { justify-content: center; }
+		#hero-robot { height: auto; aspect-ratio: 4 / 3; max-height: 46svh; }
 		.pk-landing .callouts span { display: none; }
 	}
 	/* A phone: the words, then the robot across the whole width, wider than
 	 * tall so the camera stands close. */
 	@media (max-width: 560px) {
-		.pk-hero h1.wordmark { margin: 0.5rem 0 1rem -2px; }
+		.pk-hero h1.wordmark { margin: 0.25rem auto 1rem; }
+		.wordmark .tilt { width: min(100%, 320px); }
 		.pk-hero .lede { margin-bottom: 1.25rem; font-size: 1.2rem; max-width: none; }
-		.pk-hero .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-		.pk-landing a.go { padding: 12px 16px 13px; border-radius: 12px; }
+		.pk-hero .actions { display: grid; grid-template-columns: 1fr; align-self: stretch; }
+		.pk-hero .links { margin-top: 0.5rem; }
+		.pk-landing a.go { min-width: 0; width: 100%; }
+		.pk-landing a.go b { font-size: 1.125rem; }
+		.pk-hero .links { gap: 8px 24px; }
+		.pk-hero .links a { min-height: 44px; }
 		.pk-landing .scene { margin: 0.75rem calc(-1 * var(--sl-content-pad-x, 1rem)) 0; }
-		#hero-robot { height: 330px; }
-		.pk-landing .scene .leaders, .pk-landing .scene .callouts { display: none; }
+		#hero-robot { aspect-ratio: 8 / 7; }
 	}
 	@media (prefers-reduced-motion: reduce) {
-		.pk-landing a.go { transition: none; }
+		.pk-landing a.go, .pk-landing a.go .go-arrow, .pk-landing.pending [data-step] { transition: none; }
+		.pk-loading .claw, .pk-loading .bar::after, .pk-landing.pending .wordmark.in [data-g] { animation: none; }
+		.pk-loading .bar::after { width: 100%; }
 	}
 </style>

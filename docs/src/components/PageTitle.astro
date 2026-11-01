@@ -2,7 +2,7 @@
 // The front page draws its own title, the wordmark; every other page keeps Starlight's.
 import Default from '@astrojs/starlight/components/PageTitle.astro';
 
-const front = Astro.locals.starlightRoute.id === '';
+const front = Astro.locals.starlightRoute.entry.data.template === 'splash';
 ---
 
 {!front && <Default />}
