@@ -472,6 +472,10 @@ def main() -> int:
               found.check({"left_elbow_flex": ready["left_elbow_flex"] + 0.05}) is not None, found.reason)
         check("while their own arm may not take them there",
               found.check(deep) is None, found.reason)
+        between = next((pose for pose, c in steps
+                        if c and allow < deepest(c) < deepest(scene.touching(deep))), None)
+        check("but may lift them out part of the way, still past the allowance",
+              between is not None and found.check(between) is not None, found.reason)
 
     print("\nboth arms, corrected by the handhelds")
     both = Gate(scene, clock=lambda: clock[0])

@@ -543,8 +543,11 @@ class Gate:
         A hand's fingers on the desk past the allowance only as they rest, no
         deeper - not a hair: `observe` holds the depth to the shallowest
         reading since they touched, and any slack granted on it would be
-        granted again at the next reading. A command that leaves that hand
-        where it is (the other arm's, say) meets them as last read. And a part
+        granted again at the next reading. Read deeper than that - pushed in,
+        or sagged onto the desk - they may still come out by any amount, so
+        that the arm is never held where it is because it is already too deep.
+        A command that leaves that hand where it is (the other arm's, say)
+        meets them as last read. And a part
         of the fingers away from their tips - the camera bracket shares the
         claw's link - may not come onto the desk because the tips already
         rest there."""
@@ -563,7 +566,7 @@ class Gate:
             return contact["depth"] <= self._now.get(key, 0.0)
         if not contact.get("fingertip") and key not in self._off_tip:
             return False
-        return contact["depth"] <= rest
+        return contact["depth"] <= rest or contact["depth"] < self._now.get(key, 0.0)
 
 
 
