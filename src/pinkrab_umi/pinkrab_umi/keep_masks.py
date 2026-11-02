@@ -35,6 +35,7 @@ gripper video: frame by frame of the video, as convert picks its frames.
 from __future__ import annotations
 
 import base64
+import contextlib
 import functools
 import json
 import os
@@ -58,7 +59,7 @@ from pinkrab_core.follow import TOOL_TURN
 from pinkrab_core.gripper_camera import camera_spec, mirrored, tcp_T_camera
 from pinkrab_core.jaw import gripper_band, shut_wide
 
-from . import sam_track
+from . import masker_run, sam_track
 from .backgrounds import MASKS, write
 from .config import SETTINGS
 from .convert import OTHER_BUILD, cameras_on_desk, exposures, fill_holes, jaw_readings, placed
@@ -352,9 +353,10 @@ def picture(root: Path, name: str, k: int, size: tuple[int, int]) -> np.ndarray:
 
 @dataclass(frozen=True)
 class Remote:
-    """SAM 3 on another machine, reached over ssh: `ssh` is the command up to
-    and including user@host, `root` the directory there that holds SAM 3's
-    environment (sam3_env), sam_track.py and the weights (hf-cache)."""
+    """Another machine the Curate page's models run on, reached over ssh:
+    `ssh` is the command up to and including user@host, `root` the directory
+    there that holds their environments (sam3_env, masker_env), their
+    scripts, SAM 3's weights (hf-cache) and the maskers taught there."""
     name: str
     ssh: tuple[str, ...]
     root: str
@@ -376,18 +378,40 @@ class Remote:
         return (f"env -u PYTHONPATH HF_HUB_CACHE={self.path('hf-cache', 'hub')}"
                 + (" HF_HUB_OFFLINE=1" if offline else ""))
 
+    def run(self, command: str, stdin: bytes | None = None, timeout: float = 60.0) -> str:
+        """`command` run there, its output; a RuntimeError saying why where it fails."""
+        try:
+            done = subprocess.run([*self.ssh, command], input=stdin, capture_output=True, timeout=timeout,
+                                  check=False)
+        except subprocess.TimeoutExpired as exc:
+            raise RuntimeError(f"{self.name}: no answer in {timeout:.0f} s") from exc
+        if done.returncode != 0:
+            said = done.stderr.decode("utf-8", "replace").strip().splitlines()
+            raise RuntimeError(f"{self.name}: {said[-1] if said else f'ssh exited {done.returncode}'}")
+        return done.stdout.decode("utf-8", "replace")
 
-class Sam:
-    """SAM 3 in its own environment (sam3_python), kept running with its
-    model loaded for one request after another: sam_track --serve. Loading
-    the model is ten seconds or so; a job over many videos, and a page
-    looking at frame after frame, load it once. A request that is given up
-    on - its asker stopped, or it went unanswered for `timeout_s` - stops
+
+# How long a model service is given to end on its own once its stdin closes,
+# in seconds, before it is killed.
+CLOSE_WAIT_S = 10.0
+
+
+class Service:
+    """A model in its own environment, kept running with its model loaded for
+    one request after another: `script` --serve with that environment's
+    Python. Loading a model takes seconds; a job over many videos, and a
+    page looking at frame after frame, load it once. A request that is given
+    up on - its asker stopped, or it went unanswered for `timeout_s` - stops
     the process with it, and the next starts it again.
 
-    With `remote`, it runs on that machine over ssh: this checkout's
-    sam_track.py is put there each time it starts, and the files a request
-    names go in its line and come back in the answer's."""
+    With `remote`, it runs on that machine over ssh: this checkout's script
+    is put there each time it starts, and the files a request names go in
+    its line and come back in the answer's."""
+
+    name = ""
+    script = Path()
+    env_name = ""
+    python = Path()   # the environment's Python on this machine
 
     def __init__(self, timeout_s: float = 180.0, remote: Remote | None = None) -> None:
         self.timeout_s = timeout_s
@@ -404,29 +428,35 @@ class Sam:
     def close(self) -> None:
         if self._run is not None:
             if self._run.poll() is None:
-                self._run.kill()
+                # Its stdin closed first: told so, it stops what it started
+                # of its own (masker_run's teaching) before it ends.
+                with contextlib.suppress(OSError):
+                    self._run.stdin.close()
+                try:
+                    self._run.wait(timeout=CLOSE_WAIT_S)
+                except subprocess.TimeoutExpired:
+                    self._run.kill()
             self._run.wait()
             self._run = None
         if self._err is not None:
             self._err.close()
             self._err = None
 
+    def _env(self, r: Remote) -> str:
+        """What the script runs with on another machine."""
+        return "env -u PYTHONPATH"
+
     def _argv(self) -> list[str]:
-        script = Path(sam_track.__file__)
         if self.remote is None:
-            python = SETTINGS.sam3_python
+            python = self.python
             if not python.is_file():
-                raise FileNotFoundError(f"no SAM 3 environment at {python} - see the docs' install page")
-            return [str(python), "-I", str(script), "--serve"]
+                raise FileNotFoundError(f"no {self.name} environment at {python} - see the docs' install page")
+            return [str(python), "-I", str(self.script), "--serve"]
         r = self.remote
-        sent = subprocess.run([*r.ssh, f"mkdir -p {r.path()} && cat > {r.path('sam_track.py')}"],
-                              input=script.read_bytes(), capture_output=True, timeout=60, check=False)
-        if sent.returncode != 0:
-            said = sent.stderr.decode("utf-8", "replace").strip().splitlines()
-            raise RuntimeError(f"{r.name}: {said[-1] if said else f'ssh exited {sent.returncode}'}")
-        # exec: the ssh session is SAM 3 itself, and ends with it.
-        command = (f"exec {r.env()} {r.path(SETTINGS.sam3_env, 'bin', 'python')} -I "
-                   f"{r.path('sam_track.py')} --serve")
+        r.run(f"mkdir -p {r.path()} && cat > {r.path(self.script.name)}", stdin=self.script.read_bytes())
+        # exec: the ssh session is the model itself, and ends with it.
+        command = (f"exec {self._env(r)} {r.path(self.env_name, 'bin', 'python')} -I "
+                   f"{r.path(self.script.name)} --serve")
         return [*r.ssh, command]
 
     def _started(self) -> subprocess.Popen:
@@ -452,7 +482,7 @@ class Sam:
             self._err.seek(0)
             last = self._err.read().strip().splitlines()
             where = f" on {self.remote.name}" if self.remote else ""
-            raise RuntimeError(f"SAM 3{where} stopped: {last[-1] if last else 'no answer'}")
+            raise RuntimeError(f"{self.name}{where} stopped: {last[-1] if last else 'no answer'}")
         try:
             return json.loads(answer[0])
         except ValueError:
@@ -489,6 +519,28 @@ class Sam:
             # Halfway through a request, the process cannot be asked anything else.
             self.close()
             raise
+
+
+class Sam(Service):
+    """SAM 3 (sam_track) in its own environment (sam3_env): it wants a newer
+    torch than LeRobot allows."""
+
+    name = "SAM 3"
+    script = Path(sam_track.__file__)
+    env_name = SETTINGS.sam3_env
+    python = SETTINGS.sam3_python
+
+    def _env(self, r: Remote) -> str:
+        return r.env()
+
+
+class MaskerService(Service):
+    """A task's masker (masker_run), taught and asked in its own environment (masker_env)."""
+
+    name = "the masker"
+    script = Path(masker_run.__file__)
+    env_name = SETTINGS.masker_env
+    python = SETTINGS.masker_python
 
 
 def tracked(root: Path, name: str, things: list[str], sam: Sam, say=lambda **_: None,
@@ -633,14 +685,18 @@ def flags(labels: np.ndarray, things: list[str], grippers: np.ndarray | None = N
     return out
 
 
-def make(root: Path, things: list[str], say=lambda **_: None, sam: Sam | None = None) -> dict:
+def make(root: Path, things: list[str], say=lambda **_: None, sam: Sam | None = None,
+         masker: tuple[MaskerService, dict] | None = None) -> dict:
     """A take's labels for every gripper video - the task's `things` tracked
     (a rollout's over its corrections only, tracked_spans), the grippers
     drawn over them - written beside it, with what each label is, which
-    frames were tracked, how many frames each thing was found in and where
-    to look again (masks.json). Returns that account. `sam` is SAM 3 already running, for
-    a job over many takes; without it, one is started for this take."""
-    if sam is None:
+    frames were tracked, what found the things, how many frames each was
+    found in and where to look again (masks.json). Returns that account.
+
+    The things are found by `masker` - a task's masker running and its
+    record (masker.find) - where given, else by SAM 3: `sam` already
+    running, for a job over many takes, or one started for this take."""
+    if masker is None and sam is None:
         with Sam() as own:
             return make(root, things, say, own)
     drawn = geometry(root)
@@ -649,10 +705,16 @@ def make(root: Path, things: list[str], say=lambda **_: None, sam: Sam | None = 
         raise ValueError("a rollout with no correction its dataset would learn from - nothing of it to label")
     found, flagged = {}, {}
     for name, labels in drawn.items():
-        tracks = tracked(root, name, things, sam, lambda video=name, **line: say(video=video, **line),
-                         spans[name]) if things else np.zeros_like(labels)
+        told = functools.partial(say, video=name)
+        if not things:
+            tracks = np.zeros_like(labels)
+        elif masker is not None:
+            from .masker import labelled
+            tracks = labelled(root, name, things, masker[1], masker[0], told, spans[name])
+        else:
+            tracks = tracked(root, name, things, sam, told, spans[name])
         if tracks.shape != labels.shape:
-            raise ValueError(f"{name}: SAM 3 read {len(tracks)} frames, the take lists {len(labels)}")
+            raise ValueError(f"{name}: {len(tracks)} frames were labelled, the take lists {len(labels)}")
         # Each span tracked on its own is looked over on its own: a thing is
         # not lost where its span ends.
         flagged[name] = [{**f, "start": f["start"] + a, "end": f["end"] + a}
@@ -668,7 +730,8 @@ def make(root: Path, things: list[str], say=lambda **_: None, sam: Sam | None = 
                           **{str(FIRST_THING + k): text for k, text in enumerate(things)}},
                "things": things, "frames": {name: len(labels) for name, labels in drawn.items()},
                "tracked": {name: None if s is None else [list(x) for x in s] for name, s in spans.items()},
-               "found": found, "flags": flagged, "resolution": SETTINGS.sam3_resolution, "made": time.time()}
+               "found": found, "flags": flagged, "made": time.time(),
+               "by": {"masker": masker[1]["id"]} if masker is not None else {"sam3": SETTINGS.sam3_resolution}}
     (folder / "masks.json").write_text(json.dumps(account, indent=2) + "\n")
     return account
 

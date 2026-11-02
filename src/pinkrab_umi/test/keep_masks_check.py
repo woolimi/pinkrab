@@ -1,8 +1,9 @@
 """Offline check of the keep labels and the backgrounds painted from them:
 the robot's grippers read off the description, each camera's own gripper
 drawn into its picture where the lens puts it, the review flags, and a
-picture painted over everywhere but where its labels keep it. No camera, no
-SAM 3.
+picture painted over everywhere but where its labels keep it, and which
+masker a task uses and how its finds are laid into labels. No camera, no
+SAM 3, no RF-DETR.
 
     python src/pinkrab_umi/test/keep_masks_check.py
 """
@@ -18,7 +19,8 @@ import cv2
 import numpy as np
 
 from pinkrab_core.config import ARMS
-from pinkrab_umi import backgrounds, keep_masks
+from pinkrab_umi import backgrounds, keep_masks, masker, masker_run
+from pinkrab_umi.config import SETTINGS
 
 FAILURES: list[str] = []
 
@@ -116,6 +118,58 @@ def check_spans_tracked() -> None:
           sorted(p.name for p in (out / "001").iterdir()) == ["00000.jpg", "00001.jpg"])
 
 
+def check_masker() -> None:
+    """The masker a task uses: the latest taught on the machine for exactly
+    its things that scored well enough; and its finds laid into labels, a
+    later thing over an earlier, a class it was not taught left out."""
+    things = ["mat", "cube"]
+    with tempfile.TemporaryDirectory() as tmp, \
+            mock.patch.object(type(SETTINGS), "maskers_dir", new_callable=mock.PropertyMock, return_value=Path(tmp)):
+        for name, record in {
+                "old": {"things": things, "machine": "gpu", "map50": 0.95, "made": 1.0},
+                "new": {"things": things, "machine": "gpu", "map50": 0.9, "made": 2.0},
+                "poor": {"things": things, "machine": "gpu", "map50": 0.5, "made": 3.0},
+                "elsewhere": {"things": things, "machine": "other", "map50": 0.99, "made": 4.0},
+                "reordered": {"things": things[::-1], "machine": "gpu", "map50": 0.99, "made": 5.0}}.items():
+            (Path(tmp) / name).mkdir()
+            (Path(tmp) / name / "masker.json").write_text(json.dumps({"id": name, **record}))
+        found = masker.find(things, "gpu")
+        check("the latest masker for the things on the machine, scored well enough",
+              found is not None and found["id"] == "new", str(found and found["id"]))
+        check("no masker for things it was not taught", masker.find(["bowl"], "gpu") is None)
+
+    class Found:
+        def __init__(self, classes, masks):
+            self.class_id, self.mask = np.array(classes), np.array(masks)
+
+        def __len__(self):
+            return len(self.class_id)
+
+    class Model:
+        def predict(self, batch, threshold):
+            a = np.zeros((6, 8), dtype=bool)
+            a[:, :5] = True
+            b = np.zeros((6, 8), dtype=bool)
+            b[:, 3:] = True
+            return [Found([1, 0, 7], [b, a, a]) for _ in batch]
+
+    with tempfile.TemporaryDirectory() as tmp:
+        video = Path(tmp) / "v.mp4"
+        out = cv2.VideoWriter(str(video), cv2.VideoWriter_fourcc(*"mp4v"), 30, (16, 12))
+        for _ in range(20):
+            out.write(np.full((12, 16, 3), 90, dtype=np.uint8))
+        out.release()
+        ask = {"video": str(video), "window": [0, 0, 16, 12], "size": [6, 8], "weights": "w", "model": "m",
+               "resolution": 24, "labels": [3, 4], "out": str(Path(tmp) / "l.npz")}
+        said = []
+        masker_run.label({("w", "m", 24): Model()}, ask, lambda **f: said.append(f))
+        labels = np.load(ask["out"])["labels"]
+    check("every frame labelled", labels.shape == (20, 6, 8), str(labels.shape))
+    check("a later thing over an earlier, a class it was not taught left out",
+          (labels[0][:, :3] == 3).all() and (labels[0][:, 3:] == 4).all())
+    check("ends saying done", said and said[-1] == {"done": True}, str(said[-1:]))
+
+
 def main() -> int:
     print("grippers off the description")
     models, link_T_cam = keep_masks.grippers()
@@ -203,6 +257,7 @@ def main() -> int:
 
     check_rollout()
     check_spans_tracked()
+    check_masker()
 
     print(f"\n{'all passed' if not FAILURES else f'{len(FAILURES)} failed: ' + ', '.join(FAILURES)}")
     return 1 if FAILURES else 0

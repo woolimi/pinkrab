@@ -1,6 +1,6 @@
 ---
 title: Dataset curation
-description: How to make a LeRobot dataset from demonstrations that passed the verdict. The Curate page in studio, keep labels, the computer to run SAM 3 on, review, randomised backgrounds, and conversion.
+description: How to make a LeRobot dataset from demonstrations that passed the verdict. The Curate page in studio, keep labels, the masker, the computer to run SAM 3 and the masker on, review, randomised backgrounds, and conversion.
 ---
 
 On the **Curate** page of studio (`http://localhost:8730/curate`), convert the demonstrations gathered in [Demonstration collection](../collect/) into a LeRobot dataset. You can leave the background of the gripper video as it is, or keep only the gripper and the task objects and replace everything else with a random pattern.
@@ -36,6 +36,27 @@ When the objects are picked up correctly in the photo, press **Make labels**. Fo
 
 SAM 3 must be installed separately. The installation steps are in [SAM 3 environment in Install](../../start/install/#sam-3-environment). On a Mac, one demonstration with three objects takes a few minutes.
 
+### Masker
+
+SAM 3 tracks one demonstration for minutes, so dozens of demonstrations take hours. When there are many, Make labels therefore tracks only some of them with SAM 3, teaches a segmentation model that finds just that task's objects (the masker) from those keep labels, and uses it on the rest. The masker is an [RF-DETR](https://github.com/roboflow/rf-detr) segmentation model and finishes a demonstration in about 20 seconds. There is nothing to choose; Make labels goes through these steps by itself.
+
+1. If the computer chosen has a masker for those objects, every demonstration is made by the masker.
+2. If not, SAM 3 tracks demonstrations spread evenly over the ones chosen until 10 have been tracked by SAM 3. If fewer are chosen than that, SAM 3 tracks them all and that is the end.
+3. A masker is taught from every demonstration SAM 3 tracked those objects in. One demonstration in five is kept out of its learning, and the masker is scored on how well it finds the objects there.
+4. The remaining demonstrations are made by the masker.
+
+The progress bar shows the step it is on and how many demonstrations SAM 3 and the masker each take.
+
+| Item | Behavior |
+|---|---|
+| Teaching time | Some tens of minutes for 12 epochs over 50 demonstrations on an H200. Done only the first time for each set of objects |
+| Reuse | Enter the same object names in the same order and press Make labels on the same computer, and newly recorded demonstrations are made by the masker taught before, right away |
+| Quality bar | If the mask mAP50 measured on the demonstrations kept out is under 0.85, the masker is not used and SAM 3 tracks the remaining demonstrations |
+| Storage | The record is in `~/pinkrab/maskers/<id>/masker.json`; the weights are in `maskers/<id>/` of the working folder on the computer that taught it. On another computer, it is taught again there |
+| Teaching again | If the room or the objects change and the masker keeps missing things, delete `~/pinkrab/maskers/<id>/` and press Make labels |
+
+In the Review list's keep labels column, a demonstration made by the masker has `· masker` after the object names. Spans worth a look are marked by the same rules as SAM 3's.
+
 ### Keep labels of corrections
 
 Rollouts that hold [corrections](../../deep/corrections/) are listed with the demonstrations, and get keep labels from the same Make labels. What a rollout puts into a dataset is the arms' gripper cameras, so its grippers are drawn from the arms as well.
@@ -47,16 +68,17 @@ Rollouts that hold [corrections](../../deep/corrections/) are listed with the de
 | List | A rollout without a correction is not listed. Its length is the corrections' seconds added up |
 | Time | On an 8 GB GPU, with three objects, 20 s of corrections take about 8 minutes |
 
-### Computer to run SAM 3 on
+### Computer to run SAM 3 and the masker on
 
-Choose the computer to run SAM 3 on in **SAM 3 on**, above Things to keep. The list is `this machine` and the computers added to [Sources on the Train page](../train/#remote-gpu-computer). A computer not in the list can be added right away with **Add** next to it by entering the ssh line and the working folder, and then SAM 3 runs on that computer and it is also added to Sources on the Train page. If you choose a computer with an NVIDIA GPU, the time per demonstration drops to about a third of the Mac's. With three objects on an 8 GB GPU, a 6-second demonstration takes a little over 2 minutes.
+Choose the computer to run SAM 3 and the masker on in **Run on**, above Things to keep. The list is `this machine` and the computers added to [Sources on the Train page](../train/#remote-gpu-computer). A computer not in the list can be added right away with **Add** next to it by entering the ssh line and the working folder, and then SAM 3 runs on that computer and it is also added to Sources on the Train page. If you choose a computer with an NVIDIA GPU, the time per demonstration drops to about a third of the Mac's. With three objects on an 8 GB GPU, a 6-second demonstration takes a little over 2 minutes.
 
 | Item | Behavior |
 |---|---|
-| Preparation | When you choose it, studio creates the SAM 3 environment (`sam3-env`) in that computer's Sources folder (default `~/pinkrab-train`) and downloads the weights. The first time takes a few minutes, and progress is shown under the selection field. After that it becomes `ready` in a few seconds |
+| Preparation | When you choose it, studio creates the SAM 3 environment (`sam3-env`) and the masker environment (`masker-env`) in that computer's Sources folder (default `~/pinkrab-train`) and downloads SAM 3's weights. The first time takes a few minutes, and progress is shown under the selection field. After that it becomes `ready` in a few seconds |
 | Demonstrations | The demonstrations stay on this computer; only the gripper video is sent and the keep labels are brought back |
 | Preview and Make labels | They share the one SAM 3 on the same computer. While Make labels is running, the preview draws only the gripper, and when it ends it finds the objects again |
 | Stop, connection lost | SAM 3 on that computer also stops right away, freeing the GPU |
+| Teaching the masker | SAM 3 is stopped first to free the GPU. Stop during teaching stops the teaching too |
 | 1 minute unused | SAM 3 is stopped to free the GPU, so training can be launched on that computer right away; the next time it is first used it takes about 10 seconds more to load the model again |
 
 SAM 3's weights can be downloaded only after approval, so the first time that computer downloads the weights it needs a Hugging Face login. If you are not logged in, the command to run appears under the selection field, so run it on that computer and press **Try again**. After the weights are downloaded, no login is needed.

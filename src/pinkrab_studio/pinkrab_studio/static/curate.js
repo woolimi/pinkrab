@@ -171,7 +171,8 @@ function drawTakes() {
     const tr = document.createElement('tr');
     tr.dataset.name = e.name;
     const account = labels[e.name];
-    const made = account ? account.things.join(', ') + (sameThings(account.things, things()) ? '' : ' (other things)') : 'none';
+    const made = account ? account.things.join(', ') + (sameThings(account.things, things()) ? '' : ' (other things)')
+      + (account.by?.masker ? ' · masker' : '') : 'none';
     const labelCell = cell(e.name === making ? 'making ...' : made, account ? 'labels made' : 'labels');
     const n = flagCount(account);
     const flagCell = cell(account ? (n ? `${n} span${n === 1 ? '' : 's'}` : 'none') : '', `look${n ? ' some' : ''}`);
@@ -223,6 +224,8 @@ const labelsGo = document.getElementById('labels-go');
 const labelsStop = document.getElementById('labels-stop');
 const labelsProgress = document.getElementById('labels-progress');
 const labelsLines = document.getElementById('labels-lines');
+// Teaching the masker, as long as SAM 3 tracking this many takes.
+const TEACH_TAKES = 6;
 const labelsNote = document.getElementById('labels-note');
 
 function drawLabels() {
@@ -241,24 +244,47 @@ function drawLabels() {
   labelsProgress.hidden = false;
   const total = job.asked.takes.length;
   const at = job.at || {};
+  const sam = job.asked.by_sam?.length ?? total;
+  const taught = job.asked.masker;
+  // The bar: SAM 3's takes, then the masker being taught (when it is), then
+  // its takes, each counted as long as it takes.
+  const teaching = job.asked.teaches ? 1 : 0;
   let within = 0;
-  // Each take's two videos, each followed forward and then, for a thing
-  // found late, back: the forward pass is most of a video's time.
-  if (at.frames) {
+  if (at.stage === 'set') within = 0.15 * at.index / (at.takes || 1);
+  else if (at.stage === 'send') within = 0.15;
+  else if (at.stage === 'teach') within = 0.15 + 0.85 * (at.epoch || 0) / (at.epochs || 1);
+  else if (at.frames) {
+    // SAM 3 follows each thing forward and, found late, back: forward is
+    // most of a video's time. The masker reads each frame once.
     const video = at.video === 'gripper_right' ? 1 : 0;
     within = (video + (at.stage === 'back' ? 1 : at.frame / at.frames)) / 2;
   }
   const finished = job.done.length + Object.keys(job.failed).length;
-  const share = running ? ((at.index ?? finished) + within) / total : 1;
+  // A masker's take weighs a tenth of SAM 3's; teaching it, TEACH_TAKES of SAM 3's.
+  const taughtUnits = teaching * TEACH_TAKES;
+  const units = sam + taughtUnits + (total - sam) * 0.1;
+  const index = at.index ?? finished;
+  const where = ['set', 'send', 'teach'].includes(at.stage) ? sam + taughtUnits * within
+    : index < sam ? index + within
+      : sam + taughtUnits + (index - sam + within) * 0.1;
+  const share = running ? where / units : 1;
   labelsProgress.querySelector('.bar > span').style.width = `${Math.min(100, share * 100)}%`;
   const on = job.asked.machine && job.asked.machine !== 'this machine' ? ` on ${job.asked.machine}` : '';
+  const plan = job.asked.by_masker?.length
+    ? `SAM 3 tracks ${sam}, the masker labels ${total - sam}` + (taught ? ` (mask mAP50 ${taught.map50.toFixed(2)})` : ' once it is taught')
+    : '';
+  const doing = at.stage === 'set' ? ` · teaching the masker: pictures from take ${at.index} / ${at.takes}`
+    : at.stage === 'send' ? ` · teaching the masker: sending its pictures to ${job.asked.machine}`
+    : at.stage === 'teach' ? ` · teaching the masker from ${at.takes} takes: epoch ${at.epoch} / ${at.epochs}`
+      + (at.map50 != null ? ` · mask mAP50 ${at.map50.toFixed(2)}` : '')
+      : (at.take ? ` · ${at.take}` : '')
+        + (at.stage === 'forward' || at.stage === 'masker' ? ` · ${at.video?.replace('gripper_', '')} · frame ${at.frame} / ${at.frames}`
+          : at.stage === 'back' ? ` · ${at.video?.replace('gripper_', '')} · ${job.asked.things[at.thing] ?? ''} back to the start`
+            : ' · grippers');
   const head = running
-    ? `${finished} / ${total} takes${on} · ${job.seconds ?? 0} s` + (at.take ? ` · ${at.take}` : '')
-      + (at.stage === 'forward' ? ` · ${at.video?.replace('gripper_', '')} · frame ${at.frame} / ${at.frames}`
-        : at.stage === 'back' ? ` · ${at.video?.replace('gripper_', '')} · ${job.asked.things[at.thing] ?? ''} back to the start`
-          : ' · grippers')
+    ? `${finished} / ${total} takes${on} · ${job.seconds ?? 0} s${doing}`
     : job.stopped ? `stopped: ${job.done.length} of ${total} takes made` : `done: ${job.done.length} of ${total} takes made in ${job.seconds} s`;
-  labelsLines.textContent = [head, ...Object.entries(job.failed).map(([name, why]) => `  ${name}: ${why}`)].join('\n');
+  labelsLines.textContent = [head, ...(plan ? [plan] : []), ...Object.entries(job.failed).map(([name, why]) => `  ${name}: ${why}`)].join('\n');
 }
 
 labelsGo.addEventListener('click', async () => {

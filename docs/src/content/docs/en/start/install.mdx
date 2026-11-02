@@ -150,9 +150,20 @@ The SAM 3 weights can only be downloaded after approval on Hugging Face. Request
 ~/pinkrab/sam3-env/bin/hf auth login
 ```
 
-If you plan to run SAM 3 on another computer with a GPU, you do not need to install it on this one. Studio creates the same environment on that computer ([the computer that runs SAM 3](../../use/curate/#computer-to-run-sam-3-on)).
+If you plan to run SAM 3 on another computer with a GPU, you do not need to install it on this one. Studio creates the same environment on that computer ([the computer to run SAM 3 and the masker on](../../use/curate/#computer-to-run-sam-3-and-the-masker-on)).
 
 SAM 3 and its weights are covered by Meta's [SAM License](https://github.com/facebookresearch/sam3/blob/main/LICENSE). The Pinkrab repository contains neither SAM 3's code nor its weights.
+
+## Masker environment
+
+When there are many demonstrations, Curate's Make labels tracks only some with SAM 3 and makes the rest with a [masker](../../use/curate/#masker) taught from them. The masker is an [RF-DETR](https://github.com/roboflow/rf-detr) segmentation model, and like SAM 3 it is installed apart from the Pinkrab environment, in `~/pinkrab/masker-env`. Without this environment, Make labels tracks every demonstration with SAM 3.
+
+```bash
+uv venv --python 3.12 ~/pinkrab/masker-env
+uv pip install --python ~/pinkrab/masker-env/bin/python "rfdetr[train]>=1.11"
+```
+
+If you plan to run it on another computer with a GPU, you do not need to install it on this one; studio creates the same environment on that computer. RF-DETR's code and weights are under the Apache License 2.0.
 
 ## Verifying the installation
 

@@ -52,10 +52,11 @@
           </figcaption>
         </figure>
         <div class="things-panel">
-          <!-- SAM 3 here or on a training source's GPU: the takes stay here,
-               their gripper videos go there and the labels come back. -->
+          <!-- SAM 3 and the task's masker here or on a training source's
+               GPU: the takes stay here, their gripper videos go there and
+               the labels come back. -->
           <div class="sam-on">
-            <label for="sam-machine">SAM 3 on</label>
+            <label for="sam-machine">Run on</label>
             <select id="sam-machine"></select>
             <button id="sam-add" title="add a machine over ssh - a training source, listed on the Train page too">Add</button>
             <button id="sam-retry" hidden>Try again</button>
@@ -67,7 +68,7 @@
             <input id="thing-input" autocomplete="off" placeholder="add a thing in English, e.g. black cube">
             <button type="submit" id="thing-add-go">Add</button>
           </form>
-          <p class="hint">The grippers, drawn dashed, are always kept, and so is the black outside the lens circle. A thing found in any frame is followed through the whole take.</p>
+          <p class="hint">The grippers, drawn dashed, are always kept, and so is the black outside the lens circle. A thing found in any frame is followed through the whole take. Over many takes SAM 3 tracks a few, and a masker taught from them labels the rest in seconds each.</p>
           <p class="note" id="labels-note"></p>
           <div class="labels-actions">
             <button id="labels-go" class="primary" disabled>Make labels</button>
@@ -187,10 +188,11 @@
       </div>
     </div>
   </dialog>
-  <!-- A machine for SAM 3 to run on, added as a training source: the Train
-       page lists it too, and SAM 3 is set up under its runs' directory. -->
+  <!-- A machine for SAM 3 and the masker to run on, added as a training
+       source: the Train page lists it too, and both are set up under its
+       runs' directory. -->
   <dialog id="sam-source">
-    <header><h2>New machine for SAM 3</h2><button id="sam-source-close">Close</button></header>
+    <header><h2>New machine for Curate</h2><button id="sam-source-close">Close</button></header>
     <form id="sam-source-form"></form>
   </dialog>
   <script type="module" src="/static/curate.js"></script>

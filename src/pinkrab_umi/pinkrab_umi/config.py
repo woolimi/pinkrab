@@ -519,6 +519,32 @@ class Settings:
     # afar - a block a fisheye sees across the mat scores about 0.3.
     sam3_new_thing_score: float = 0.4
     sam3_thing_score: float = 0.3
+    # A task's masker (masker_run): an RF-DETR segmentation model (Apache-2.0)
+    # taught the task's things from takes SAM 3 tracked, then labelling the
+    # rest of the takes in seconds each, where SAM 3 takes minutes. It lives
+    # in an environment of its own, like SAM 3's, made of these packages.
+    masker_env: str = "masker-env"
+    masker_packages: tuple[str, ...] = ("rfdetr[train]>=1.11",)
+    # Its size and the size it reads each picture at (a multiple of 24).
+    # Medium at 432 found the mat, block and bowl of 10 held-out takes at a
+    # mask mAP50 of 0.95 after one epoch (2026-11-02, KT H200).
+    masker_model: str = "RFDETRSegMedium"
+    masker_resolution: int = 432
+    masker_epochs: int = 12
+    # A masker is taught once a task has this many takes tracked by SAM 3:
+    # a job over fewer takes than that tracks them all with SAM 3; one over
+    # more has SAM 3 track the missing ones, spread over the job's takes, and
+    # the masker label the rest.
+    masker_from_takes: int = 10
+    # It learns from every masker_frame_step-th frame of those takes, and is
+    # scored on one take in masker_held_out of them, kept out of its learning.
+    masker_frame_step: int = 6
+    masker_held_out: int = 5
+    # Below this mask mAP50 on the held-out takes a masker is not used, and
+    # SAM 3 tracks the job's takes after all.
+    masker_min_map50: float = 0.85
+    # The bar a thing the masker finds must score to be kept.
+    masker_score: float = 0.5
     # What is kept of a gripper picture is grown by this much before the rest
     # is painted over, so an edge drawn or tracked a little short of the
     # thing does not eat into it (backgrounds.kept).
@@ -797,6 +823,17 @@ class Settings:
     def camera_share_lock(self, camera: str) -> Path:
         """The file whose lock guards a camera's shared frame (frame_share)."""
         return CORE.workspace / "frame_share" / f"{camera}.lock"
+
+    @property
+    def masker_python(self) -> Path:
+        """The Python of the masker's environment, in the workspace (masker_env)."""
+        return CORE.workspace / self.masker_env / "bin" / "python"
+
+    @property
+    def maskers_dir(self) -> Path:
+        """The maskers taught here: a folder each, its masker.json saying
+        what it finds, where its weights are and how it scored."""
+        return CORE.workspace / "maskers"
 
     @property
     def curate_file(self) -> Path:

@@ -150,9 +150,20 @@ SAM 3 의 가중치는 Hugging Face 에서 승인을 받아야 받을 수 있습
 ~/pinkrab/sam3-env/bin/hf auth login
 ```
 
-GPU 가 있는 다른 컴퓨터에서 SAM 3 를 돌릴 거라면 이 컴퓨터에는 설치하지 않아도 됩니다. 그 컴퓨터에는 studio 가 같은 환경을 만듭니다([SAM 3 를 돌릴 컴퓨터](../../use/curate/#sam-3-를-돌릴-컴퓨터)).
+GPU 가 있는 다른 컴퓨터에서 SAM 3 를 돌릴 거라면 이 컴퓨터에는 설치하지 않아도 됩니다. 그 컴퓨터에는 studio 가 같은 환경을 만듭니다([SAM 3 와 masker 를 돌릴 컴퓨터](../../use/curate/#sam-3-와-masker-를-돌릴-컴퓨터)).
 
 SAM 3 와 그 가중치는 Meta 의 [SAM License](https://github.com/facebookresearch/sam3/blob/main/LICENSE) 를 따릅니다. Pinkrab 저장소에는 SAM 3 의 코드도 가중치도 들어 있지 않습니다.
+
+## masker 환경
+
+시연이 많을 때 Curate 의 Make labels 는 SAM 3 로 일부만 추적하고, 그 결과로 학습한 [masker](../../use/curate/#masker) 로 나머지를 만듭니다. masker 는 [RF-DETR](https://github.com/roboflow/rf-detr) 의 segmentation 모델이고, SAM 3 와 마찬가지로 Pinkrab 환경과 따로 `~/pinkrab/masker-env` 에 설치합니다. 이 환경이 없으면 Make labels 는 모든 시연을 SAM 3 로 추적합니다.
+
+```bash
+uv venv --python 3.12 ~/pinkrab/masker-env
+uv pip install --python ~/pinkrab/masker-env/bin/python "rfdetr[train]>=1.11"
+```
+
+GPU 가 있는 다른 컴퓨터에서 돌릴 거라면 이 컴퓨터에는 설치하지 않아도 되고, 그 컴퓨터에는 studio 가 같은 환경을 만듭니다. RF-DETR 의 코드와 가중치는 Apache License 2.0 을 따릅니다.
 
 ## 설치 확인
 

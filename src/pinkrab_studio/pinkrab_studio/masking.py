@@ -2,7 +2,8 @@
 
 One job at a time, on a thread of its own: SAM 3 takes minutes a take, and
 the page watches it go - which take, which video, which thing, how far - and
-can stop it. The page asks with the takes and the task's things in words;
+can stop it. Over many takes SAM 3 tracks only enough of them to teach the
+task's masker (pinkrab_umi.masker), which labels the rest in seconds each. The page asks with the takes and the task's things in words;
 each take's labels go beside it (keep_masks.make), and the page reads what
 each take has from its masks.json (keep_masks.account).
 
@@ -37,13 +38,15 @@ if TYPE_CHECKING:
 from .launching import LaunchError, _run, _stream
 from .training import LOCAL, TrainError, TrainStore, ssh_base
 
-SAM3_SETUP_SH = r"""#!/bin/bash
-# SAM 3's environment, $1 beside this file, from the packages after it. uv's
-# Python and cache are the training kit's, under the same directory.
+ENV_SETUP_SH = r"""#!/bin/bash
+# A model's environment, $1 beside this file, from the packages after $2 -
+# the module that shows it works. uv's Python and cache are the training
+# kit's, under the same directory.
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENV="$ROOT/$1"
-shift
+CHECK="$2"
+shift 2
 export UV_PYTHON_INSTALL_DIR="$ROOT/uv-python" UV_CACHE_DIR="$ROOT/uv-cache" UV_LINK_MODE=copy
 export PATH="$HOME/.local/bin:$PATH"
 if ! command -v uv >/dev/null 2>&1; then
@@ -52,7 +55,7 @@ fi
 uv python install 3.12
 [ -x "$ENV/bin/python" ] || uv venv --python 3.12 "$ENV"
 VIRTUAL_ENV="$ENV" uv pip install "$@"
-"$ENV/bin/python" -c "import torch, sam3; print('torch', torch.__version__, '- cuda', torch.cuda.is_available())"
+"$ENV/bin/python" -c "import torch, $CHECK; print('torch', torch.__version__, '- cuda', torch.cuda.is_available())"
 printf '%s\n' "$*" > "$ENV/.packages"
 """
 # SAM 3 given up on when it says nothing for this long. Its first answer,
@@ -62,7 +65,11 @@ SAM_TIMEOUT_S = 180.0
 # training run on the same machine has it: a look a minute after the last
 # one finds it still loaded, and one after that waits some ten seconds.
 SAM_IDLE_S = 60.0
-# Setting SAM 3 up the first time: some 3 GB of torch, then its 3.4 GB of weights.
+# The masker given up on when it says nothing for this long: being taught,
+# it says it is still going every minute (masker_run.HEARTBEAT_S).
+MASKER_TIMEOUT_S = 300.0
+# Setting SAM 3 up the first time: some 3 GB of torch, then its 3.4 GB of
+# weights; the masker's environment is about as much torch again.
 SETUP_TIMEOUT_S = 40 * 60
 
 
@@ -135,33 +142,42 @@ class Machines:
             self._status["lines"] = [*self._status["lines"][-4:], line]
 
     def _ready(self, name: str) -> None:
+        masker = False
         try:
             if name == LOCAL:
                 if not UMI.sam3_python.is_file():
                     raise LaunchError(f"no SAM 3 environment at {UMI.sam3_python} - see the docs' install page")
+                masker = UMI.masker_python.is_file()
             else:
-                self._set_up(self.store.source(name))
+                masker = self._set_up(self.store.source(name))
             error = None
         except (LaunchError, TrainError, OSError) as exc:
             error = str(exc)
         with self._lock:
             if self._status.get("name") == name:
-                self._status.update(ready=error is None, busy=False, error=error)
+                self._status.update(ready=error is None, masker=masker, busy=False, error=error)
 
-    def _set_up(self, source: dict) -> None:
-        """SAM 3's environment on `source`, as this checkout asks for, and its
-        weights - set up there where either is missing."""
+    def masker_ready(self) -> bool:
+        """Whether the machine chosen has the masker's environment: without
+        it, SAM 3 tracks every take."""
+        with self._lock:
+            return bool(self._status.get("masker"))
+
+    def _set_up(self, source: dict) -> bool:
+        """SAM 3's environment and the masker's on `source`, as this checkout
+        asks for, and SAM 3's weights - set up there where any is missing.
+        Whether the masker's environment is there: without it SAM 3 still
+        is, and tracks every take."""
         remote = self.remote_for(source)
-        env, python = remote.path(UMI.sam3_env), remote.path(UMI.sam3_env, "bin", "python")
         self._say(f"asking {source['name']} what it has")
-        packages = " ".join(UMI.sam3_packages)
-        has = _run(source, f"cat {env}/.packages 2>/dev/null; true", timeout=60).strip()
-        if has != packages:
-            self._say("setting SAM 3 up there - the first time takes several minutes")
-            _run(source, f"mkdir -p {remote.path()} && cat > {remote.path('sam3-setup.sh')}",
-                 stdin=SAM3_SETUP_SH.encode(), timeout=60)
-            _stream(source, f"bash {remote.path('sam3-setup.sh')} {shlex.quote(UMI.sam3_env)} "
-                            + " ".join(shlex.quote(p) for p in UMI.sam3_packages), self._say, SETUP_TIMEOUT_S)
+        self._env_up(source, remote, UMI.sam3_env, "sam3", UMI.sam3_packages)
+        try:
+            self._env_up(source, remote, UMI.masker_env, "rfdetr", UMI.masker_packages)
+            masker = True
+        except LaunchError as exc:
+            self._say(f"no masker on {source['name']} - SAM 3 will track every take ({exc})")
+            masker = False
+        python = remote.path(UMI.sam3_env, "bin", "python")
         # The files SAM 3's model builder asks the hub for, asked without
         # loading torch: offline first, to see they are there.
         fetch = shlex.quote("from huggingface_hub import hf_hub_download as get; "
@@ -176,7 +192,20 @@ class Machines:
                 raise LaunchError(f"{source['name']} cannot fetch SAM 3's weights ({exc}) - they are gated: once "
                                   f"facebook/sam3 grants you access, log in there with "
                                   f"{source['root']}/{UMI.sam3_env}/bin/hf auth login") from exc
-        self._say(f"SAM 3 is ready on {source['name']}")
+        self._say(f"SAM 3{' and the masker' if masker else ''} ready on {source['name']}")
+        return masker
+
+    def _env_up(self, source: dict, remote: Remote, env: str, check: str, packages: tuple[str, ...]) -> None:
+        """An environment set up under `source`'s root with `packages`, unless
+        it already has them."""
+        wanted = " ".join(packages)
+        if _run(source, f"cat {remote.path(env)}/.packages 2>/dev/null; true", timeout=60).strip() == wanted:
+            return
+        self._say(f"setting {env} up there - the first time takes several minutes")
+        _run(source, f"mkdir -p {remote.path()} && cat > {remote.path('env-setup.sh')}",
+             stdin=ENV_SETUP_SH.encode(), timeout=60)
+        _stream(source, f"bash {remote.path('env-setup.sh')} {shlex.quote(env)} {check} "
+                        + " ".join(shlex.quote(p) for p in packages), self._say, SETUP_TIMEOUT_S)
 
     @staticmethod
     def remote_for(source: dict) -> Remote:
@@ -222,6 +251,19 @@ class Machines:
             self._idle.daemon = True
             self._idle.start()
             self._sam_lock.release()
+
+    @contextmanager
+    def without_sam(self) -> Iterator[None]:
+        """SAM 3 kept out of the GPU while this is held - stopped now, once
+        nobody is using it, and the preview left without it - for the
+        masker, whose teaching wants all of an 8 GB one."""
+        with self._sam_lock:
+            if self._idle is not None:
+                self._idle.cancel()
+            if self._sam is not None:
+                self._sam.close()
+                self._sam = None
+            yield
 
     def _close_idle(self) -> None:
         # In use again: its end starts the wait over.
@@ -287,39 +329,135 @@ class Masker:
 
     def _run(self) -> None:
         asked = self._asked or {}
-        # SAM 3 held for the whole job: its model loaded once, not once a
-        # video, and the preview left without it until the job is done.
         try:
-            with self.machines.sam() as sam:
-                self._each(asked, sam)
-        except ValueError as exc:
+            self._job(asked)
+        except Stopped:
+            pass
+        except (ValueError, RuntimeError, OSError) as exc:
             ALERTS.say("masks", str(exc))
         with self._lock:
             self._stopped = self._stop.is_set()
             self._at = {}
 
-    def _each(self, asked: dict, sam) -> None:
+    def _job(self, asked: dict) -> None:
+        """The takes asked labelled: by the task's masker where there is one;
+        else, over more takes than a masker is taught from, SAM 3 tracks
+        enough of them to teach one, spread over the job, and the masker
+        taught from those labels the rest; over fewer, SAM 3 tracks them all."""
+        from pinkrab_umi import keep_masks, masker
+
+        things, takes, machine = asked["things"], asked["takes"], asked["machine"]
+        remote = self.machines.remote()
+        record = masker.find(things, machine)
+        by_sam, by_masker = self._plan(takes, things, record, self.machines.masker_ready())
+        with self._lock:
+            self._asked = {**asked, "by_sam": by_sam, "by_masker": by_masker,
+                           "teaches": bool(by_masker) and record is None,
+                           "masker": record and {k: record.get(k) for k in ("id", "map50", "taught_from")}}
+        if by_sam:
+            # SAM 3 held for all its takes: its model loaded once, not once a
+            # video, and the preview left without it until they are done.
+            with self.machines.sam() as sam:
+                self._label(by_sam, things, sam=sam)
+        if not by_masker or self._stop.is_set():
+            return
+        with self.machines.without_sam(), keep_masks.MaskerService(MASKER_TIMEOUT_S, remote) as service:
+            if record is None:
+                try:
+                    record = self._teach(things, machine, service)
+                except (ValueError, RuntimeError, OSError) as exc:
+                    why = f"the masker could not be taught ({exc})"
+                else:
+                    with self._lock:
+                        self._asked["masker"] = {k: record.get(k) for k in ("id", "map50", "taught_from")}
+                    why = (f"the masker scored {record['map50']:.2f} on the takes kept out of its "
+                           f"teaching, under {UMI.masker_min_map50}")
+            if record is not None and record["map50"] >= UMI.masker_min_map50:
+                self._label(by_masker, things, masker=(service, record))
+                return
+        ALERTS.say("masks", f"{why} - SAM 3 tracks the rest")
+        with self._lock:
+            self._asked["by_sam"] = by_sam + by_masker
+            self._asked["by_masker"] = []
+        with self.machines.sam() as sam:
+            self._label(by_masker, things, sam=sam)
+
+    @staticmethod
+    def _plan(takes: list[str], things: list[str], record: dict | None, can_teach: bool) -> tuple[list, list]:
+        """Which of `takes` SAM 3 tracks and which the masker labels."""
+        if record is not None:
+            return [], list(takes)
+        if not can_teach:
+            return list(takes), []
+        need = max(0, UMI.masker_from_takes - len(Masker._tracked(things)))
+        if len(takes) <= need:
+            return list(takes), []
+        # Spread over the job, so the masker learns the takes' variety.
+        picked = {int(round(i)) for i in np.linspace(0, len(takes) - 1, need)} if need else set()
+        return [t for i, t in enumerate(takes) if i in picked], [t for i, t in enumerate(takes) if i not in picked]
+
+    @staticmethod
+    def _tracked(things: list[str]) -> list[Path]:
+        """The complete takes SAM 3 tracked these things in: a masker's teachers."""
         from pinkrab_umi import keep_masks
 
-        for i, name in enumerate(asked["takes"]):
+        out = []
+        for e in list_episodes():
+            root = UMI.episodes_dir / e["name"]
+            said = keep_masks.account(root) if e.get("complete") else None
+            if said and said.get("things") == things and "masker" not in (said.get("by") or {}):
+                out.append(root)
+        return out
+
+    def _teach(self, things: list[str], machine: str, service) -> dict:
+        """A masker taught these things from every take SAM 3 tracked them in."""
+        from pinkrab_umi import masker
+
+        teachers = self._tracked(things)
+        with self._lock:
+            self._at = {"stage": "set", "index": 0, "takes": len(teachers)}
+
+        def say(**line) -> None:
             if self._stop.is_set():
-                break
+                raise Stopped
             with self._lock:
-                self._at = {"take": name, "index": i, "stage": "grippers"}
+                if line.get("stage") == "set" and "index" in line:
+                    self._at = {"stage": "set", "index": line["index"] + 1, "takes": line["takes"]}
+                elif line.get("stage") == "send":
+                    self._at = {"stage": "send", "takes": len(teachers)}
+                elif line.get("stage") == "teach" and "epoch" in line:
+                    self._at = {"stage": "teach", "epoch": line["epoch"], "epochs": line["epochs"],
+                                "map50": line.get("map50"), "takes": len(teachers)}
+                elif line.get("stage") == "teach" and self._at.get("stage") in ("set", "send"):
+                    self._at = {"stage": "teach", "epoch": 0, "epochs": UMI.masker_epochs, "takes": len(teachers)}
+        return masker.teach(teachers, things, service, machine, say)
+
+    def _label(self, takes: list[str], things: list[str], sam=None, masker=None) -> None:
+        """Each of `takes` labelled, by SAM 3 or by the masker, one after another."""
+        from pinkrab_umi import keep_masks
+
+        by = "masker" if masker is not None else "sam"
+        for name in takes:
+            if self._stop.is_set():
+                raise Stopped
+            i = len(self._done) + len(self._failed)
+            with self._lock:
+                self._at = {"take": name, "index": i, "by": by, "stage": "grippers"}
 
             def say(name=name, i=i, **line) -> None:
                 if self._stop.is_set():
                     raise Stopped
                 if "frame" in line:
                     with self._lock:
-                        # Forward, every thing side by side; back, one thing at a time.
-                        self._at = {"take": name, "index": i, "stage": line.get("stage"), "video": line.get("video"),
-                                    "thing": line.get("thing"), "frame": line.get("frame"),
-                                    "frames": line.get("frames")}
+                        # SAM 3: forward, every thing side by side; back, one
+                        # thing at a time. The masker: every frame once.
+                        self._at = {"take": name, "index": i, "by": by, "stage": line.get("stage") or by,
+                                    "video": line.get("video"), "thing": line.get("thing"),
+                                    "frame": line.get("frame"), "frames": line.get("frames")}
             try:
-                keep_masks.make(UMI.episodes_dir / name, asked["things"], say, sam)
+                keep_masks.make(UMI.episodes_dir / name, things, say, sam, masker)
             except Stopped:
-                break
+                raise
             except Exception as exc:  # noqa: BLE001 - one take that fails is said, and the rest go on
                 with self._lock:
                     self._failed[name] = f"{type(exc).__name__}: {exc}"
@@ -347,7 +485,7 @@ class Masker:
                 continue
             account = keep_masks.account(UMI.episodes_dir / e["name"])
             if account is not None:
-                out[e["name"]] = {k: account.get(k) for k in ("things", "frames", "found", "flags", "made")}
+                out[e["name"]] = {k: account.get(k) for k in ("things", "frames", "found", "flags", "made", "by")}
         return out
 
 
