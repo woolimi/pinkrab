@@ -120,23 +120,51 @@ def check_spans_tracked() -> None:
 
 def check_masker() -> None:
     """The masker a task uses: the latest taught on the machine for exactly
-    its things that scored well enough; and its finds laid into labels, a
-    later thing over an earlier, a class it was not taught left out."""
+    its things that found each as SAM 3 did; the pictures it learns from,
+    spread over each video and a take's all in one part; its finds laid into
+    labels, a smaller thing over a larger, a class it was not taught left
+    out; and how it is scored against SAM 3."""
     things = ["mat", "cube"]
+    near = {"mat": 0.97, "cube": SETTINGS.masker_min_iou}
     with tempfile.TemporaryDirectory() as tmp, \
             mock.patch.object(type(SETTINGS), "maskers_dir", new_callable=mock.PropertyMock, return_value=Path(tmp)):
         for name, record in {
-                "old": {"things": things, "machine": "gpu", "map50": 0.95, "made": 1.0},
-                "new": {"things": things, "machine": "gpu", "map50": 0.9, "made": 2.0},
-                "poor": {"things": things, "machine": "gpu", "map50": 0.5, "made": 3.0},
-                "elsewhere": {"things": things, "machine": "other", "map50": 0.99, "made": 4.0},
-                "reordered": {"things": things[::-1], "machine": "gpu", "map50": 0.99, "made": 5.0}}.items():
+                "old": {"things": things, "machine": "gpu", "iou": near, "made": 1.0},
+                "new": {"things": things, "machine": "gpu", "iou": near, "made": 2.0},
+                "poor": {"things": things, "machine": "gpu", "iou": {**near, "cube": 0.6}, "made": 3.0},
+                "unscored": {"things": things, "machine": "gpu", "made": 3.5},
+                "elsewhere": {"things": things, "machine": "other", "iou": near, "made": 4.0},
+                "reordered": {"things": things[::-1], "machine": "gpu", "iou": near, "made": 5.0}}.items():
             (Path(tmp) / name).mkdir()
             (Path(tmp) / name / "masker.json").write_text(json.dumps({"id": name, **record}))
         found = masker.find(things, "gpu")
-        check("the latest masker for the things on the machine, scored well enough",
+        check("the latest masker for the things on the machine that finds them as SAM 3 does",
               found is not None and found["id"] == "new", str(found and found["id"]))
         check("no masker for things it was not taught", masker.find(["bowl"], "gpu") is None)
+        check("on any machine: the latest of them", masker.find(things)["id"] == "elsewhere")
+
+    n = SETTINGS.masker_frames_per_video
+    chosen = masker.picks(300, None)
+    check("pictures spread over the video, neither end", len(chosen) == n and 0 < chosen[0] and chosen[-1] < 299,
+          str(chosen))
+    chosen = masker.picks(300, [(100, 120)])
+    check("a rollout's from its corrections only", len(chosen) == n and all(100 <= k < 120 for k in chosen),
+          str(chosen))
+    check("a short video: every frame", masker.picks(3, None) == [0, 1, 2])
+
+    with tempfile.TemporaryDirectory() as tmp:
+        teaching = masker.TeachingSet(Path(tmp) / "set", things)
+        shot = np.full((6, 8, 3), 90, dtype=np.uint8)
+        labels = np.zeros((6, 8), dtype=np.uint8)
+        labels[1:5, 1:4] = keep_masks.FIRST_THING + 1
+        labels[1:5, 3] = keep_masks.OWN
+        for i in range(6):
+            teaching.take(Path(f"take{i}"), [("gripper_left", k, shot, labels) for k in (5, 9)])
+        count = teaching.close()
+        truth = cv2.imread(str(Path(tmp) / "set" / "truth" / "take0_gripper_left_00005.png"), cv2.IMREAD_GRAYSCALE)
+    check("one take in masker_held_out kept out, all its pictures", count == {"train": 8, "valid": 4}, str(count))
+    check("the truth: the things, the grippers not scored",
+          truth[2, 1] == keep_masks.FIRST_THING + 1 and truth[2, 3] == masker_run.UNSCORED and truth[0, 0] == 0)
 
     class Found:
         def __init__(self, classes, masks):
@@ -145,13 +173,14 @@ def check_masker() -> None:
         def __len__(self):
             return len(self.class_id)
 
+    big = np.zeros((6, 8), dtype=bool)
+    big[:, :6] = True
+    small = np.zeros((6, 8), dtype=bool)
+    small[:, 5:] = True
+
     class Model:
         def predict(self, batch, threshold):
-            a = np.zeros((6, 8), dtype=bool)
-            a[:, :5] = True
-            b = np.zeros((6, 8), dtype=bool)
-            b[:, 3:] = True
-            return [Found([1, 0, 7], [b, a, a]) for _ in batch]
+            return [Found([1, 0, 7], [small, big, big]) for _ in batch]
 
     with tempfile.TemporaryDirectory() as tmp:
         video = Path(tmp) / "v.mp4"
@@ -164,10 +193,21 @@ def check_masker() -> None:
         said = []
         masker_run.label({("w", "m", 24): Model()}, ask, lambda **f: said.append(f))
         labels = np.load(ask["out"])["labels"]
+        # Scored against a truth that has the larger thing a column short.
+        (Path(tmp) / "truth").mkdir()
+        (Path(tmp) / "valid").mkdir()
+        truth = np.zeros((6, 8), dtype=np.uint8)
+        truth[:, :4] = 3
+        truth[:, 5:] = 4
+        truth[0, :] = masker_run.UNSCORED
+        cv2.imwrite(str(Path(tmp) / "truth" / "a.png"), truth)
+        cv2.imwrite(str(Path(tmp) / "valid" / "a.jpg"), np.full((6, 8, 3), 90, dtype=np.uint8))
+        iou = masker_run.scored(Model(), Path(tmp), [3, 4], 0.5)
     check("every frame labelled", labels.shape == (20, 6, 8), str(labels.shape))
-    check("a later thing over an earlier, a class it was not taught left out",
-          (labels[0][:, :3] == 3).all() and (labels[0][:, 3:] == 4).all())
+    check("a smaller thing over a larger, a class it was not taught left out",
+          (labels[0][:, :5] == 3).all() and (labels[0][:, 5:] == 4).all())
     check("ends saying done", said and said[-1] == {"done": True}, str(said[-1:]))
+    check("scored against SAM 3: each thing's IoU, unscored pixels left out", iou == [0.8, 1.0], str(iou))
 
 
 def main() -> int:
@@ -175,7 +215,7 @@ def main() -> int:
     models, link_T_cam = keep_masks.grippers()
     for side in ARMS:
         g = models[side]
-        shut, wide = (keep_masks._jaw_angle(side, o) for o in (0.0, 1.0))
+        shut, wide = (keep_masks.jaw_angle(side, o) for o in (0.0, 1.0))
         moved = np.abs(g.triangles(wide) - g.triangles(shut)).max()
         check(f"{side}: parts and a jaw that turns", len(g.fixed) > 0 and len(g.jaw) > 0 and moved > 0.005,
               f"{len(g.fixed)} parts, jaw tip moves {moved * 1000:.0f} mm")
@@ -188,7 +228,7 @@ def main() -> int:
     view = lens()
     for side in ARMS:
         labels = np.zeros(view.size, dtype=np.uint8)
-        tris = keep_masks._moved(models[side].triangles(keep_masks._jaw_angle(side, 0.5)),
+        tris = keep_masks._moved(models[side].triangles(keep_masks.jaw_angle(side, 0.5)),
                                  np.linalg.inv(link_T_cam[side]))
         view.draw(labels, tris, keep_masks.OWN)
         share = (labels == keep_masks.OWN).mean()

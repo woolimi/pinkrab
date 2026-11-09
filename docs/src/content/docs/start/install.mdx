@@ -156,14 +156,14 @@ SAM 3 와 그 가중치는 Meta 의 [SAM License](https://github.com/facebookres
 
 ## masker 환경
 
-시연이 많을 때 Curate 의 Make labels 는 SAM 3 로 일부만 추적하고, 그 결과로 학습한 [masker](../../use/curate/#masker) 로 나머지를 만듭니다. masker 는 [RF-DETR](https://github.com/roboflow/rf-detr) 의 segmentation 모델이고, SAM 3 와 마찬가지로 Pinkrab 환경과 따로 `~/pinkrab/masker-env` 에 설치합니다. 이 환경이 없으면 Make labels 는 모든 시연을 SAM 3 로 추적합니다.
+시연이 많을 때 Curate 의 Make labels 는 SAM 3 로 일부만 추적하고, 그 결과로 학습한 [masker](../../use/curate/#masker) 로 나머지를 만듭니다. masker 는 [RF-DETR](https://github.com/roboflow/rf-detr) 의 segmentation 모델이고, SAM 3 와 마찬가지로 Pinkrab 환경과 따로 `~/pinkrab/masker-env` 에 설치합니다. 이 환경이 없으면 Make labels 는 모든 시연을 SAM 3 로 추적합니다. Policy 페이지도 무작위 배경으로 학습한 policy 에 [칠한 카메라 화면](../../use/run/#배경-칠한-카메라-화면)을 보여 줄 때 이 환경에서 masker 를 돌립니다.
 
 ```bash
 uv venv --python 3.12 ~/pinkrab/masker-env
 uv pip install --python ~/pinkrab/masker-env/bin/python "rfdetr[train]>=1.11"
 ```
 
-GPU 가 있는 다른 컴퓨터에서 돌릴 거라면 이 컴퓨터에는 설치하지 않아도 되고, 그 컴퓨터에는 studio 가 같은 환경을 만듭니다. RF-DETR 의 코드와 가중치는 Apache License 2.0 을 따릅니다.
+Make labels 를 GPU 가 있는 다른 컴퓨터에서 돌리면 그 컴퓨터에는 studio 가 같은 환경을 만들지만, Policy 페이지의 칠한 화면은 로봇을 돌리는 이 컴퓨터의 환경을 씁니다. RF-DETR 의 코드와 가중치는 Apache License 2.0 을 따릅니다.
 
 ## 설치 확인
 

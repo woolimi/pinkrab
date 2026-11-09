@@ -332,7 +332,7 @@ function feedStartup(rig, stats) {
   conn.draw();
 }
 
-checkpointEl.addEventListener('change', () => { showWants(); showCommand(); loadSettings(); showTally(); if (lastRig) showRig(lastRig); });
+checkpointEl.addEventListener('change', () => { showWants(); showCommand(); loadSettings(); loadMasker(); showTally(); if (lastRig) showRig(lastRig); });
 
 // The per-camera line on each tile, and whether the checkpoint can be fed.
 // The view's numbers come once its server answers, which is also when its
@@ -342,14 +342,29 @@ function showCameras(s) {
   if (s) feedStartup(null, s);
   for (const [side, fig] of Object.entries(cams)) {
     const img = fig.querySelector('img');
-    if (s && liveUrl && !img.getAttribute('src')) showStream(img, liveUrl + `gripper/${side}`);
+    if (s && liveUrl) feedGripper(img, side);
     const g = s?.gripper?.[side];
     const stat = fig.querySelector('.stat');
-    if (g?.running) stat.textContent = `${g.fps ?? '—'} fps` + (g.lens ? ` · ${g.lens}` : '');
+    if (g?.running) stat.textContent = `${g.fps ?? '—'} fps` + (g.lens ? ` · ${g.lens}` : '')
+                                       + (painted() ? ' · painted' : '');
     else stat.textContent = camsUp ? (g?.note || 'not found') : '';
   }
   showHead();
   showWants();
+}
+
+// A gripper tile shows what the policy is shown: painted, while a checkpoint
+// trained on painted backgrounds is asked or drives - the stream of its
+// painter's pictures - else the camera as it is.
+function painted() {
+  return !!policyState.masker && (policyState.running || policyState.driving);
+}
+
+function feedGripper(img, side) {
+  const feed = painted() ? `policy/${side}` : `gripper/${side}`;
+  if (img.dataset.feed === feed && img.getAttribute('src')) return;
+  img.dataset.feed = feed;
+  showStream(img, liveUrl + feed);
 }
 
 // The top camera, while the hands have the arms: it is what follows the
@@ -452,6 +467,7 @@ async function loadCheckpoints() {
   showWants();
   showCommand();
   loadSettings();
+  loadMasker();
   showTally();
   if (lastRig) showRig(lastRig);
 }
@@ -495,6 +511,60 @@ let kindForm = {};
 let commonForm = {};
 
 const shownValue = (v) => (v === null || v === undefined ? 'off' : String(v));
+
+// Which masker paints the chosen checkpoint's pictures - for one whose takes
+// were painted - and the maskers that find what those takes kept, newest
+// first. A choice is kept at once, for every checkpoint of the same things.
+const maskerEl = document.getElementById('masker');
+const maskerThings = document.getElementById('masker-things');
+const maskerChoice = document.getElementById('masker-choice');
+const maskerNote = document.getElementById('masker-note');
+
+async function loadMasker() {
+  const path = checkpointEl.value;
+  maskerNote.textContent = '';
+  if (!path) { maskerEl.hidden = true; return; }
+  try {
+    const answer = await (await fetch(`/policy/masker?checkpoint=${encodeURIComponent(path)}`, { cache: 'no-store' })).json();
+    if (path !== checkpointEl.value) return;   // another checkpoint chosen meanwhile
+    drawMasker(answer);
+  } catch (err) { maskerEl.hidden = false; maskerNote.textContent = String(err); }
+}
+
+function drawMasker(d) {
+  maskerEl.hidden = !d.error && !d.things;
+  if (d.error) { maskerThings.textContent = ''; maskerChoice.replaceChildren(); maskerNote.textContent = d.error; return; }
+  if (!d.things) return;
+  maskerThings.textContent = d.things.join(', ');
+  maskerThings.title = d.things.join(', ');
+  const day = (t) => new Date(t * 1000).toLocaleDateString();
+  const label = (m) => `${m.id} · IoU with SAM 3 ${m.iou.toFixed(2)} · ${m.takes} takes · ${m.machine}`
+                       + (m.here ? '' : ' · fetched on the first run');
+  const newest = d.maskers[0];
+  maskerChoice.replaceChildren(
+    new Option(newest ? `newest (${newest.id})` : 'newest (none yet)', 'auto'),
+    ...d.maskers.map((m) => Object.assign(new Option(label(m), m.id), { title: `taught ${day(m.made)}` })),
+    new Option('off - the pictures as they are', 'off'));
+  maskerChoice.value = d.choice;
+  if (!d.maskers.length && d.choice !== 'off') {
+    maskerNote.textContent = 'no masker finds these yet - Make labels on the Curate page teaches one';
+  }
+}
+
+maskerChoice.addEventListener('change', async () => {
+  maskerChoice.disabled = true;
+  try {
+    const r = await fetch('/policy/masker', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+                                              body: JSON.stringify({ checkpoint: checkpointEl.value, choice: maskerChoice.value }) });
+    const answer = await r.json();
+    if (answer.error) {
+      // Refused: back to what is kept, and why.
+      await loadMasker();
+      maskerNote.textContent = answer.error;
+    } else drawMasker(answer);
+  } catch (err) { maskerNote.textContent = String(err); }
+  maskerChoice.disabled = false;
+});
 
 settingsOpen.addEventListener('click', () => drawer.showModal());
 document.getElementById('settings-close').addEventListener('click', () => drawer.close());
@@ -713,7 +783,9 @@ haltEl.addEventListener('click', async () => {
 
 function showPolicy(s) {
   asking = s.running;
+  const wasPainted = painted();
   policyState = s;
+  if (painted() !== wasPainted && liveStats) showCameras(liveStats);
   showSettingsInUse(s);
   if (s.driving) {
     statusEl.textContent = s.phase === 'driving' ? 'driving'

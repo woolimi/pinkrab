@@ -520,31 +520,42 @@ class Settings:
     sam3_new_thing_score: float = 0.4
     sam3_thing_score: float = 0.3
     # A task's masker (masker_run): an RF-DETR segmentation model (Apache-2.0)
-    # taught the task's things from takes SAM 3 tracked, then labelling the
-    # rest of the takes in seconds each, where SAM 3 takes minutes. It lives
-    # in an environment of its own, like SAM 3's, made of these packages.
+    # taught the task's things from pictures SAM 3 labelled, then labelling
+    # every take in seconds, where SAM 3 takes minutes a take. It lives in an
+    # environment of its own, like SAM 3's, made of these packages.
     masker_env: str = "masker-env"
     masker_packages: tuple[str, ...] = ("rfdetr[train]>=1.11",)
     # Its size and the size it reads each picture at (a multiple of 24).
-    # Medium at 432 found the mat, block and bowl of 10 held-out takes at a
-    # mask mAP50 of 0.95 after one epoch (2026-11-02, KT H200).
     masker_model: str = "RFDETRSegMedium"
     masker_resolution: int = 432
     masker_epochs: int = 12
-    # A masker is taught once a task has this many takes tracked by SAM 3:
-    # a job over fewer takes than that tracks them all with SAM 3; one over
-    # more has SAM 3 track the missing ones, spread over the job's takes, and
-    # the masker label the rest.
+    # A labels job over fewer takes than this has SAM 3 track them all; over
+    # more, SAM 3 looks at masker_frames_per_video frames of each gripper
+    # video of every take - each on its own, seconds a picture - and the
+    # masker taught from those pictures labels the takes.
     masker_from_takes: int = 10
-    # It learns from every masker_frame_step-th frame of those takes, and is
-    # scored on one take in masker_held_out of them, kept out of its learning.
-    masker_frame_step: int = 6
+    masker_frames_per_video: int = 5
+    # One take in masker_held_out is kept out of the teaching, and on its
+    # pictures each thing the masker finds must overlap SAM 3's by an IoU of
+    # masker_min_iou or more for the masker to be used; else SAM 3 tracks the
+    # takes after all.
     masker_held_out: int = 5
-    # Below this mask mAP50 on the held-out takes a masker is not used, and
-    # SAM 3 tracks the job's takes after all.
-    masker_min_map50: float = 0.85
+    masker_min_iou: float = 0.9
     # The bar a thing the masker finds must score to be kept.
     masker_score: float = 0.5
+    # A policy trained on painted backgrounds is shown the arms' pictures
+    # painted the same way (pinkrab_policy.painting): the task's masker finds
+    # its things in each arm camera's newest frame, in a process of its own
+    # (live_mask) - both cameras about 19 times a second on an M-series Mac's
+    # GPU (2026-11-02) - and hands its labels on in shared memory as the
+    # camera live_masks_camera; the pictures the policy is shown go the same
+    # way as policy_view_camera, for the policy page to stream.
+    live_masks_camera: str = "masks_{side}"
+    policy_view_camera: str = "policy_{side}"
+    # The masker's first labels - its model loaded - are waited this long for.
+    live_mask_start_s: float = 60.0
+    # The policy page's stream of what the policy is shown, frames a second.
+    policy_view_fps: float = 15.0
     # What is kept of a gripper picture is grown by this much before the rest
     # is painted over, so an edge drawn or tracked a little short of the
     # thing does not eat into it (backgrounds.kept).

@@ -150,7 +150,7 @@ def _moved(tris: np.ndarray, T: np.ndarray) -> np.ndarray:
     return tris @ T[:3, :3].T + T[:3, 3]
 
 
-def _jaw_angle(side: str, opening: float | None) -> float:
+def jaw_angle(side: str, opening: float | None) -> float:
     shut, wide = shut_wide(*gripper_band(side))
     return shut + (0.0 if opening is None else float(opening)) * (wide - shut)
 
@@ -212,7 +212,6 @@ class Scene:
         frames = _lines(root / "frames.jsonl")
         streams = meta.get("streams") or {}
         self.sides = [side for side in ARMS if f"gripper_{side}" in streams]
-        self.models, self.link_T_cam = grippers()
         self.lenses = {side: Lens(streams[f"gripper_{side}"]) for side in self.sides}
         # Each gripper frame's moment, on the host clock the hands' are on,
         # in the video's order.
@@ -244,7 +243,7 @@ class Scene:
             self.tools[side] = [None if T is None else T @ turn
                                 for T in fill_holes(hand, self.times, SETTINGS.convert_max_hole_s)]
             t, opening = jaw_readings(poses, side)
-            self.jaws[side] = (t, np.array([_jaw_angle(side, o) for o in opening])) if len(t) else None
+            self.jaws[side] = (t, np.array([jaw_angle(side, o) for o in opening])) if len(t) else None
 
     def _read_arms(self, root: Path, meta: dict) -> None:
         from pinkrab_core.kinematics import ArmKinematics, arm_fingerprint
@@ -269,26 +268,34 @@ class Scene:
 
     def _angle(self, side: str, t: float) -> float:
         jaw = self.jaws[side]
-        return _jaw_angle(side, None) if jaw is None else float(np.interp(t, *jaw))
+        return jaw_angle(side, None) if jaw is None else float(np.interp(t, *jaw))
 
     def draw(self, side: str, k: int) -> np.ndarray:
         """Frame `k` of `side`'s gripper video's labels, (height, width)
         uint8: OWN and OTHER where the grippers are, 0 elsewhere. A camera
         sees its own gripper the same way in every frame but for its jaw; the
         other is drawn only where both hands were placed."""
-        models, link_T_cam = self.models, self.link_T_cam
-        other = next(s for s in ARMS if s != side)
-        lens = self.lenses[side]
         t = self.stamps[side][k]
-        labels = np.zeros(lens.size, dtype=np.uint8)
-        mine = _at(self.tools[side], self.times, t)
-        theirs = _at(self.tools[other], self.times, t)
-        if mine is not None and theirs is not None:
-            desk_T_cam = mine @ np.linalg.inv(models[side].link_T_tcp) @ link_T_cam[side]
-            cam_T_other = np.linalg.inv(desk_T_cam) @ theirs @ np.linalg.inv(models[other].link_T_tcp)
-            lens.draw(labels, _moved(models[other].triangles(self._angle(other, t)), cam_T_other), OTHER)
-        lens.draw(labels, _moved(models[side].triangles(self._angle(side, t)), np.linalg.inv(link_T_cam[side])), OWN)
-        return labels
+        return drawn(side, self.lenses[side], {s: _at(self.tools[s], self.times, t) for s in ARMS},
+                     {s: self._angle(s, t) for s in ARMS})
+
+
+def drawn(side: str, lens: Lens, tools: dict[str, np.ndarray | None], angles: dict[str, float]) -> np.ndarray:
+    """`side`'s gripper camera's labels through `lens`, (height, width) uint8:
+    OWN and OTHER where the grippers are, 0 elsewhere - each hand's tool
+    (the robot's tool frame, in any frame both share) and jaw angle as given.
+    A camera sees its own gripper the same way at any pose but for its jaw;
+    the other is drawn only where both tools are known."""
+    models, link_T_cam = grippers()
+    other = next(s for s in ARMS if s != side)
+    labels = np.zeros(lens.size, dtype=np.uint8)
+    mine, theirs = tools.get(side), tools.get(other)
+    if mine is not None and theirs is not None:
+        world_T_cam = mine @ np.linalg.inv(models[side].link_T_tcp) @ link_T_cam[side]
+        cam_T_other = np.linalg.inv(world_T_cam) @ theirs @ np.linalg.inv(models[other].link_T_tcp)
+        lens.draw(labels, _moved(models[other].triangles(angles[other]), cam_T_other), OTHER)
+    lens.draw(labels, _moved(models[side].triangles(angles[side]), np.linalg.inv(link_T_cam[side])), OWN)
+    return labels
 
 
 def tracked_spans(root: Path, name: str) -> list[tuple[int, int]] | None:
@@ -589,6 +596,15 @@ def border(root: Path, name: str, size: tuple[int, int]) -> np.ndarray:
                 np.maximum(brightest, cv2.cvtColor(view, cv2.COLOR_BGR2GRAY), out=brightest)
     finally:
         cap.release()
+    return circle_border(brightest)
+
+
+def circle_border(brightest: np.ndarray) -> np.ndarray:
+    """Where a gripper camera never sees anything, from the brightest each
+    of its pixels got over frames spread in time (gray, as the dataset keeps
+    the picture): outside the circle the picture turns dark at along rays
+    from the middle, True there."""
+    size = brightest.shape
     dark = brightest < BORDER_DARK
     height, width = size
     middle = np.array([(width - 1) / 2, (height - 1) / 2])

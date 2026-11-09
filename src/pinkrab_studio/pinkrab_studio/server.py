@@ -61,7 +61,8 @@ from .converting import Converter
 from .masking import Looker, Machines, Masker
 from .feeds import Feeds
 from .feeds import serve as serve_page
-from .policy import PolicyError, PolicyRun, checkpoint_hands, checkpoints
+from .policy import (PolicyError, PolicyRun, checkpoint_hands, checkpoints, choose_masker, fetch_masker,
+                     masker_choices)
 from .real import MODE_HANDHELD, MODE_IDLE, MODE_POLICY, MODE_STUDIO, RealRobot
 from .rig import Rig, RigError, live_request, live_stats, live_url, node_already_up
 from .launching import DEFAULTS as LAUNCH_DEFAULTS
@@ -638,6 +639,16 @@ def make_handler(state: StudioState, allowed_hosts: frozenset[str] | None = None
                     self._send_json({"error": str(exc)}, 400)
                 return
 
+            if path == "/policy/masker":
+                # Which masker paints a checkpoint's pictures, and the ones
+                # that could: those that find the things its takes kept.
+                checkpoint = parse_qs(urlparse(self.path).query).get("checkpoint", [""])[0]
+                try:
+                    self._send_json(masker_choices(checkpoint))
+                except PolicyError as exc:
+                    self._send_json({"error": str(exc)}, 400)
+                return
+
             if path == "/model":
                 try:
                     self._send(state.urdf().encode(), "application/xml")
@@ -1023,6 +1034,20 @@ def make_handler(state: StudioState, allowed_hosts: frozenset[str] | None = None
                     self._send_json({"error": str(exc)}, 400)
                 return
 
+            if path == "/policy/masker":
+                # The masker chosen for a checkpoint's takes: kept for every
+                # checkpoint whose takes kept the same things, from the next
+                # Ask or Drive on.
+                payload = self._body()
+                if payload is None:
+                    return
+                try:
+                    self._send_json(choose_masker(str(payload.get("checkpoint") or ""),
+                                                  str(payload.get("choice") or "")))
+                except PolicyError as exc:
+                    self._send_json({"error": str(exc)}, 400)
+                return
+
             if path == "/policy/ask":
                 # Ready first, then ask: the arms walk to the ready pose through
                 # the gate - the studio mode, the same walk the teleop page's
@@ -1044,6 +1069,11 @@ def make_handler(state: StudioState, allowed_hosts: frozenset[str] | None = None
                 if wrong:
                     self._send_json({"error": "the inference settings do not fit this checkpoint: "
                                               + "; ".join(wrong)}, 409)
+                    return
+                try:
+                    fetch_masker(checkpoint, state.training.store)
+                except PolicyError as exc:
+                    self._send_json({"error": str(exc)}, 409)
                     return
                 # Then on to where the dataset's takes began - each tool
                 # where its hand began - so the policy is shown pictures, and
@@ -1126,6 +1156,11 @@ def make_handler(state: StudioState, allowed_hosts: frozenset[str] | None = None
                     self._send_json({"error": "the inference settings do not fit this checkpoint: "
                                               + "; ".join(wrong)}, 409)
                     return
+                try:
+                    fetch_masker(checkpoint, state.training.store)
+                except PolicyError as exc:
+                    self._send_json({"error": str(exc)}, 409)
+                    return
                 with state.cameras_lock:
                     unseeing = state.policy_unseeing()
                     if unseeing:
@@ -1195,6 +1230,7 @@ def make_handler(state: StudioState, allowed_hosts: frozenset[str] | None = None
                     return
                 try:
                     if path.endswith("start"):
+                        fetch_masker(str(payload.get("checkpoint") or ""), state.training.store)
                         with state.cameras_lock:
                             unseeing = state.policy_unseeing()
                             if unseeing:

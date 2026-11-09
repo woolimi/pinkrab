@@ -210,6 +210,11 @@ class FrameReader:
 
     def read(self) -> np.ndarray:
         """The newest frame as the camera gave it, height x width x channels - a copy, the caller's to keep."""
+        return self.newest()[0]
+
+    def newest(self) -> tuple[np.ndarray, int, float]:
+        """The newest frame as read() gives it, with how many frames the block
+        has had - the same count is the same frame - and when it arrived."""
         shm = self._attach()
         with self._lock.hold(fcntl.LOCK_SH):
             magic, height, width, channels, count, stamp = HEADER.unpack_from(shm.buf, 0)
@@ -222,7 +227,7 @@ class FrameReader:
         if age > SETTINGS.camera_share_stale_s:
             self._let_go()
             raise RuntimeError(f"no picture from the {self.camera} camera: its newest frame is {age:.1f} s old")
-        return picture
+        return picture, count, stamp
 
     def _let_go(self) -> None:
         """The block given up, to be opened afresh on the next read."""

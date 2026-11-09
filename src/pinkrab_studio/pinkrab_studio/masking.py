@@ -340,65 +340,68 @@ class Masker:
             self._at = {}
 
     def _job(self, asked: dict) -> None:
-        """The takes asked labelled: by the task's masker where there is one;
-        else, over more takes than a masker is taught from, SAM 3 tracks
-        enough of them to teach one, spread over the job, and the masker
-        taught from those labels the rest; over fewer, SAM 3 tracks them all."""
+        """The takes asked labelled: by the task's masker where there is a
+        usable one; else, over masker_from_takes takes or more, by one taught
+        from pictures of every take SAM 3 looks at - if it finds the things
+        as SAM 3 does; else - over fewer takes, or with a masker that does
+        not - SAM 3 tracks them all."""
         from pinkrab_umi import keep_masks, masker
 
         things, takes, machine = asked["things"], asked["takes"], asked["machine"]
         remote = self.machines.remote()
         record = masker.find(things, machine)
-        by_sam, by_masker = self._plan(takes, things, record, self.machines.masker_ready())
+        teaches = record is None and self._teaches(takes, self.machines.masker_ready())
+        by_masker = record is not None or teaches
         with self._lock:
-            self._asked = {**asked, "by_sam": by_sam, "by_masker": by_masker,
-                           "teaches": bool(by_masker) and record is None,
-                           "masker": record and {k: record.get(k) for k in ("id", "map50", "taught_from")}}
-        if by_sam:
-            # SAM 3 held for all its takes: its model loaded once, not once a
-            # video, and the preview left without it until they are done.
-            with self.machines.sam() as sam:
-                self._label(by_sam, things, sam=sam)
-        if not by_masker or self._stop.is_set():
-            return
-        with self.machines.without_sam(), keep_masks.MaskerService(MASKER_TIMEOUT_S, remote) as service:
-            if record is None:
-                try:
-                    record = self._teach(things, machine, service)
-                except (ValueError, RuntimeError, OSError) as exc:
-                    why = f"the masker could not be taught ({exc})"
-                else:
-                    with self._lock:
-                        self._asked["masker"] = {k: record.get(k) for k in ("id", "map50", "taught_from")}
-                    why = (f"the masker scored {record['map50']:.2f} on the takes kept out of its "
-                           f"teaching, under {UMI.masker_min_map50}")
-            if record is not None and record["map50"] >= UMI.masker_min_map50:
-                self._label(by_masker, things, masker=(service, record))
-                return
-        ALERTS.say("masks", f"{why} - SAM 3 tracks the rest")
-        with self._lock:
-            self._asked["by_sam"] = by_sam + by_masker
-            self._asked["by_masker"] = []
+            self._asked = {**asked, "by_sam": [] if by_masker else list(takes),
+                           "by_masker": list(takes) if by_masker else [], "teaches": teaches,
+                           "masker": self._shown(record)}
+        if by_masker:
+            why = None
+            with tempfile.TemporaryDirectory() as tmp:
+                teaching = masker.TeachingSet(Path(tmp) / "set", things) if record is None else None
+                if teaching is not None:
+                    try:
+                        self._look(takes, things, teaching)
+                    except (ValueError, RuntimeError, OSError) as exc:
+                        why = f"SAM 3 could not look at the takes for the masker ({exc})"
+                with self.machines.without_sam(), keep_masks.MaskerService(MASKER_TIMEOUT_S, remote) as service:
+                    if teaching is not None and why is None:
+                        try:
+                            record = self._teach(teaching, machine, service)
+                        except (ValueError, RuntimeError, OSError) as exc:
+                            why = f"the masker could not be taught ({exc})"
+                        else:
+                            with self._lock:
+                                self._asked["masker"] = self._shown(record)
+                            if not masker.usable(record):
+                                worst = min(things, key=lambda text: record["iou"][text])
+                                why = (f"the masker found {worst} with an IoU of {record['iou'][worst]:.2f} against "
+                                       f"SAM 3's, under {UMI.masker_min_iou}")
+                    if why is None:
+                        self._label(takes, things, masker=(service, record))
+                        return
+            ALERTS.say("masks", f"{why} - SAM 3 tracks the takes")
+            with self._lock:
+                self._asked["by_sam"], self._asked["by_masker"] = list(takes), []
+        # SAM 3 held for all its takes: its model loaded once, not once a
+        # video, and the preview left without it until they are done.
         with self.machines.sam() as sam:
-            self._label(by_masker, things, sam=sam)
+            self._label(takes, things, sam=sam)
 
     @staticmethod
-    def _plan(takes: list[str], things: list[str], record: dict | None, can_teach: bool) -> tuple[list, list]:
-        """Which of `takes` SAM 3 tracks and which the masker labels."""
-        if record is not None:
-            return [], list(takes)
-        if not can_teach:
-            return list(takes), []
-        need = max(0, UMI.masker_from_takes - len(Masker._tracked(things)))
-        if len(takes) <= need:
-            return list(takes), []
-        # Spread over the job, so the masker learns the takes' variety.
-        picked = {int(round(i)) for i in np.linspace(0, len(takes) - 1, need)} if need else set()
-        return [t for i, t in enumerate(takes) if i in picked], [t for i, t in enumerate(takes) if i not in picked]
+    def _teaches(takes: list[str], can_teach: bool) -> bool:
+        """Whether a job over `takes` with no masker yet teaches one, or has
+        SAM 3 track them all."""
+        return can_teach and len(takes) >= UMI.masker_from_takes
+
+    @staticmethod
+    def _shown(record: dict | None) -> dict | None:
+        return record and {k: record.get(k) for k in ("id", "iou", "taught_from")}
 
     @staticmethod
     def _tracked(things: list[str]) -> list[Path]:
-        """The complete takes SAM 3 tracked these things in: a masker's teachers."""
+        """The complete takes SAM 3 tracked these things in."""
         from pinkrab_umi import keep_masks
 
         out = []
@@ -409,28 +412,49 @@ class Masker:
                 out.append(root)
         return out
 
-    def _teach(self, things: list[str], machine: str, service) -> dict:
-        """A masker taught these things from every take SAM 3 tracked them in."""
+    def _look(self, takes: list[str], things: list[str], teaching) -> None:
+        """The masker's teaching pictures: masker_frames_per_video of each
+        gripper video of every take asked, and of every other take SAM 3
+        tracked these things in - from SAM 3's tracked labels where it has
+        them, else looked at by SAM 3 now, each picture on its own."""
         from pinkrab_umi import masker
 
-        teachers = self._tracked(things)
+        tracked = {root.name: root for root in self._tracked(things)}
+        asked = [UMI.episodes_dir / name for name in takes]
+        roots = asked + [root for name, root in tracked.items() if name not in takes]
+        with self.machines.sam() as sam:
+            for i, root in enumerate(roots):
+                if self._stop.is_set():
+                    raise Stopped
+                with self._lock:
+                    self._at = {"stage": "look", "take": root.name, "index": i, "takes": len(roots)}
+
+                def say(**_) -> None:
+                    if self._stop.is_set():
+                        raise Stopped
+                teaching.take(root, masker.kept(root) if root.name in tracked
+                              else masker.looked(root, things, sam, say))
+
+    def _teach(self, teaching, machine: str, service) -> dict:
+        """A masker taught from `teaching`'s pictures."""
+        from pinkrab_umi import masker
+
+        takes = len(teaching.takes)
         with self._lock:
-            self._at = {"stage": "set", "index": 0, "takes": len(teachers)}
+            self._at = {"stage": "send", "takes": takes}
 
         def say(**line) -> None:
             if self._stop.is_set():
                 raise Stopped
             with self._lock:
-                if line.get("stage") == "set" and "index" in line:
-                    self._at = {"stage": "set", "index": line["index"] + 1, "takes": line["takes"]}
-                elif line.get("stage") == "send":
-                    self._at = {"stage": "send", "takes": len(teachers)}
+                if line.get("stage") == "send":
+                    self._at = {"stage": "send", "takes": takes}
                 elif line.get("stage") == "teach" and "epoch" in line:
                     self._at = {"stage": "teach", "epoch": line["epoch"], "epochs": line["epochs"],
-                                "map50": line.get("map50"), "takes": len(teachers)}
-                elif line.get("stage") == "teach" and self._at.get("stage") in ("set", "send"):
-                    self._at = {"stage": "teach", "epoch": 0, "epochs": UMI.masker_epochs, "takes": len(teachers)}
-        return masker.teach(teachers, things, service, machine, say)
+                                "map50": line.get("map50"), "takes": takes}
+                elif line.get("stage") == "teach" and self._at.get("stage") == "send":
+                    self._at = {"stage": "teach", "epoch": 0, "epochs": UMI.masker_epochs, "takes": takes}
+        return masker.teach(teaching, service, machine, say)
 
     def _label(self, takes: list[str], things: list[str], sam=None, masker=None) -> None:
         """Each of `takes` labelled, by SAM 3 or by the masker, one after another."""

@@ -41,6 +41,12 @@ from .dataset import steps_in
 
 # The file's section every kind of policy shares.
 COMMON = "common"
+# The file's section saying which masker paints the pictures of a policy
+# whose dataset painted its takes' backgrounds (pinkrab_policy.painting), by
+# the things those takes kept: a masker's id, AUTO - the newest that finds
+# them, also for things not named - or OFF, the pictures as they are.
+MASKERS = "maskers"
+AUTO, OFF = "auto", "off"
 
 
 class InferenceError(ValueError):
@@ -353,7 +359,6 @@ def save(cfg, values: dict, common_values: dict | None = None) -> None:
     `common_values` (when given) its common section: the knobs named are set,
     the others left to Pinkrab's own or the checkpoint's. Checked against this
     checkpoint first; other types' sections are kept."""
-    path = SETTINGS.inference_file
     kind = KINDS.get(cfg.type)
     if kind is None and values:
         raise InferenceError(f"no inference settings are known for {cfg.type!r}: it runs as trained")
@@ -371,6 +376,31 @@ def save(cfg, values: dict, common_values: dict | None = None) -> None:
     wrong += [w for k in COMMON_KNOBS if (w := _wrong(k, used[k.name]))]
     if wrong:
         raise InferenceError("; ".join(wrong))
+    _write(data)
+
+
+def masker_choice(things: list[str]) -> str:
+    """Which masker paints the pictures of a policy whose takes kept
+    `things`: a masker's id, AUTO or OFF (MASKERS)."""
+    return str(load().get(MASKERS, {}).get(_things_key(things), AUTO))
+
+
+def choose_masker(things: list[str], choice: str) -> None:
+    """`choice` - a masker's id, AUTO or OFF - kept as the masker for `things`."""
+    data = load()
+    maskers = {k: v for k, v in data.get(MASKERS, {}).items() if k != _things_key(things)}
+    if choice != AUTO:
+        maskers[_things_key(things)] = choice
+    data[MASKERS] = maskers
+    _write(data)
+
+
+def _things_key(things: list[str]) -> str:
+    return ", ".join(things)
+
+
+def _write(data: dict[str, dict]) -> None:
+    path = SETTINGS.inference_file
     data = {section: given for section, given in data.items() if given}
     path.parent.mkdir(parents=True, exist_ok=True)
     part = path.with_suffix(".yaml.part")

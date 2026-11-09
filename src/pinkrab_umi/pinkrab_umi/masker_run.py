@@ -11,9 +11,12 @@ answers one JSON line after another on stdin:
     python masker_run.py --serve
 
 {"train": dataset, "into": folder, "model": "RFDETRSegMedium", "epochs": 12,
- "resolution": 432} trains on a COCO dataset folder (train/ and valid/, each
-with _annotations.coco.json), saying {"epoch": i, "epochs": n, "map50": ...}
-after each epoch and {"done": true, "weights": path, ...} at the end;
+ "resolution": 432, "labels": [3, 4, 5], "score": 0.5} trains on a COCO
+dataset folder (train/ and valid/, each with _annotations.coco.json, and
+truth/: each valid picture's labels as SAM 3 gave them, 255 where nothing is
+scored), saying {"epoch": i, "epochs": n, "map50": ...} after each epoch,
+and at the end {"done": true, "weights": path, "iou": [...]}: each thing's
+IoU with SAM 3 over the valid pictures, labelled as a video is;
 
 {"video": mp4, "window": [x, y, w, h], "size": [height, width], "weights":
 path, "model": ..., "resolution": ..., "labels": [3, 4, 5], "score": 0.5,
@@ -68,7 +71,7 @@ def model_for(name: str, resolution: int, weights: str | None = None):
 
 def train(ask: dict, tell=say) -> None:
     """A masker trained on ask's dataset, into ask's folder: its best weights,
-    by the held-out takes' mask mAP."""
+    by the held-out takes' mask mAP, scored against SAM 3 (scored)."""
     out = Path(ask["into"]).expanduser()
     out.mkdir(parents=True, exist_ok=True)
     epochs = int(ask["epochs"])
@@ -114,13 +117,35 @@ def train(ask: dict, tell=say) -> None:
                     if (out / f).is_file()), None)
     if weights is None:
         raise ValueError("the training left no best weights")
-    best = {"map50": 0.0, "map": 0.0}
-    with contextlib.suppress(OSError, csv.Error, ValueError):
-        for row in csv.DictReader(metrics.open()):
-            if row.get("val/segm_mAP_50_95") and float(row["val/segm_mAP_50_95"]) >= best["map"]:
-                best = {"map50": round(float(row["val/segm_mAP_50"]), 4),
-                        "map": round(float(row["val/segm_mAP_50_95"]), 4)}
-    tell(done=True, weights=str(weights), seconds=round(time.monotonic() - started), **best)
+    iou = scored(ready(str(weights), ask["model"], int(ask["resolution"])), Path(ask["train"]).expanduser(),
+                 [int(v) for v in ask["labels"]], float(ask["score"]))
+    tell(done=True, weights=str(weights), seconds=round(time.monotonic() - started), iou=iou)
+
+
+# A truth's pixels that are not scored: the grippers over the things.
+UNSCORED = 255
+
+
+def scored(model, dataset: Path, labels_of: list[int], score: float) -> list[float]:
+    """Each thing's IoU with SAM 3's over the dataset's valid pictures - its
+    pixels found by both over those found by either, summed over the
+    pictures - the pictures labelled as a video is (labels_from); 1.0 for a
+    thing neither finds in any."""
+    meet, either = np.zeros(len(labels_of)), np.zeros(len(labels_of))
+    truths = sorted((dataset / "truth").glob("*.png"))
+    for start in range(0, len(truths), BATCH):
+        batch = truths[start:start + BATCH]
+        pictures = [cv2.cvtColor(cv2.imread(str(dataset / "valid" / f"{t.stem}.jpg")), cv2.COLOR_BGR2RGB)
+                    for t in batch]
+        for truth_file, detections in zip(batch, found_in(model, pictures, score)):
+            truth = cv2.imread(str(truth_file), cv2.IMREAD_GRAYSCALE)
+            found = labels_from(detections, labels_of, truth.shape)
+            scored_px = truth != UNSCORED
+            for k, label in enumerate(labels_of):
+                a, b = (found == label) & scored_px, truth == label
+                meet[k] += np.count_nonzero(a & b)
+                either[k] += np.count_nonzero(a | b)
+    return [round(float(m / e), 4) if e else 1.0 for m, e in zip(meet, either)]
 
 
 def teach(ask: dict) -> None:
@@ -149,18 +174,48 @@ def frames(video: str, window, size):
         cap.release()
 
 
-# Frames given to the model at once: a batch keeps the GPU busy.
+# A video's frames given to the model at once.
 BATCH = 16
+
+
+def ready(weights: str, model: str, resolution: int):
+    """A taught masker, ready to find its things; what RF-DETR prints while
+    it loads goes to stderr, never into the answers."""
+    with contextlib.redirect_stdout(sys.stderr):
+        found = model_for(model, resolution, str(Path(weights).expanduser()))
+        found.inference(compile=False)
+    return found
+
+
+def found_in(model, pictures: list[np.ndarray], score: float) -> list:
+    """What the masker finds in each of `pictures` (RGB), as supervision
+    Detections: one batch, which keeps the GPU busy."""
+    with contextlib.redirect_stdout(sys.stderr):
+        found = model.predict(pictures, threshold=score)
+    return found if isinstance(found, list) else [found]
+
+
+def labels_from(detections, labels_of: list[int], size) -> np.ndarray:
+    """One picture's labels, (height, width) uint8, from what the masker found
+    in it: labels_of[k] where its class k is, 0 elsewhere - a smaller thing
+    over a larger. The masker learns each thing's whole outline, holes filled
+    (a COCO polygon has none): a bowl's covers the block in it, which SAM 3
+    leaves out of the bowl, so the block goes over it."""
+    labels = np.zeros(tuple(size), dtype=np.uint8)
+    if detections.mask is not None and len(detections):
+        for k in np.argsort(-detections.mask.reshape(len(detections), -1).sum(axis=1), kind="stable"):
+            cls = int(detections.class_id[k])
+            if 0 <= cls < len(labels_of):
+                labels[detections.mask[k]] = labels_of[cls]
+    return labels
 
 
 def label(models: dict, ask: dict, tell=say) -> None:
     """Every frame of ask's video labelled with its masker, into ask's out."""
     key = (str(Path(ask["weights"]).expanduser()), ask["model"], int(ask["resolution"]))
     if key not in models:
-        with contextlib.redirect_stdout(sys.stderr):
-            models.clear()
-            models[key] = model_for(ask["model"], int(ask["resolution"]), key[0])
-            models[key].inference(compile=False)
+        models.clear()
+        models[key] = ready(*key)
     model = models[key]
     labels_of = [int(v) for v in ask["labels"]]
     score = float(ask.get("score", 0.5))
@@ -172,17 +227,7 @@ def label(models: dict, ask: dict, tell=say) -> None:
     batch: list[np.ndarray] = []
 
     def flush() -> None:
-        with contextlib.redirect_stdout(sys.stderr):
-            found = model.predict(batch, threshold=score)
-        for detections in found if isinstance(found, list) else [found]:
-            labels = np.zeros((height, width), dtype=np.uint8)
-            if detections.mask is not None and len(detections):
-                # A later thing over an earlier, as SAM 3's labels are laid.
-                for k in np.argsort(detections.class_id, kind="stable"):
-                    cls = int(detections.class_id[k])
-                    if 0 <= cls < len(labels_of):
-                        labels[detections.mask[k]] = labels_of[cls]
-            out.append(labels)
+        out.extend(labels_from(d, labels_of, (height, width)) for d in found_in(model, batch, score))
         batch.clear()
         tell(frame=len(out) - 1, frames=max(count, len(out)))
     for picture in frames(ask["video"], ask["window"], ask["size"]):

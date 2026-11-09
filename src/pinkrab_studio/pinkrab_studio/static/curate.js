@@ -224,8 +224,12 @@ const labelsGo = document.getElementById('labels-go');
 const labelsStop = document.getElementById('labels-stop');
 const labelsProgress = document.getElementById('labels-progress');
 const labelsLines = document.getElementById('labels-lines');
-// Teaching the masker, as long as SAM 3 tracking this many takes.
+// How long each part of a job takes, against SAM 3 tracking a take: SAM 3
+// looking at a take's few pictures for the masker, teaching the masker, and
+// the masker labelling a take.
+const LOOK_TAKE = 0.08;
 const TEACH_TAKES = 6;
+const MASKER_TAKE = 0.1;
 const labelsNote = document.getElementById('labels-note');
 
 function drawLabels() {
@@ -244,36 +248,37 @@ function drawLabels() {
   labelsProgress.hidden = false;
   const total = job.asked.takes.length;
   const at = job.at || {};
-  const sam = job.asked.by_sam?.length ?? total;
+  const byMasker = !!job.asked.by_masker?.length;
   const taught = job.asked.masker;
-  // The bar: SAM 3's takes, then the masker being taught (when it is), then
-  // its takes, each counted as long as it takes.
-  const teaching = job.asked.teaches ? 1 : 0;
-  let within = 0;
-  if (at.stage === 'set') within = 0.15 * at.index / (at.takes || 1);
-  else if (at.stage === 'send') within = 0.15;
-  else if (at.stage === 'teach') within = 0.15 + 0.85 * (at.epoch || 0) / (at.epochs || 1);
-  else if (at.frames) {
+  // The bar: SAM 3 looking at every take and the masker being taught (when
+  // it is), then the takes labelled - each part counted as long as it takes.
+  const looking = job.asked.teaches ? (at.takes || total) * LOOK_TAKE : 0;
+  const teaching = job.asked.teaches ? TEACH_TAKES : 0;
+  const perTake = byMasker ? MASKER_TAKE : 1;
+  const finished = job.done.length + Object.keys(job.failed).length;
+  let where;
+  if (at.stage === 'look') where = at.index * LOOK_TAKE;
+  else if (at.stage === 'send') where = looking;
+  else if (at.stage === 'teach') where = looking + teaching * (0.05 + 0.95 * (at.epoch || 0) / (at.epochs || 1));
+  else {
     // SAM 3 follows each thing forward and, found late, back: forward is
     // most of a video's time. The masker reads each frame once.
-    const video = at.video === 'gripper_right' ? 1 : 0;
-    within = (video + (at.stage === 'back' ? 1 : at.frame / at.frames)) / 2;
+    let within = 0;
+    if (at.frames) {
+      const video = at.video === 'gripper_right' ? 1 : 0;
+      within = (video + (at.stage === 'back' ? 1 : at.frame / at.frames)) / 2;
+    }
+    where = looking + teaching + ((at.index ?? finished) + within) * perTake;
   }
-  const finished = job.done.length + Object.keys(job.failed).length;
-  // A masker's take weighs a tenth of SAM 3's; teaching it, TEACH_TAKES of SAM 3's.
-  const taughtUnits = teaching * TEACH_TAKES;
-  const units = sam + taughtUnits + (total - sam) * 0.1;
-  const index = at.index ?? finished;
-  const where = ['set', 'send', 'teach'].includes(at.stage) ? sam + taughtUnits * within
-    : index < sam ? index + within
-      : sam + taughtUnits + (index - sam + within) * 0.1;
+  const units = looking + teaching + total * perTake;
   const share = running ? where / units : 1;
   labelsProgress.querySelector('.bar > span').style.width = `${Math.min(100, share * 100)}%`;
   const on = job.asked.machine && job.asked.machine !== 'this machine' ? ` on ${job.asked.machine}` : '';
-  const plan = job.asked.by_masker?.length
-    ? `SAM 3 tracks ${sam}, the masker labels ${total - sam}` + (taught ? ` (mask mAP50 ${taught.map50.toFixed(2)})` : ' once it is taught')
-    : '';
-  const doing = at.stage === 'set' ? ` · teaching the masker: pictures from take ${at.index} / ${at.takes}`
+  const iou = taught?.iou ? ` (IoU with SAM 3: ${Object.entries(taught.iou).map(([t, v]) => `${t} ${v.toFixed(2)}`).join(' · ')})` : '';
+  const plan = byMasker
+    ? `the masker labels the takes${taught ? iou : ` once it is taught from pictures SAM 3 looks at`}`
+    : job.asked.teaches ? 'SAM 3 tracks the takes' : '';
+  const doing = at.stage === 'look' ? ` · pictures for the masker: take ${at.index + 1} / ${at.takes}`
     : at.stage === 'send' ? ` · teaching the masker: sending its pictures to ${job.asked.machine}`
     : at.stage === 'teach' ? ` · teaching the masker from ${at.takes} takes: epoch ${at.epoch} / ${at.epochs}`
       + (at.map50 != null ? ` · mask mAP50 ${at.map50.toFixed(2)}` : '')

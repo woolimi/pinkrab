@@ -156,14 +156,14 @@ SAM 3 and its weights are covered by Meta's [SAM License](https://github.com/fac
 
 ## Masker environment
 
-When there are many demonstrations, Curate's Make labels tracks only some with SAM 3 and makes the rest with a [masker](../../use/curate/#masker) taught from them. The masker is an [RF-DETR](https://github.com/roboflow/rf-detr) segmentation model, and like SAM 3 it is installed apart from the Pinkrab environment, in `~/pinkrab/masker-env`. Without this environment, Make labels tracks every demonstration with SAM 3.
+When there are many demonstrations, Curate's Make labels tracks only some with SAM 3 and makes the rest with a [masker](../../use/curate/#masker) taught from them. The masker is an [RF-DETR](https://github.com/roboflow/rf-detr) segmentation model, and like SAM 3 it is installed apart from the Pinkrab environment, in `~/pinkrab/masker-env`. Without this environment, Make labels tracks every demonstration with SAM 3. The Policy page also runs the masker in this environment to show a policy trained on random backgrounds [painted camera views](../../use/run/#painted-camera-views).
 
 ```bash
 uv venv --python 3.12 ~/pinkrab/masker-env
 uv pip install --python ~/pinkrab/masker-env/bin/python "rfdetr[train]>=1.11"
 ```
 
-If you plan to run it on another computer with a GPU, you do not need to install it on this one; studio creates the same environment on that computer. RF-DETR's code and weights are under the Apache License 2.0.
+When Make labels runs on another computer with a GPU, studio creates the same environment on that computer, but the Policy page's painted views use the environment on this computer, the one that runs the robot. RF-DETR's code and weights are under the Apache License 2.0.
 
 ## Verifying the installation
 

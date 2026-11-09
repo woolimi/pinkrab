@@ -38,20 +38,20 @@ SAM 3 must be installed separately. The installation steps are in [SAM 3 environ
 
 ### Masker
 
-SAM 3 tracks one demonstration for minutes, so dozens of demonstrations take hours. When there are many, Make labels therefore tracks only some of them with SAM 3, teaches a segmentation model that finds just that task's objects (the masker) from those keep labels, and uses it on the rest. The masker is an [RF-DETR](https://github.com/roboflow/rf-detr) segmentation model and finishes a demonstration in about 20 seconds. There is nothing to choose; Make labels goes through these steps by itself.
+SAM 3 tracks one demonstration for minutes, so dozens of demonstrations take hours. When there are many, Make labels therefore has SAM 3 find the objects in only a few pictures of every demonstration, teaches a segmentation model that finds just that task's objects (the masker) from those pictures, and uses it on every demonstration. Because the pictures come from every demonstration, the masker learns from each one's light and moves. The masker is an [RF-DETR](https://github.com/roboflow/rf-detr) segmentation model and finishes a demonstration in about 20 seconds. There is nothing to choose; Make labels goes through these steps by itself.
 
 1. If the computer chosen has a masker for those objects, every demonstration is made by the masker.
-2. If not, SAM 3 tracks demonstrations spread evenly over the ones chosen until 10 have been tracked by SAM 3. If fewer are chosen than that, SAM 3 tracks them all and that is the end.
-3. A masker is taught from every demonstration SAM 3 tracked those objects in. One demonstration in five is kept out of its learning, and the masker is scored on how well it finds the objects there.
-4. The remaining demonstrations are made by the masker.
+2. If fewer than 10 demonstrations are chosen, SAM 3 tracks them all and that is the end.
+3. From each chosen demonstration, 5 pictures are taken evenly from each gripper camera video, and SAM 3 finds the objects in them one picture at a time. A demonstration SAM 3 tracked before gives as many from its keep labels.
+4. A masker is taught from those pictures. The pictures of one demonstration in five are kept out of its learning, and the objects the masker finds there are laid over SAM 3's to measure each object's IoU.
+5. If every object's IoU is 0.9 or more, all the chosen demonstrations are made by the masker. If any falls short, the masker is not used and SAM 3 tracks them all.
 
-The progress bar shows the step it is on and how many demonstrations SAM 3 and the masker each take.
+The progress bar shows the step it is on and, once the masker is taught, each object's IoU against SAM 3.
 
 | Item | Behavior |
 |---|---|
-| Teaching time | Some tens of minutes for 12 epochs over 50 demonstrations on an H200. Done only the first time for each set of objects |
+| Teaching | Done only the first time for each set of objects |
 | Reuse | Enter the same object names in the same order and press Make labels on the same computer, and newly recorded demonstrations are made by the masker taught before, right away |
-| Quality bar | If the mask mAP50 measured on the demonstrations kept out is under 0.85, the masker is not used and SAM 3 tracks the remaining demonstrations |
 | Storage | The record is in `~/pinkrab/maskers/<id>/masker.json`; the weights are in `maskers/<id>/` of the working folder on the computer that taught it. On another computer, it is taught again there |
 | Teaching again | If the room or the objects change and the masker keeps missing things, delete `~/pinkrab/maskers/<id>/` and press Make labels |
 
