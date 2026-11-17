@@ -5,7 +5,8 @@ the same function, and a page that blocked for five minutes would show
 nothing meanwhile. The page asks with a name and a task, and every complete
 episode on the shelf that passes the shelf's tests goes in (verdict.judge):
 one that fails is left out, and says why, whether or not it was deleted
-first. The rest is decided here rather than asked: the core settings' rate,
+first. One that passes goes in without the stretches its replay could not
+follow on the arms (verdict.unfollowed). The rest is decided here rather than asked: the core settings' rate,
 and backgrounds randomised once the takes have keep labels. Then the page
 watches: which episode it is on, what the last one said, and the result.
 """
@@ -44,23 +45,25 @@ def _bytes(path: Path) -> int:
     return total
 
 
-def worth_training(names: list[str], say) -> list[str]:
+def worth_training(names: list[str], say) -> dict[str, list[tuple[float, float]]]:
     """The takes of `names` that pass the shelf's tests, each judged as the
     shelf judges it (verdict.judge), its replay solved first if the shelf has
-    not yet; each left out is said, with why."""
+    not yet - each with the stretches its arms do not follow, for convert to
+    cut (verdict.unfollowed); each left out is said, with why."""
     from . import replay, verdict
 
-    kept = []
+    kept = {}
     for name in names:
         root = UMI.episodes_dir / name
         try:
-            fails = verdict.judge(root, replay.solved(root))["fails"]
+            answer = replay.solved(root)
+            fails = verdict.judge(root, answer)["fails"]
         except Exception as exc:  # noqa: BLE001 - a take that cannot be judged is not trained on
             fails = [f"could not be judged: {type(exc).__name__}: {exc}"]
         if fails:
             say(f"  {name}: left out - {'; '.join(fails)}")
         else:
-            kept.append(name)
+            kept[name] = verdict.unfollowed(answer)
     return kept
 
 
@@ -121,12 +124,12 @@ class Converter:
         from pinkrab_umi import keep_masks
         randomised = any(keep_masks.account(UMI.episodes_dir / name) is not None for name in kept)
         with self._lock:
-            asked["episodes"] = kept
+            asked["episodes"] = list(kept)
             asked["randomised"] = randomised
             self._left_out = len(self._lines)
         try:
             result = convert.convert(asked["episodes"], asked["out"], asked["task"], say=say,
-                                     fps=asked["fps"], randomised=asked["randomised"])
+                                     fps=asked["fps"], randomised=asked["randomised"], unfollowed=kept)
         except Exception as exc:  # noqa: BLE001 - the page shows the reason
             with self._lock:
                 self._error = str(exc)

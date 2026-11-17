@@ -227,9 +227,16 @@ if __name__ == "__main__":
         write_take(source / "worn", tools, moving=True)
         write_take(source / "glanced", tools, moving=True, unseen=range(40, 46))
         write_take(source / "blinked", tools, moving=True, unseen=range(40, 42))
+        write_take(source / "held", tools, moving=True)
+        write_take(source / "grazed", tools, moving=True)
+        # Stretches the arms could not follow on the shelf's replay: six
+        # frames, longer than a hole convert bridges, and a single one.
+        frame = 1 / FPS
+        unfollowed = {"held": [(100.0 + 40 * frame - 1e-4, 100.0 + 45 * frame + 1e-4)],
+                      "grazed": [(100.0 + 40 * frame - 1e-4, 100.0 + 40 * frame + 1e-4)]}
         try:
-            made = convert.convert(["worn", "glanced", "blinked"], out, "hand the block over", source=source,
-                                   say=lambda *_: None, fps=int(FPS))
+            made = convert.convert(["worn", "glanced", "blinked", "held", "grazed"], out, "hand the block over",
+                                   source=source, say=lambda *_: None, fps=int(FPS), unfollowed=unfollowed)
             worn = made["episodes"][0]
             check("a camera that moves is followed", bool(worn["segments"]), str(worn))
             cut = [(s["start"], s["end"]) for s in made["episodes"][1]["segments"]]
@@ -237,6 +244,14 @@ if __name__ == "__main__":
                   str(cut))
             cut = [(s["start"], s["end"]) for s in made["episodes"][2]["segments"]]
             check("two of them are bridged, not cut", len(cut) == 1 and cut[0][0] < 40 and cut[0][1] > 42, str(cut))
+            held = made["episodes"][3]
+            cut = [(s["start"], s["end"]) for s in held["segments"]]
+            check("a stretch the arms cannot follow is cut", len(cut) == 2 and cut[0][1] <= 40 and cut[1][0] >= 46
+                  and held.get("unfollowed_s") == 0.2, f"{cut}, {held.get('unfollowed_s')}")
+            grazed = made["episodes"][4]
+            cut = [(s["start"], s["end"]) for s in grazed["segments"]]
+            check("a frame of it is kept, as a short hole is", len(cut) == 1 and cut[0][0] < 40 < cut[0][1]
+                  and "unfollowed_s" not in grazed, f"{cut}, {grazed.get('unfollowed_s')}")
             segment = worn["segments"][0]
             table = pq.read_table(next(root.glob("data/*/*.parquet")))
             for hand in ("left", "right"):

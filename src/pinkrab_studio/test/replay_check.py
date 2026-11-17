@@ -281,5 +281,21 @@ if __name__ == "__main__":
         (tmp / "sweep-right" / "meta.json").write_text(json.dumps(meta))
         check("a solid recorded at another yaw is solved again", replay.cached(tmp / "sweep-right", model) is None)
 
+    # The stretches convert cuts: frames the arm does not follow, neighbours
+    # joined, each half a step either side of its moment.
+    def frame(ts: float, left: list[str], right: list[str]) -> dict:
+        return {"host_ts": ts, "flags": {"left": left, "right": right}}
+    step = 1 / FPS
+    answer = {"fps": FPS, "hands": ["left", "right"], "unjudged": None, "trajectory": [
+        frame(10.0, [], []), frame(10.0 + step, ["short"], []), frame(10.0 + 2 * step, [], ["touch", "limit"]),
+        frame(10.0 + 3 * step, ["limit"], ["lost"]), frame(10.0 + 4 * step, [], ["jump"])]}
+    spans = verdict.unfollowed(answer)
+    check("unfollowed frames are joined into stretches, a limit or a lost hand not among them",
+          len(spans) == 2 and np.allclose(spans[0], (10.0 + 0.5 * step, 10.0 + 2.5 * step))
+          and np.allclose(spans[1], (10.0 + 3.5 * step, 10.0 + 4.5 * step)), str(spans))
+    check("a rollout and an unjudged take have none",
+          verdict.unfollowed({**answer, "kind": "rollout"}) == []
+          and verdict.unfollowed({**answer, "unjudged": "before the chest"}) == [])
+
     print("\n" + ("all checks passed" if not FAILURES else f"{len(FAILURES)} failed: {', '.join(FAILURES)}"))
     sys.exit(1 if FAILURES else 0)

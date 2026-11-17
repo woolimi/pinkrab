@@ -82,6 +82,10 @@ SHORT_MM = 15.0          # the solver landed this far from the target
 SHORT_DEG = 20.0
 JUMP_DEG = 15.0          # a joint moved this much between two frames
 AT_LIMIT_DEG = 0.5
+# The flags of a frame the arm does not follow: short of the target, a body
+# of the robot met, a joint jumping. A joint at its band is followed
+# (`limit`), and a frame with no hand placed (`lost`) is the tracking's.
+HELD_BACK = frozenset({"short", "touch", "jump"})
 # An arm held short is solved afresh from ready at most this often, with this
 # many starts: a take whose hand rests out of reach is not solved whole at
 # every moment.

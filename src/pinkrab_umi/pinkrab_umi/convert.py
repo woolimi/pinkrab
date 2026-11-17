@@ -23,7 +23,12 @@ the rig; every frame has them all. So each episode goes through these steps:
      `convert_max_hole_s` is bridged - each pose interpolated across it from
      the frames either side, each picture the last one taken - and a longer
      one ends the segment; a segment shorter than `min_segment_s` is
-     dropped;
+     dropped. A stretch the arms could not follow - the shelf's replay
+     found them short of the hands, meeting a body or jumping a joint
+     (`unfollowed`, the studio's to say) - is a hole too: a policy shown a
+     motion the arm cannot make asks for it at rollout, and the arm stops
+     at its stop. One as short as a bridged hole - a frame or two of a
+     fingertip grazing the desk - is kept as it was recorded;
   4. the tool centres: each hand's pose, the solid's and solid_T_tcp composed,
      then smoothed without lag - Savitzky-Golay over `SMOOTH_S`, on the
      position and on the unit quaternion - because the tracker's noise from
@@ -492,7 +497,8 @@ def _frames(segment: dict[str, dict], state_names: list[str], task: str, picture
 def convert(episodes: list[str], out: str, task: str, hands: tuple[str, ...] = ARMS,
             min_segment_s: float = MIN_SEGMENT_S, say=print,
             source: Path | None = None, gop: int = DATASET_GOP,
-            fps: int | None = None, randomised: bool = False) -> dict:
+            fps: int | None = None, randomised: bool = False,
+            unfollowed: dict[str, list[tuple[float, float]]] | None = None) -> dict:
     """`hands` are the hands every take worked with - both on the rig; the
     simulation's one. `source` is where the raw episodes are, the
     workspace's episodes/ by default. `gop` is the dataset video's keyframe
@@ -502,7 +508,10 @@ def convert(episodes: list[str], out: str, task: str, hands: tuple[str, ...] = A
     dataset_fps unless said - and so the rate a policy trained on it is
     asked at. `randomised` paints everything a take's keep labels do not keep
     (keep_masks) over with a pattern of the take's own (backgrounds): a take
-    without labels is left out."""
+    without labels is left out. `unfollowed` is, per take, the stretches
+    [start, end] on its head camera's exposure clock the arms could not
+    follow, cut out of it: the shelf's replay finds them, and a take not
+    named has none."""
     from lerobot.datasets.lerobot_dataset import LeRobotDataset
 
     root = CORE.workspace / "datasets" / out
@@ -552,7 +561,8 @@ def convert(episodes: list[str], out: str, task: str, hands: tuple[str, ...] = A
     try:
         for name in episodes:
             report["episodes"].append(_episode(dataset, source / name, task, hands, fps, min_segment_s,
-                                               names, size, say, background=seed(name) if randomised else None))
+                                               names, size, say, background=seed(name) if randomised else None,
+                                               unfollowed=(unfollowed or {}).get(name, ())))
         if not any(e["segments"] for e in report["episodes"]):
             raise ConvertError("no episode had a segment long enough to keep")
         dataset.finalize()
@@ -584,6 +594,10 @@ def convert(episodes: list[str], out: str, task: str, hands: tuple[str, ...] = A
                       "camera_savgol_s": CAMERA_SMOOTH_S,
                       "note": "on the source poses, before they are laid on the dataset's clock; the camera's "
                               "place on the desk on its own, before the hands are placed by it"},
+        "unfollowed": {"note": "stretches of a demonstration the arms could not follow on the shelf's replay - "
+                               "short of the hand, a body met, a joint jumping - are holes: one no longer "
+                               "than a bridged hole is kept, a longer one cut; each episode's unfollowed_s "
+                               "is how much of its take was cut so"},
         "still": {"mm": STILL_MM, "aperture": STILL_APERTURE,
                   "note": "frames before any hand first moves and after the last one last moves are left out"},
         "rollouts": {"clock": f"the {hands[0]} arm's camera exposures (host clock)",
@@ -689,10 +703,12 @@ def keep_labels(src: Path, hands) -> dict[str, np.ndarray]:
 
 
 def _episode(dataset, src: Path, task: str, hands: tuple[str, ...], fps: int, min_segment_s: float,
-             state_names: list[str], size: tuple[int, int], say, background: int | None = None) -> dict:
+             state_names: list[str], size: tuple[int, int], say, background: int | None = None,
+             unfollowed=()) -> dict:
     """One raw episode into the dataset, as many LeRobot episodes as it has
     segments - with `background`, its pictures painted over but for what its
-    keep labels keep, with the pattern of that seed."""
+    keep labels keep, with the pattern of that seed - and none of the
+    stretches [start, end] of `unfollowed`, on its exposure clock."""
     name = src.name
     if not (src / "meta.json").is_file():
         raise ConvertError(f"no episode {name!r} at {src}")
@@ -770,9 +786,15 @@ def _episode(dataset, src: Path, task: str, hands: tuple[str, ...], fps: int, mi
     for hand in hands:
         period = 1.0 / ((streams.get(f"gripper_{hand}") or {}).get("fps") or 30)
         pictured &= fresh(grip_t[hand], exposed, period)[1]
-    usable = bridged(pictured, exposed, SETTINGS.convert_max_hole_s) \
+    followed = np.ones(len(poses), dtype=bool)
+    for start, end in unfollowed:
+        followed &= (exposed < start) | (exposed > end)
+    usable = bridged(pictured & followed, exposed, SETTINGS.convert_max_hole_s) \
         & np.array([all(tools[hand][i] is not None for hand in hands) for i in range(len(poses))])
     rate = rate_of(exposed)
+    cut = ~bridged(followed, exposed, SETTINGS.convert_max_hole_s)
+    if cut.any():
+        entry["unfollowed_s"] = round(float(cut.sum()) / rate, 2)
     backdrop = None if background is None else pattern(background, size)
     try:
         videos = open_videos(src, hands, size, centre, labels, backdrop)
@@ -792,8 +814,9 @@ def _episode(dataset, src: Path, task: str, hands: tuple[str, ...], fps: int, mi
             video.close()
     kept = sum(s["frames"] for s in entry["segments"])
     if entry["segments"]:
+        cut = f", {entry['unfollowed_s']:.2f} s the arms cannot follow cut" if "unfollowed_s" in entry else ""
         say(f"  {name}: {len(entry['segments'])} segment(s), {kept}/{len(poses)} frames kept, "
-            f"{sum(sum(s['despiked'].values()) for s in entry['segments'])} despiked")
+            f"{sum(sum(s['despiked'].values()) for s in entry['segments'])} despiked{cut}")
     elif "stopped" not in entry:
         say(f"  {name}: no segment long enough - skipped")
     return entry

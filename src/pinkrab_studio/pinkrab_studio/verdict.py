@@ -128,12 +128,13 @@ def _hand(poses: list[dict], answer: dict, hand: str, fps: float) -> tuple[dict,
     if unjudged:
         feasible = None
     elif hand in answer.get("hands", []):
-        feasible = sum(1 for flags in judged if not set(flags) - {"limit"}) / max(1, len(judged))
+        feasible = sum(1 for flags in judged if not replay.HELD_BACK & set(flags)) / max(1, len(judged))
     else:
         feasible = 0.0   # a hand the replay never placed followed nothing
     jaw_read = len(jaws) / max(1, frames)
     jaw_spread = (max(jaws) - min(jaws)) if jaws else 0.0
-    # What held the arm back, over the same frames.
+    # What held the arm back, over the same frames - those convert cuts out
+    # of a take that passes (unfollowed).
     flags = dict(collections.Counter(flag for frame in judged for flag in frame))
     fails, warns = [], []
     if hand in (answer.get("unplaced") or {}):
@@ -204,6 +205,31 @@ def end_from_ready(poses: list[dict], meta: dict, hand: str, answer: dict) -> di
                       chain.forward(np.array(ready_joints(hand, chain.joint_names), dtype=float)))
     mm, deg = apart(world_T_cam @ np.array(p["solids"][f"handheld_{hand}"]["pose"], dtype=float) @ solid_T_tcp, ready)
     return {"mm": round(mm, 1), "deg": round(deg, 1)}
+
+
+def unfollowed(answer: dict) -> list[tuple[float, float]]:
+    """The stretches of a take's replay where an arm does not follow its hand
+    (replay.HELD_BACK), as [start, end] on the head camera's exposure clock,
+    each frame standing for half a step either side of its moment. A take
+    that passes may still hold such frames - up to the share
+    keep_min_feasible allows - and convert cuts those longer than a hole it
+    bridges, so a policy is not shown a motion the arm cannot make. A rollout is the arm's own motion,
+    and a take with no place in the robot's world is not judged: neither
+    has any."""
+    if answer.get("kind") == "rollout" or answer.get("unjudged"):
+        return []
+    half = 0.5 / float(answer["fps"])
+    hands = answer.get("hands") or []
+    spans: list[tuple[float, float]] = []
+    for frame in answer["trajectory"]:
+        if not any(replay.HELD_BACK & set(frame["flags"].get(hand) or []) for hand in hands):
+            continue
+        start, end = frame["host_ts"] - half, frame["host_ts"] + half
+        if spans and start <= spans[-1][1] + 1e-6:
+            spans[-1] = (spans[-1][0], end)
+        else:
+            spans.append((start, end))
+    return spans
 
 
 def fastest_joint(frames: list[dict], hand: str) -> tuple[str, float] | None:
