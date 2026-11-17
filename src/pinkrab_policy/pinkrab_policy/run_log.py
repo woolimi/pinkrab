@@ -17,10 +17,10 @@ passed through.
 
 One thing it changes: what the policy is taught to answer. A Pinkrab dataset
 keeps a step a frame, and each chunk the policy learns is given to it as the
-relative trajectory those steps compose (pinkrab_core.chunks) - each
-statistic the action is normalised by taken over such chunks - and every
-checkpoint saved is marked so (chunks.MARK_FILE): a rollout refuses one
-without the mark, a policy that answers steps.
+relative trajectory those steps compose (pinkrab_core.chunks), each entry
+standardised by its own statistics over such chunks - and every checkpoint
+saved is marked so, with those statistics (chunks.MARK_FILE): a rollout
+refuses one without the mark, a policy that answers something else.
 
 Standard library only until `main()` imports lerobot, so this file and
 chunks.py can be copied to a machine that has lerobot and nothing of this
@@ -108,7 +108,7 @@ class RunLog:
     def log_policy(self, checkpoint_dir) -> None:
         path = Path(checkpoint_dir)
         chunks = _chunks()
-        (path / "pretrained_model" / chunks.MARK_FILE).write_text(json.dumps(chunks.MARK))
+        (path / "pretrained_model" / chunks.MARK_FILE).write_text(json.dumps(chunks.mark(Relative.entries)))
         step = int(path.name) if path.name.isdigit() else None
         self._write({"kind": "checkpoint", "step": step, "path": str(path.resolve())})
 
@@ -137,10 +137,16 @@ def _chunks():
 
 class Relative:
     """A LeRobotDataset whose items carry their action chunk as the relative
-    trajectory its steps compose. Its action statistics become those of such
-    chunks of `chunk` entries over its own episodes - or `like`'s, another
-    Relative's, so held-out episodes are scored in the training set's units.
-    Everything else is the dataset's."""
+    trajectory its steps compose, each entry standardised by the statistics
+    of that entry of such chunks of `chunk` entries over its own episodes -
+    or `like`'s, another Relative's, so held-out episodes are scored in the
+    training set's units. Its action statistics become those of the chunks
+    so standardised. Everything else is the dataset's.
+
+    The entries' statistics of the last training set made are kept on the
+    class, for the checkpoints' mark."""
+
+    entries: dict | None = None
 
     def __init__(self, dataset, chunk: int, like: Relative | None = None) -> None:
         import numpy as np
@@ -149,11 +155,13 @@ class Relative:
         stats = dataset.meta.stats
         if like is not None:
             stats["action"] = like.dataset.meta.stats["action"]
+            self.entries = like.entries
             return
         table = dataset.hf_dataset.data
         steps = np.asarray(table.column("action").to_pylist(), dtype=float)
         episodes = np.asarray(table.column("episode_index").to_numpy())
-        stats["action"] = _chunks().relative_stats(steps, episodes, chunk, stats["action"])
+        self.entries, stats["action"] = _chunks().relative_stats(steps, episodes, chunk, stats["action"])
+        Relative.entries = self.entries
 
     def __getattr__(self, name):
         if name == "dataset":    # unpickled in a worker, before __init__'s fields
@@ -168,8 +176,9 @@ class Relative:
 
         item = self.dataset[index]
         pad = item.get("action_is_pad")
-        relative = _chunks().relative_chunk(item["action"].numpy(), None if pad is None else pad.numpy())
-        item["action"] = torch.as_tensor(relative, dtype=item["action"].dtype)
+        chunks = _chunks()
+        relative = chunks.relative_chunk(item["action"].numpy(), None if pad is None else pad.numpy())
+        item["action"] = torch.as_tensor(chunks.standardise(relative, self.entries), dtype=item["action"].dtype)
         return item
 
 

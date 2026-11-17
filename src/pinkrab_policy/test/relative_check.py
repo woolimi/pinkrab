@@ -4,6 +4,7 @@
 """
 from __future__ import annotations
 
+import json
 import pickle
 import sys
 from types import SimpleNamespace
@@ -57,27 +58,39 @@ class Dataset:
 def main() -> int:
     dataset = Dataset()
     relative = Relative(dataset, CHUNK)
-    item = relative[1]
+    entries = relative.entries
+    taught = lambda i: chunks.unstandardise(relative[i]["action"].numpy(), entries)  # noqa: E731
+    check("each entry's statistics are its own", np.allclose(entries["mean"][:, 0], [0.002, 0.004, 0.006, 0.008]),
+          str(entries["mean"][:, 0].tolist()))
+    check("a spread that never moves is standardised by the floor", np.allclose(entries["std"][:, 0], chunks.FLOOR[0]),
+          str(entries["std"][:, 0].tolist()))
+    item = taught(1)
     want = [0.002, 0.004, 0.006, 0.008]
-    check("a chunk is taught as where the tool is k+1 steps on", np.allclose(item["action"][:, 0], want, atol=1e-6),
-          str(item["action"][:, 0].tolist()))
-    item = relative[4]
+    check("a chunk is taught as where the tool is k+1 steps on", np.allclose(item[:, 0], want, atol=1e-6),
+          str(item[:, 0].tolist()))
+    check("each entry is taught standardised", np.allclose(relative[1]["action"][:, 0], 0, atol=1e-3),
+          str(relative[1]["action"][:, 0].tolist()))
+    item = taught(4)
     check("past its episode's end the tool holds where it last was",
-          np.allclose(item["action"][:, 0], [0.002, 0.004, 0.004, 0.004], atol=1e-6), str(item["action"][:, 0].tolist()))
+          np.allclose(item[:, 0], [0.002, 0.004, 0.004, 0.004], atol=1e-6), str(item[:, 0].tolist()))
     stats = dataset.meta.stats["action"]
     # Six steps, chunks of four: 6 + 5 + 4 + 3 entries an episode.
-    check("the action's statistics are those of every entry of every chunk",
-          stats["count"].tolist() == [36] and abs(stats["max"][0] - 0.008) < 1e-9 and abs(stats["min"][0] - 0.002) < 1e-9,
+    check("the action's statistics are those of every entry of every chunk, standardised",
+          stats["count"].tolist() == [36] and abs(stats["max"][0]) < 1e-6 and abs(stats["min"][0]) < 1e-6,
           f"count {stats['count'].tolist()}, x {stats['min'][0]:.3f}..{stats['max'][0]:.3f}")
     check("the rest is the dataset's", relative.num_frames == 12 and len(relative) == 12)
     again = pickle.loads(pickle.dumps(relative))
     check("it goes to a loader's worker and back", np.allclose(again[1]["action"], relative[1]["action"]))
     held_out = Dataset()
-    Relative(held_out, CHUNK, like=relative)
+    other = Relative(held_out, CHUNK, like=relative)
     check("held-out episodes are scored in the training set's units",
-          held_out.meta.stats["action"] is dataset.meta.stats["action"])
-    check("the chunk's first entry is its first step", np.allclose(chunks.steps_of(relative[0]["action"].numpy())[0],
+          held_out.meta.stats["action"] is dataset.meta.stats["action"] and other.entries is entries)
+    check("the chunk's first entry is its first step", np.allclose(chunks.steps_of(taught(0))[0],
                                                                    dataset.steps[0], atol=1e-6))
+    read = chunks.read_mark(json.dumps(chunks.mark(Relative.entries)))
+    check("a checkpoint's mark carries the entries' statistics",
+          read is not None and np.allclose(read["mean"], entries["mean"]) and np.allclose(read["std"], entries["std"]))
+    check("a mark of another rule is refused", chunks.read_mark(json.dumps({"action": "relative trajectory"})) is None)
 
     print("\n" + ("all checks passed" if not FAILURES else f"{len(FAILURES)} failed: {', '.join(FAILURES)}"))
     return 1 if FAILURES else 0

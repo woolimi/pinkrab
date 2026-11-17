@@ -132,7 +132,7 @@ dataset 은 프레임마다 한 step 의 상대 동작을 저장하지만, polic
 
 step 하나를 그대로 배우면 chunk 의 모든 칸이 한 step 크기입니다. 기본 50 fps 의 시연에서 한 step 은 중앙값 0.6~0.8 mm 이고 1 mm 보다 작은 step 이 절반을 넘어서, 평활한 뒤에도 남는 추적 잡음(0.4 mm 안팎)과 크기가 비슷합니다. 이어 붙인 궤적은 2 초 뒤의 칸이 중앙값 35 mm 라서, 같은 잡음 위에서 훨씬 뚜렷합니다. 정규화는 신호와 잡음을 같은 배율로 바꾸므로 이 비율은 그대로입니다.
 
-이 변환은 학습할 때 `pinkrab-train` 이 합니다. sample 마다 정답 chunk 의 step 들을 이어 붙이고, 동작의 정규화 통계도 dataset 의 모든 chunk 칸으로 다시 계산합니다. 그래서 dataset 은 step 그대로 두고, chunk 길이를 바꿔 학습해도 다시 변환할 필요가 없습니다. `pinkrab-train` 으로 학습한 checkpoint 에는 `pinkrab_action.json` 이 함께 저장되고, 이 표시가 없는 checkpoint 는 실행하지 않습니다.
+이 변환은 학습할 때 `pinkrab-train` 이 합니다. 그래서 dataset 은 step 그대로 두고, chunk 길이를 바꿔 학습해도 다시 변환할 필요가 없습니다. sample 마다 정답 chunk 의 step 들을 이어 붙이고, chunk 의 칸마다 dataset 전체에서 그 칸의 평균과 표준편차를 따로 구해 표준화합니다. 실행은 chunk 의 앞 몇 칸만 쓰는데, 모든 칸을 합친 통계로 정규화하면 몇 mm 짜리 앞 칸이 수십 mm 짜리 뒤 칸 단위로 학습돼 작은 오차가 매 chunk 쌓입니다. `pinkrab-train` 으로 학습한 checkpoint 에는 칸별 통계를 담은 `pinkrab_action.json` 이 함께 저장되고, 실행할 때 이 통계로 policy 의 답을 원래 단위로 되돌립니다. 이 표시가 없는 checkpoint 는 실행하지 않습니다.
 
 ## 시연과 교정이 섞인 dataset
 

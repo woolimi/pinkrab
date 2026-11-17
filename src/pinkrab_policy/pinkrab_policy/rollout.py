@@ -253,16 +253,17 @@ class Brain:
         # slower or faster than the takes did.
         from pinkrab_core.demo_start import DemoStartError, checkpoint_fps
         # Taught by pinkrab-train, which marks what it taught: a chunk is a
-        # relative trajectory. Without the mark its numbers are steps, and
-        # read as a trajectory they would hold each arm near where it began.
-        mark = Path(checkpoint) / chunks.MARK_FILE
+        # relative trajectory, each entry standardised by the statistics the
+        # mark carries. Without the mark its numbers are something else -
+        # steps, or entries in other units - and read so they would move
+        # each arm by what the policy never meant.
         try:
-            taught = json.loads(mark.read_text())
-        except (OSError, ValueError):
-            taught = None
-        if taught != chunks.MARK:
+            self.entries = chunks.read_mark((Path(checkpoint) / chunks.MARK_FILE).read_text())
+        except OSError:
+            self.entries = None
+        if self.entries is None:
             raise RuntimeError(f"{checkpoint}: not trained by pinkrab-train to answer a relative trajectory "
-                               f"(no {chunks.MARK_FILE}) - train it again")
+                               f"with each entry standardised (no {chunks.MARK_FILE} saying so) - train it again")
         try:
             self.fps = checkpoint_fps(Path(checkpoint))
         except (DemoStartError, OSError, ValueError, KeyError) as exc:
@@ -356,8 +357,9 @@ class Brain:
         with self.torch.inference_mode(), self._precision():
             answer = self.postprocessor(self.policy.predict_action_chunk(self.preprocessor(observation)))
         # Back to float32 first: under mixed precision it may come out half or
-        # bfloat16, and numpy has no bfloat16.
-        return answer[0].float().cpu().numpy()
+        # bfloat16, and numpy has no bfloat16. Then each entry out of the
+        # units it was taught in.
+        return chunks.unstandardise(answer[0].float().cpu().numpy(), self.entries).astype(np.float32)
 
     def _precision(self):
         return self.torch.autocast(device_type=self.device.type) if self.use_amp else contextlib.nullcontext()
