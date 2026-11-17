@@ -49,6 +49,7 @@ from pathlib import Path
 
 from pinkrab_policy import run_log
 
+from pinkrab_core import chunks
 from pinkrab_core.config import SETTINGS as CORE
 from pinkrab_core.dataset import (
     FINGERPRINT,
@@ -506,12 +507,13 @@ class Jobs:
         lock = CORE.remote_lock_file
 
         def kit(tar: tarfile.TarFile) -> None:
-            for arcname, data in (("run_log.py", Path(run_log.__file__).read_bytes()), ("setup.sh", SETUP_SH.encode()),
+            for arcname, data in (("run_log.py", Path(run_log.__file__).read_bytes()),
+                                  ("chunks.py", Path(chunks.__file__).read_bytes()), ("setup.sh", SETUP_SH.encode()),
                                   ("requirements.lock.txt", lock.read_bytes())):
                 info = tarfile.TarInfo(arcname)
                 info.size, info.mode, info.mtime = len(data), 0o755 if arcname.endswith(".sh") else 0o644, time.time()
                 tar.addfile(info, io.BytesIO(data))
-        say("sending run_log.py, setup.sh and the lock")
+        say("sending run_log.py, chunks.py, setup.sh and the lock")
         _send_tar(source, shlex.quote(root), kit, 0, say)
         if not (found["venv"] and found["lock_matches"]):
             say("setting up the venv there - the first time takes a few minutes")

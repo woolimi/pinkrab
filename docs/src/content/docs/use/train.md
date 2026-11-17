@@ -7,7 +7,7 @@ description: 수집한 dataset 으로 policy 를 학습하는 방법. 학습할 
 
 ## Policy
 
-policy 는 **[ACT](../../deep/policies/act/)** (Action Chunking with Transformers)입니다. LeRobot 에 들어 있는 policy 로, 두 그리퍼 카메라의 영상과 두 jaw 의 열림, 두 tool 의 상대 위치를 받아 앞으로 할 동작 여러 step 을 한 묶음(chunk)으로 내놓습니다. ResNet-18 이 읽은 영상을 transformer 가 받아 chunk 를 만들고, 학습할 때 CVAE 를 함께 써서 같은 장면에 맞는 동작이 여러 가지일 때 그 평균이 아니라 하나를 고르게 합니다. 기본값인 **batch 8** 로 학습할 때 GPU 메모리는 최대 약 5.7 GB 입니다.
+policy 는 **[ACT](../../deep/policies/act/)** (Action Chunking with Transformers)입니다. LeRobot 에 들어 있는 policy 로, 두 그리퍼 카메라의 영상과 두 jaw 의 열림, 두 tool 의 상대 위치를 받아 앞으로 할 동작 여러 step 을 한 묶음(chunk)으로 내놓습니다. ResNet-18 이 읽은 영상을 transformer 가 받아 chunk 를 만들고, 학습할 때 CVAE 를 함께 써서 같은 장면에 맞는 동작이 여러 가지일 때 그 평균이 아니라 하나를 고르게 합니다. 기본값인 **batch 8** 로 학습할 때 GPU 메모리는 최대 약 5.7 GB 입니다. chunk 의 각 칸은 그 chunk 를 시작한 tool pose 에서 본 앞으로의 tool pose 이고, 학습을 맡는 `pinkrab-train` 이 dataset 의 step 들을 이렇게 바꿔 가르칩니다([chunk 의 표현](../../deep/convert/#chunk-의-표현)).
 
 ## 학습할 컴퓨터
 

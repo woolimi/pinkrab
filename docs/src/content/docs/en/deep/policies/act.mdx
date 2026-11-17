@@ -27,7 +27,7 @@ The decoder's query is an all-zero input plus a position embedding learned per s
 
 ## One training step
 
-One sample in a batch is the observation at one time and the target chunk for the 2 seconds from that time. For a sample near the end of an episode where the 2 seconds do not fill, the remaining steps are filled with padding and left out of the loss.
+One sample in a batch is the observation at one time and the target chunk for the 2 seconds from that time. The target chunk is the trajectory composed from the dataset's steps, starting from the tool pose at that time ([chunk representation](../../convert/#chunk-representation)). For a sample near the end of an episode where the 2 seconds do not fill, the remaining steps are filled with padding and left out of the loss.
 
 1. **CVAE encoder**: The `[CLS]` token, the state token, and 100 action tokens, one per step of the target chunk, with a 1D sine position added, go into the 4-layer transformer. A linear layer turns the output at the `[CLS]` position into 64 numbers, of which the first 32 are used as the mean `μ` and the last 32 as `log σ²`.
 2. **Sampling the latent**: `z` is sampled as `z = μ + σ · ε`, `ε ~ N(0, I)`. This is the reparameterization trick, which pushes the randomness out into `ε` so gradients can flow to `μ` and `σ`.
@@ -63,7 +63,7 @@ In this way the KL term holds `q(z | a, s)` close to `N(0, I)` and makes room fo
 
 ## One execution step
 
-Execution has no target chunk, so the CVAE encoder is not used and `z = 0` is fed in. One forward pass with the two images and the state gives a 100-step chunk, whose first 5 steps are put in a queue and taken out one by one at the dataset fps. When the queue is empty, inference is run again with the video and state at that time, so it **looks anew every 0.1 second** and discards the other 95 steps.
+Execution has no target chunk, so the CVAE encoder is not used and `z = 0` is fed in. One forward pass with the two images and the state gives a 100-step chunk, whose first 5 entries are turned into steps from the entry before, put in a queue and taken out one by one at the dataset fps. When the queue is empty, inference is run again with the video and state at that time, so it **looks anew every 0.1 second** and discards the other 95 steps.
 
 The actions of the chunk are values normalized with dataset statistics, so before execution they are returned to the original units with the mean and standard deviation. The video is normalized with ImageNet's mean and standard deviation.
 
@@ -71,7 +71,7 @@ The actions of the chunk are values normalized with dataset statistics, so befor
 
 The ACT paper proposed temporal ensembling, which sets `k = 1`, that is, infers anew at every step and takes a weighted average of the actions that past chunks gave for the same time. The weights are `wᵢ = exp(−m·i)` starting from the oldest chunk, and the paper's `m` is 0.01. The actions become smoother, but inference is needed at every step, so in Pinkrab it is turned on with `temporal_ensemble_coeff` in the inference settings, and then **`n_action_steps` must be 1**.
 
-A positive `m` trusts old chunks more, a negative `m` trusts new chunks more, and 0 averages them all with equal weight. The actions being averaged must come from the same mode for the result to be smooth; if two chunks are in different modes, their average lands **between the peaks again**.
+Each chunk's entries are measured from the tool pose at the moment that chunk was asked for, so instead of the average inside ACT, Pinkrab puts each entry on its own base as a pose in robot coordinates and then averages. Positions are weighted means and the rotation is the one closest to the weighted sum. A positive `m` trusts old chunks more, a negative `m` trusts new chunks more, and 0 averages them all with equal weight. The actions being averaged must come from the same mode for the result to be smooth; if two chunks are in different modes, their average lands **between the peaks again**.
 
 ## Training settings
 

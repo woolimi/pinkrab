@@ -71,10 +71,11 @@ class Brain:
         self.state_names = state_names(HANDS)
         self.language = False
 
-    def reset(self) -> None:
-        pass
+    def chunk(self, pictures: dict, state: np.ndarray, task=None) -> np.ndarray:
+        """A chunk of one entry: its first step."""
+        return self.step(pictures, state)[None]
 
-    def ask(self, pictures: dict, state: np.ndarray, task=None) -> np.ndarray:
+    def step(self, pictures: dict, state: np.ndarray) -> np.ndarray:
         out = np.zeros(len(NAMES), dtype=np.float32)
         for k, hand in enumerate(HANDS):
             at = [NAMES.index(f"{hand}_{n}") for n in ("dx", "dy", "dz")]

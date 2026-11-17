@@ -7,7 +7,7 @@ Train a policy in [LeRobot](https://github.com/huggingface/lerobot) on the LeRob
 
 ## Policy
 
-The policy is **[ACT](../../deep/policies/act/)** (Action Chunking with Transformers). It is a policy included in LeRobot; it takes the images of the two gripper cameras, the openings of the two jaws, and the relative position of the two tools, and outputs several upcoming steps of motion as one bundle (chunk). A transformer takes the images read by ResNet-18 and produces the chunk, and a CVAE is used during training so that when several motions fit the same scene, it picks one rather than their average. Training with the default **batch 8** uses up to about 5.7 GB of GPU memory.
+The policy is **[ACT](../../deep/policies/act/)** (Action Chunking with Transformers). It is a policy included in LeRobot; it takes the images of the two gripper cameras, the openings of the two jaws, and the relative position of the two tools, and outputs several upcoming steps of motion as one bundle (chunk). A transformer takes the images read by ResNet-18 and produces the chunk, and a CVAE is used during training so that when several motions fit the same scene, it picks one rather than their average. Training with the default **batch 8** uses up to about 5.7 GB of GPU memory. Each entry of a chunk is a future tool pose seen from the tool pose where that chunk began, and `pinkrab-train`, which runs the training, teaches the dataset's steps converted this way ([chunk representation](../../deep/convert/#chunk-representation)).
 
 ## Training computer
 

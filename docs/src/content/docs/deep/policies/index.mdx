@@ -13,7 +13,7 @@ Pinkrab 은 LeRobot 에 들어 있는 ACT 를 [dataset](../convert/#dataset-구�
 | | 내용 |
 |---|---|
 | 입력 | 두 그리퍼 카메라의 영상, `observation.state` 11개(두 jaw 의 열림, 두 tool 의 상대 pose) |
-| 출력 | 앞으로의 동작 여러 step(chunk). step 하나는 손마다 tool frame 의 위치·회전 변화와 다음 jaw 열림, 모두 20개입니다 |
+| 출력 | 앞으로의 동작 여러 step(chunk). 칸 하나는 손마다 chunk 를 시작한 tool pose 에서 본 그 step 뒤의 tool pose(위치·회전)와 jaw 열림, 모두 20개입니다([chunk 의 표현](../convert/#chunk-의-표현)) |
 
 ## behavior cloning 의 난점
 

@@ -13,7 +13,7 @@ Pinkrab trains and runs the ACT included in LeRobot with `lerobot-train` on a [d
 | | Contents |
 |---|---|
 | Input | Video of the two gripper cameras, and 11 values of `observation.state` (the opening of the two jaws and the relative pose of the two tools) |
-| Output | Several future action steps (a chunk). One step is the position and rotation change in the tool frame for each hand plus the next jaw opening, 20 values in all |
+| Output | Several future action steps (a chunk). One entry is, for each hand, the tool pose after that step seen from the tool pose where the chunk began (position and rotation) plus the jaw opening, 20 values in all ([chunk representation](../convert/#chunk-representation)) |
 
 ## Difficulties of behavior cloning
 

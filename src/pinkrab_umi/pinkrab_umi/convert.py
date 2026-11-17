@@ -48,8 +48,11 @@ the rig; every frame has them all. So each episode goes through these steps:
      at the start, and at rollout never leaves it;
   5. camera-local deltas, per hand: R_t^T (p_{t+1} - p_t) and R_t^T R_{t+1},
      the latter as the first two columns of the matrix (6D, continuous);
-  6. despike: a delta faster than `DESPIKE_MM_S` or `filter_max_rot_speed_dps` over its
-     frame is a tracking glitch, not a hand, and becomes zero;
+  6. glitches: a step faster than `GLITCH_MM_S` or `filter_max_rot_speed_dps`
+     over its frame is the tracker's, not a hand's, and ends the segment as
+     a hole does. A policy is taught chunks of steps composed
+     (pinkrab_core.chunks), so a glitch left in, or made a standstill,
+     would carry its jump into every chunk that spans it;
   7. each gripper's action is the NEXT frame's measured opening, 0..1: the
      width is replayed as the hand made it, never projected to shut - a jaw
      driven all the way closed crushes what a hand holds gently;
@@ -125,7 +128,7 @@ MIN_SEGMENT_S = 0.95
 # 80 mm in a frame at 30 fps. A turn is a glitch past the speed the stream
 # filter takes for a flip (filter_max_rot_speed_dps), the one limit on how fast
 # a hand may turn.
-DESPIKE_MM_S = 2400.0
+GLITCH_MM_S = 2400.0
 # A hand holding still still wanders a millimetre or two; past this it has
 # set off.
 STILL_MM = 4.0
@@ -429,24 +432,40 @@ def moving(Ts: dict[str, np.ndarray], apertures: dict[str, np.ndarray]) -> tuple
     return max(0, first - 1), min(n, last + 2)
 
 
-def deltas(T: np.ndarray, aperture: np.ndarray, fps: int):
-    """One hand's actions for a segment of its tool poses (n,4,4) `fps` frames
-    a second: (n,10), plus how many were despiked."""
+def deltas(T: np.ndarray, aperture: np.ndarray) -> np.ndarray:
+    """One hand's actions for a segment of its tool poses (n,4,4): (n,10)."""
     n = len(T)
     action = np.zeros((n, 10), dtype=np.float32)
-    despiked = 0
     for t in range(n - 1):
-        step = delta_of(T[t], T[t + 1])
-        dR = delta_to_matrix(step)[:3, :3]
-        angle = math.degrees(math.acos(max(-1.0, min(1.0, (np.trace(dR) - 1.0) / 2.0))))
-        if np.linalg.norm(step[:3]) * 1000.0 * fps > DESPIKE_MM_S or angle * fps > SETTINGS.filter_max_rot_speed_dps:
-            step = NO_STEP
-            despiked += 1
-        action[t, :9] = step
+        action[t, :9] = delta_of(T[t], T[t + 1])
         action[t, 9] = aperture[t + 1]
     action[n - 1, :9] = NO_STEP
     action[n - 1, 9] = aperture[n - 1]
-    return action, despiked
+    return action
+
+
+def glitches(Ts: dict[str, np.ndarray], fps: int) -> np.ndarray:
+    """Which steps of a segment's poses (n,4,4 a hand) `fps` frames a second
+    no hand makes: faster than `GLITCH_MM_S`, or turning faster than the
+    stream filter lets a solid turn (filter_max_rot_speed_dps) - (n-1,)."""
+    n = len(next(iter(Ts.values())))
+    out = np.zeros(max(0, n - 1), dtype=bool)
+    for T in Ts.values():
+        for t in range(n - 1):
+            step = delta_of(T[t], T[t + 1])
+            dR = delta_to_matrix(step)[:3, :3]
+            angle = math.degrees(math.acos(max(-1.0, min(1.0, (np.trace(dR) - 1.0) / 2.0))))
+            out[t] |= (np.linalg.norm(step[:3]) * 1000.0 * fps > GLITCH_MM_S
+                       or angle * fps > SETTINGS.filter_max_rot_speed_dps)
+    return out
+
+
+def pieces(bad: np.ndarray) -> list[tuple[int, int]]:
+    """A segment's frames [start, end) either side of each of its `bad` steps
+    (n-1,): the step from frame k to k+1 ends one piece at k+1 and starts the
+    next there."""
+    cuts = [0, *(int(k) + 1 for k in np.nonzero(bad)[0]), len(bad) + 1]
+    return [(a, b) for a, b in itertools.pairwise(cuts) if b - a > 0]
 
 
 def gripper_size(episodes: list[str], source: Path, hands) -> tuple[int, int]:
@@ -472,11 +491,11 @@ def _frames(segment: dict[str, dict], state_names: list[str], task: str, picture
     """The dataset's frames for one segment, one at a time: `segment` is each
     hand's smoothed poses (`T`) and openings (`aperture`) `fps` frames a
     second; `pictures(hand, k)` its k-th gripper picture, read as its frame
-    is. Each hand's despiked count is left in `segment`."""
+    is."""
     hands = list(segment)
     actions, quats = {}, {}
     for hand in hands:
-        actions[hand], segment[hand]["despiked"] = deltas(segment[hand]["T"], segment[hand]["aperture"], fps)
+        actions[hand] = deltas(segment[hand]["T"], segment[hand]["aperture"])
         quats[hand] = continuous_quats(segment[hand]["T"][:, :3, :3])
     for k in range(len(actions[hands[0]])):
         relative = (relative_pose(segment[hands[0]]["T"][k], segment[hands[1]]["T"][k])
@@ -605,7 +624,8 @@ def convert(episodes: list[str], out: str, task: str, hands: tuple[str, ...] = A
                      "robot_state_latency_s": SETTINGS.robot_state_latency_s, "gap_s": ROBOT_GAP_S,
                      "kept": "the corrections: frames whose readings say the hands drove the arms (controller human)"},
         "action": {"names": STEP_NAMES, "frame": "tool (camera-local): R_t^T (p_{t+1}-p_t), R_t^T R_{t+1} as two columns",
-                   "despike_mm_s": DESPIKE_MM_S, "despike_dps": SETTINGS.filter_max_rot_speed_dps,
+                   "glitch_mm_s": GLITCH_MM_S, "glitch_dps": SETTINGS.filter_max_rot_speed_dps,
+                   "taught": "a chunk of steps as the relative trajectory they compose (pinkrab_core.chunks)",
                    "gripper": "next frame's measured opening 0..1"},
         "relative": {"note": "with two hands: the right tool in the left tool's frame, as a step is written"},
         "state_std_floor": STATE_STD_FLOOR,
@@ -661,30 +681,40 @@ def _add_segments(dataset, entry: dict, runs, times: np.ndarray, poses_of, apert
         if len(t) < 2 or t[-1] - t[0] < min_segment_s:
             entry.setdefault("still", []).append({"start": start, "end": end})
             continue
-        at = grid(t[0], t[-1], fps)
+        grid_t = grid(t[0], t[-1], fps)
         # Splined from the segment's start: absolute stamps lose digits.
-        segment = {hand: {"T": resample(Ts[hand][first:last], t - t[0], at - t[0]),
-                          "aperture": np.interp(at, t, apertures[hand][first:last]).astype(np.float32)}
-                   for hand in hands}
+        whole = {hand: {"T": resample(Ts[hand][first:last], t - t[0], grid_t - t[0]),
+                        "aperture": np.interp(grid_t, t, apertures[hand][first:last]).astype(np.float32)}
+                 for hand in hands}
+        bad = glitches({hand: whole[hand]["T"] for hand in hands}, fps)
+        if bad.any():
+            entry["glitches"] = entry.get("glitches", 0) + int(bad.sum())
         trimmed = (first, end - start - last)
-        start, end = start + first, start + last
-        k = 0
-        try:
-            for k, frame in enumerate(_frames(segment, state_names, task,
-                                              lambda hand, k, at=at: pictures_at(hand, at[k]), fps)):
-                dataset.add_frame(frame)
-        except ConvertError as exc:
-            # A video that ends early: the frames this segment has added so
-            # far go, and so does the rest of the episode.
-            dataset.clear_episode_buffer()
-            entry["stopped"] = {"frame": start, "step": k, "reason": str(exc)}
-            say(f"  {entry['episode']}: stopped {k} frames into the segment from frame {start} - {exc}")
-            return
-        dataset.save_episode()
-        entry["segments"].append({"start": start, "end": end, "frames": len(at),
-                                  "seconds": round(float(at[-1] - at[0]), 3),
-                                  "despiked": {hand: segment[hand]["despiked"] for hand in hands},
-                                  "still_trimmed": list(trimmed)})
+        source = times[start + first:start + last]
+        for a, b in pieces(bad):
+            at = grid_t[a:b]
+            if len(at) < 2 or at[-1] - at[0] < min_segment_s:
+                continue
+            segment = {hand: {key: whole[hand][key][a:b] for key in ("T", "aperture")} for hand in hands}
+            # The piece's source frames, for the account.
+            frame = start + first + int(np.searchsorted(source, at[0] - SAME_INSTANT_S))
+            k = 0
+            try:
+                for k, row in enumerate(_frames(segment, state_names, task,
+                                                lambda hand, k, at=at: pictures_at(hand, at[k]), fps)):
+                    dataset.add_frame(row)
+            except ConvertError as exc:
+                # A video that ends early: the frames this segment has added so
+                # far go, and so does the rest of the episode.
+                dataset.clear_episode_buffer()
+                entry["stopped"] = {"frame": frame, "step": k, "reason": str(exc)}
+                say(f"  {entry['episode']}: stopped {k} frames into the segment from frame {frame} - {exc}")
+                return
+            dataset.save_episode()
+            entry["segments"].append({"start": frame,
+                                      "end": start + first + int(np.searchsorted(source, at[-1] + SAME_INSTANT_S)),
+                                      "frames": len(at), "seconds": round(float(at[-1] - at[0]), 3),
+                                      "still_trimmed": list(trimmed)})
 
 
 def keep_labels(src: Path, hands) -> dict[str, np.ndarray]:
@@ -816,7 +846,7 @@ def _episode(dataset, src: Path, task: str, hands: tuple[str, ...], fps: int, mi
     if entry["segments"]:
         cut = f", {entry['unfollowed_s']:.2f} s the arms cannot follow cut" if "unfollowed_s" in entry else ""
         say(f"  {name}: {len(entry['segments'])} segment(s), {kept}/{len(poses)} frames kept, "
-            f"{sum(sum(s['despiked'].values()) for s in entry['segments'])} despiked{cut}")
+            f"{entry.get('glitches', 0)} glitch(es) cut{cut}")
     elif "stopped" not in entry:
         say(f"  {name}: no segment long enough - skipped")
     return entry
@@ -954,7 +984,7 @@ def _rollout(dataset, src: Path, meta: dict, frames: list[dict], task: str, hand
     kept = sum(s["frames"] for s in entry["segments"])
     if entry["segments"]:
         say(f"  {name}: rollout, {len(entry['segments'])} correction(s), {kept}/{len(exposed)} frames kept, "
-            f"{sum(sum(s['despiked'].values()) for s in entry['segments'])} despiked")
+            f"{entry.get('glitches', 0)} glitch(es) cut")
     elif "stopped" not in entry:
         say(f"  {name}: rollout with no correction long enough - skipped")
     return entry

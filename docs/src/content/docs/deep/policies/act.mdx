@@ -27,7 +27,7 @@ decoder 의 query 는 값이 0 인 입력에 step 마다 학습되는 위치 emb
 
 ## 학습 한 step
 
-batch 의 sample 하나는 한 시각의 관찰과 그 시각부터 2 초 동안의 정답 chunk 입니다. episode 끝에 가까워 2 초가 다 차지 않는 sample 은 남는 step 을 padding 으로 채우고 loss 에서 뺍니다.
+batch 의 sample 하나는 한 시각의 관찰과 그 시각부터 2 초 동안의 정답 chunk 입니다. 정답 chunk 는 dataset 의 step 들을 그 시각의 tool pose 에서부터 이어 붙인 궤적입니다([chunk 의 표현](../../convert/#chunk-의-표현)). episode 끝에 가까워 2 초가 다 차지 않는 sample 은 남는 step 을 padding 으로 채우고 loss 에서 뺍니다.
 
 1. **CVAE encoder**: `[CLS]` token, state token, 정답 chunk 의 step 마다 하나씩인 동작 token 100개에 1D sine 위치를 더해 transformer 4 층에 넣습니다. `[CLS]` 자리의 출력을 선형층이 64개 숫자로 바꾸어, 앞 32개를 평균 `μ`, 뒤 32개를 `log σ²` 로 씁니다.
 2. **latent 뽑기**: `z = μ + σ · ε`, `ε ~ N(0, I)` 로 `z` 를 뽑습니다. 무작위성을 `ε` 로 밀어내 두어 `μ` 와 `σ` 까지 gradient 가 흐르게 하는 reparameterization trick 입니다.
@@ -63,7 +63,7 @@ KL 항은 이렇게 `q(z | a, s)` 를 `N(0, I)` 에 가깝게 붙잡아, 실행 
 
 ## 실행 한 step
 
-실행에는 정답 chunk 가 없으므로 CVAE encoder 를 쓰지 않고 `z = 0` 을 넣습니다. 영상 두 장과 state 로 forward 한 번을 돌려 100 step chunk 를 받고, 그 앞 5 step 을 대기열에 넣어 dataset 의 fps 로 하나씩 꺼내 실행합니다. 대기열이 비면 그때의 영상과 state 로 다시 추론하므로, **0.1 초마다 새로 보고** 나머지 95 step 은 버립니다.
+실행에는 정답 chunk 가 없으므로 CVAE encoder 를 쓰지 않고 `z = 0` 을 넣습니다. 영상 두 장과 state 로 forward 한 번을 돌려 100 step chunk 를 받고, 그 앞 5 칸을 앞 칸에서의 step 으로 바꾸어 대기열에 넣고 dataset 의 fps 로 하나씩 꺼내 실행합니다. 대기열이 비면 그때의 영상과 state 로 다시 추론하므로, **0.1 초마다 새로 보고** 나머지 95 step 은 버립니다.
 
 chunk 의 동작은 dataset 통계로 정규화된 값이라, 실행 전에 평균과 표준편차로 원래 단위로 되돌립니다. 영상은 ImageNet 의 평균과 표준편차로 정규화합니다.
 
@@ -71,7 +71,7 @@ chunk 의 동작은 dataset 통계로 정규화된 값이라, 실행 전에 평�
 
 ACT 논문은 chunk 를 `k = 1` 로, 즉 매 step 새로 추론하고 같은 시각에 대해 지난 chunk 들이 낸 동작을 가중 평균하는 temporal ensembling 을 제안했습니다. 가중치는 오래된 chunk 부터 `wᵢ = exp(−m·i)` 이고 논문의 `m` 은 0.01 입니다. 동작이 더 매끄러워지는 대신 매 step 추론해야 하므로, Pinkrab 에서는 추론 설정의 `temporal_ensemble_coeff` 로 켜고 이때 **`n_action_steps` 는 1** 이어야 합니다.
 
-`m` 이 양수이면 오래된 chunk 를, 음수이면 새 chunk 를 더 믿고, 0 이면 모두 같은 무게로 평균합니다. 평균하는 동작이 같은 방식에서 나온 것이어야 매끄러워지고, 두 chunk 가 서로 다른 방식이면 그 평균이 **다시 봉우리 사이에** 놓입니다.
+chunk 마다 칸의 기준이 그 chunk 를 물은 순간의 tool pose 라서, Pinkrab 은 ACT 안의 평균 대신 각 칸을 그 기준 위에 놓아 로봇 좌표의 pose 로 바꾼 뒤 평균합니다. 위치는 가중 평균하고 회전은 가중합에 가장 가까운 회전을 씁니다. `m` 이 양수이면 오래된 chunk 를, 음수이면 새 chunk 를 더 믿고, 0 이면 모두 같은 무게로 평균합니다. 평균하는 동작이 같은 방식에서 나온 것이어야 매끄러워지고, 두 chunk 가 서로 다른 방식이면 그 평균이 **다시 봉우리 사이에** 놓입니다.
 
 ## 학습 설정
 

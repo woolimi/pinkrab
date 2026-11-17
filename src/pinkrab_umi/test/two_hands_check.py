@@ -229,13 +229,18 @@ if __name__ == "__main__":
         write_take(source / "blinked", tools, moving=True, unseen=range(40, 42))
         write_take(source / "held", tools, moving=True)
         write_take(source / "grazed", tools, moving=True)
+        # The left solid read a metre off from frame 45 on: no hand moves so.
+        jumped = {hand: [T.copy() for T in along] for hand, along in tools.items()}
+        for T in jumped["left"][45:]:
+            T[0, 3] += 1.0
+        write_take(source / "jumped", jumped, moving=True)
         # Stretches the arms could not follow on the shelf's replay: six
         # frames, longer than a hole convert bridges, and a single one.
         frame = 1 / FPS
         unfollowed = {"held": [(100.0 + 40 * frame - 1e-4, 100.0 + 45 * frame + 1e-4)],
                       "grazed": [(100.0 + 40 * frame - 1e-4, 100.0 + 40 * frame + 1e-4)]}
         try:
-            made = convert.convert(["worn", "glanced", "blinked", "held", "grazed"], out, "hand the block over",
+            made = convert.convert(["worn", "glanced", "blinked", "held", "grazed", "jumped"], out, "hand the block over",
                                    source=source, say=lambda *_: None, fps=int(FPS), unfollowed=unfollowed)
             worn = made["episodes"][0]
             check("a camera that moves is followed", bool(worn["segments"]), str(worn))
@@ -252,6 +257,10 @@ if __name__ == "__main__":
             cut = [(s["start"], s["end"]) for s in grazed["segments"]]
             check("a frame of it is kept, as a short hole is", len(cut) == 1 and cut[0][0] < 40 < cut[0][1]
                   and "unfollowed_s" not in grazed, f"{cut}, {grazed.get('unfollowed_s')}")
+            jumped = made["episodes"][5]
+            cut = [(s["start"], s["end"]) for s in jumped["segments"]]
+            check("a glitch ends the segment, a piece either side", len(cut) == 2 and jumped.get("glitches", 0) >= 1
+                  and cut[0][1] <= 46 <= cut[1][0] + 1, f"{cut}, {jumped.get('glitches')}")
             segment = worn["segments"][0]
             table = pq.read_table(next(root.glob("data/*/*.parquet")))
             for hand in ("left", "right"):

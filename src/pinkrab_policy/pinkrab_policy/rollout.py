@@ -1,12 +1,13 @@
 """A trained policy, driving the arms.
 
 The policy was trained on what the handhelds' cameras saw and how each
-handheld moved from there - a delta in its tool's own frame - and, with two,
+handheld moved from there - a chunk of where its tool goes next, seen from
+where it stood when the chunk began (pinkrab_core.chunks) - and, with two,
 where one tool stood from the other. So this shows it what the arms' gripper
 cameras see now and where the arms' tools stand from each other, takes the
-deltas it answers with, composes each onto where that tool was last put, and
-solves its arm for that pose the way teleop does: `track()`, one step,
-through the gate. Each gripper follows the policy's opening across its arm's
+chunk it answers with a step at a time (`Plan`), composes each step onto
+where that tool was last put, and solves its arm for that pose the way
+teleop does: `track()`, one step, through the gate. Each gripper follows the policy's opening across its arm's
 own band. The arms are the checkpoint's: those whose gripper pictures it
 was trained on.
 
@@ -40,7 +41,7 @@ joints turn is the gate's to hold (inference.policy_dps).
 A correction (DAgger) is the handhelds taking the arms over mid-run
 (MODE_CORRECT) and handing them back: the mode returns to policy straight
 from the correction, and the policy goes on from where the hands left the
-arms, its own memory of the last step cleared - which also lifts a run that
+arms, the chunk it was on let go - which also lifts a run that
 had stopped at an arm's reach.
 
     ros2 run pinkrab_policy rollout --ros-args -p checkpoint:=/path/to/pretrained_model
@@ -65,7 +66,7 @@ from pathlib import Path
 import numpy as np
 from scipy.spatial.transform import Rotation
 
-from pinkrab_core import inference
+from pinkrab_core import chunks, inference
 from pinkrab_core.config import SETTINGS as CORE
 from pinkrab_core.dataset import (LensMissing, delta_to_matrix, gripper_cut, gripper_view,
                                   hands_of, image_key, relative_pose, require_lens, state_names, state_vector)
@@ -221,7 +222,7 @@ class Observer:
 
 
 class Brain:
-    """The checkpoint alone: pictures and a state in, the deltas out.
+    """The checkpoint alone: pictures and a state in, a chunk out.
 
     Separate from the arms below it because asking a policy what it wants needs
     no arm - no description, no kinematics, no servo band. The studio's policy
@@ -245,6 +246,17 @@ class Brain:
         # of that dataset's frames apart, so any other rate moves the arms
         # slower or faster than the takes did.
         from pinkrab_core.demo_start import DemoStartError, checkpoint_fps
+        # Taught by pinkrab-train, which marks what it taught: a chunk is a
+        # relative trajectory. Without the mark its numbers are steps, and
+        # read as a trajectory they would hold each arm near where it began.
+        mark = Path(checkpoint) / chunks.MARK_FILE
+        try:
+            taught = json.loads(mark.read_text())
+        except (OSError, ValueError):
+            taught = None
+        if taught != chunks.MARK:
+            raise RuntimeError(f"{checkpoint}: not trained by pinkrab-train to answer a relative trajectory "
+                               f"(no {chunks.MARK_FILE}) - train it again")
         try:
             self.fps = checkpoint_fps(Path(checkpoint))
         except (DemoStartError, OSError, ValueError, KeyError) as exc:
@@ -316,15 +328,14 @@ class Brain:
                                + (f"holds {len(self.tasks)} - say which" if self.tasks else "is not here to say it"))
         self.task = task
 
-    def reset(self) -> None:
-        self.policy.reset()
-
-    def ask(self, images: dict[str, np.ndarray], state: np.ndarray, task: str | None = None) -> np.ndarray:
-        """One answer - ten numbers a hand - from what the cameras see and the
-        state (`state_vector` of `state_names`): each jaw as a fraction of its
-        band, and where one tool stands from the other. Nothing about where a
-        tool is - the dataset carried none, so the policy was never shown any.
-        `task` stands in for the command this once, for a policy that reads one.
+    def chunk(self, images: dict[str, np.ndarray], state: np.ndarray, task: str | None = None) -> np.ndarray:
+        """One chunk - (steps, ten numbers a hand), each hand's entries where
+        its tool goes seen from where it stands now, and its jaw's opening -
+        from what the cameras see and the state (`state_vector` of
+        `state_names`): each jaw as a fraction of its band, and where one tool
+        stands from the other. Nothing about where a tool is - the dataset
+        carried none, so the policy was never shown any. `task` stands in for
+        the command this once, for a policy that reads one.
         """
         from lerobot.policies.utils import prepare_observation_for_inference
 
@@ -337,13 +348,73 @@ class Brain:
             task=(task if task is not None else self.task) if self.language else None,
         )
         with self.torch.inference_mode(), self._precision():
-            action = self.postprocessor(self.policy.select_action(self.preprocessor(observation)))
+            answer = self.postprocessor(self.policy.predict_action_chunk(self.preprocessor(observation)))
         # Back to float32 first: under mixed precision it may come out half or
         # bfloat16, and numpy has no bfloat16.
-        return action[0].float().cpu().numpy()
+        return answer[0].float().cpu().numpy()
 
     def _precision(self):
         return self.torch.autocast(device_type=self.device.type) if self.use_amp else contextlib.nullcontext()
+
+
+class Plan:
+    """The policy's chunks, a step at a time: ten numbers a hand each tick -
+    the step from where its tool was last put, and its jaw's opening.
+
+    One chunk at a time, unless the rig's inference.yaml blends them: the
+    first `n_action_steps` entries of a chunk, each the step from the entry
+    before (chunks.steps_of), and then a fresh chunk from what the cameras
+    see then. Blended (`temporal_ensemble_coeff`, ACT's temporal ensembling),
+    a chunk is asked for every tick, each entry is put where it says - on
+    where its tool stood when that chunk was asked - and the entries every
+    chunk so far has for this tick are averaged, the oldest weighted
+    exp(-coeff * 0), the next exp(-coeff * 1) and so on; the step is the
+    blend's from the one before. ACT blends inside the policy, but entries
+    of chunks asked from different places mean different poses there."""
+
+    def __init__(self, brain: Brain) -> None:
+        self.brain = brain
+        self.steps = int(brain.settings.get("n_action_steps") or 1)
+        self.coeff = brain.settings.get("temporal_ensemble_coeff")
+        self.reset()
+
+    def reset(self) -> None:
+        self.queue: list[np.ndarray] = []
+        self.plans: list[tuple[int, list[dict]]] = []
+        self.last: dict[str, np.ndarray] | None = None
+        self.tick = 0
+
+    def _asked(self, images, state) -> np.ndarray:
+        chunk = self.brain.chunk(images, state)
+        if chunk.ndim != 2 or chunk.shape[1] != chunks.PER_HAND * len(self.brain.hands):
+            raise ValueError(f"the policy answered a chunk of {chunk.shape} for {len(self.brain.hands)} hand(s)")
+        return chunk
+
+    def next(self, images: dict[str, np.ndarray], state: np.ndarray, tools: dict[str, np.ndarray]) -> np.ndarray:
+        """This tick's answer. `tools` is where each hand's tool was last put,
+        in the handheld's convention."""
+        self.tick += 1
+        if self.coeff is None:
+            if not self.queue:
+                self.queue = list(chunks.steps_of(self._asked(images, state)[:self.steps]))
+            return self.queue.pop(0)
+        hands = self.brain.hands
+        chunk = self._asked(images, state)
+        self.plans.append((self.tick, [
+            {hand: (tools[hand] @ chunks.as_matrix(row[10 * i:10 * i + 9]), float(row[10 * i + 9]))
+             for i, hand in enumerate(hands)} for row in chunk]))
+        self.plans = [(start, plan) for start, plan in self.plans if self.tick - start < len(plan)]
+        here = [plan[self.tick - start] for start, plan in self.plans]
+        weights = np.exp(-float(self.coeff) * np.arange(len(here)))
+        last = self.last or {hand: tools[hand] for hand in hands}
+        answer = []
+        self.last = {}
+        for hand in hands:
+            target = chunks.mean_pose([entry[hand][0] for entry in here], weights)
+            opening = float(np.dot(weights, [entry[hand][1] for entry in here]) / weights.sum())
+            answer += [*chunks.as_nine(np.linalg.inv(last[hand]) @ target), opening]
+            self.last[hand] = target
+        return np.asarray(answer, dtype=np.float32)
 
 
 class _Arm:
@@ -463,6 +534,7 @@ class Driver:
 
     def __init__(self, checkpoint: str, device: str | None = None, task: str | None = None) -> None:
         self.brain = Brain(checkpoint, device, task)
+        self.plan = Plan(self.brain)
         self.hands = self.brain.hands
         self.arms = {hand: _Arm(hand, self.brain.common, self.brain.fps) for hand in self.hands}
         self.steps = 0
@@ -492,7 +564,7 @@ class Driver:
         """Where the arms are now is where the policy's first deltas are from."""
         for hand, arm in self.arms.items():
             arm.start(joints_deg[hand])
-        self.brain.reset()
+        self.plan.reset()
         self.steps = 0
 
     def state(self, grippers_rad: dict[str, float]) -> tuple[np.ndarray, dict[str, float]]:
@@ -505,7 +577,10 @@ class Driver:
 
     def step(self, images: dict[str, np.ndarray], grippers_rad: dict[str, float]) -> tuple[dict[str, float], dict]:
         state, apertures = self.state(grippers_rad)
-        action = self.brain.ask(images, state)
+        try:
+            action = self.plan.next(images, state, {hand: arm.tool() for hand, arm in self.arms.items()})
+        except ValueError as exc:
+            raise DriveStopped(str(exc)) from exc
         # An answer that is not a number ends the run: NaN passes every limit
         # below - each comparison with it is false - and a solve fed one is
         # joints of NaN.

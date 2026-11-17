@@ -64,8 +64,8 @@ def picture_swap(checkpoint: Path, frames: int = 150, seed: int = 0, device: str
         return pictures, x["observation.state"].numpy(), x["action"].numpy(), x["task"]
 
     def ask(pictures, state, task):
-        brain.reset()
-        return brain.ask(pictures, state, task)
+        # The chunk's first entry is its first step: the recorded action's like.
+        return brain.chunk(pictures, state, task)[0]
 
     told = brain.language and len(tasks) > 1
     rows = {hand: {"recorded": [], "picture": [], "state": [], "command": [], "mm": [],

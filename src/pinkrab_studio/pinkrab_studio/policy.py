@@ -451,7 +451,7 @@ class PolicyRun:
         from pinkrab_core.jaw import aperture_of, gripper_band
         from pinkrab_core.kinematics import ArmKinematics
         from pinkrab_core.origin import ready_joints
-        from pinkrab_policy.rollout import Brain, Observer
+        from pinkrab_policy.rollout import Brain, Observer, Plan
 
         try:
             brain = Brain(self._checkpoint, task=self._task or None)
@@ -484,11 +484,11 @@ class PolicyRun:
             self._masker = observer.masker
             self._loading = False
         try:
-            self._ask(brain, observer, joints_now, tools, apertures)
+            self._ask(brain, Plan(brain), observer, joints_now, tools, apertures)
         finally:
             observer.close()
 
-    def _ask(self, brain, observer, joints_now, tools: dict, apertures: dict) -> None:
+    def _ask(self, brain, plan, observer, joints_now, tools: dict, apertures: dict) -> None:
         from pinkrab_core.dataset import delta_to_matrix, relative_pose, state_vector
 
         # The jaws the first observation carries are the arms' as read when
@@ -512,7 +512,7 @@ class PolicyRun:
             hands = brain.hands
             relative = relative_pose(tools[hands[0]], tools[hands[1]]) if len(hands) == 2 else None
             try:
-                action = brain.ask(images, state_vector(brain.state_names, apertures, relative))
+                action = plan.next(images, state_vector(brain.state_names, apertures, relative), tools)
             except Exception as exc:                  # noqa: BLE001
                 self._trouble(f"the policy did not answer: {exc}")
                 if self._stop.wait(0.5):
@@ -544,7 +544,7 @@ class PolicyRun:
                                       "latency_ms": round(latency, 1)})
 
             # What the next observation carries: the openings asked for, the
-            # tools moved by the deltas just answered. This is the
+            # tools moved by the steps just answered. This is the
             # free-running part.
             for i, hand in enumerate(hands):
                 step = action[10 * i:10 * i + 10]

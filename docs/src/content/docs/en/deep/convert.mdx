@@ -41,7 +41,7 @@ A demonstration episode goes through the following steps.
 6. **Removing still segments**: The frames before either hand first moves and after it last moves are removed. A hand counts as moved if it travels more than 4 mm from its first position or its jaw opening changes by more than 0.03. If the start, where the hand stays still while the pedal is pressed, were shown, the policy would learn to stand still at the start and **would not move in execution**.
 7. **Dataset timestamps**: Starting from the first exposure of the segment, one frame is placed every `1/fps` seconds. The tool position is read at that time from a cubic spline through the smoothed trajectory, the rotation from a rotation spline, the jaw opening is interpolated, and the gripper video uses the last frame captured up to that time. Details are in [Dataset fps](#dataset-fps) below.
 8. **Relative actions**: For each hand, the change from frame `t` to `t+1` is computed in the tool frame at that moment. The position is `R_tᵀ (p_{t+1} − p_t)` and the rotation is the first two columns (6D) of `R_tᵀ R_{t+1}`.
-9. **Outlier removal**: A change faster than 2400 mm or 150° per second (80 mm or 5° in one frame at 30 fps) is treated as a tracking error and set to 0.
+9. **Cutting at outliers**: A change faster than 2400 mm or 150° per second (80 mm or 5° in one frame at 30 fps) is a tracking error rather than a human hand, so the segment is cut there as at a long gap. The policy learns trajectories that compose several steps ([chunk representation](#chunk-representation)), so a jumped step left in, or set to 0, would put that much offset into every chunk that passes over it.
 10. **Jaw action**: The opening (0–1) of the next frame is used as is. It is not changed to push toward the fully closed end. This is because an object the person grasped gently would be crushed if the arm grasped it all the way.
 11. **State**: It contains the opening of the two jaws and the pose of the right tool as seen in the left-hand tool frame. The relative pose of the two hands lets each hand move knowing the position of the other (the inter-gripper proprioception of UMI).
 12. **Absolute pose**: The TCP pose in the table marker frame is also saved as `pose.tcp_<hand>`. Its name does not start with `observation.`, so it is **not an input to any policy**, and it is used only to compute the start pose for execution.
@@ -74,7 +74,7 @@ If the `kind` of a raw episode is `rollout`, Convert computes it as follows.
 2. **Time alignment**: For each exposure time of the first arm camera (the time minus the 12 ms camera latency), the joint angles are fixed by linearly interpolating between the two joint readings before and after it (each at its time minus the 17 ms joint read latency). If the two readings are more than 0.1 second apart, or either of them is not a reading to keep, that frame is left empty.
 3. **Cutting**: The segment is cut at an empty frame, at a frame with no video captured within 1.5 frames by the other arm's camera, and at a place where the video breaks, and segments shorter than 0.95 seconds are discarded. Since `hold` and `policy` segments are not readings to keep, segments are split at the place where the arm was stopped with pedal 1 and at the place where control was given back to the policy, and each segment becomes one episode of the dataset.
 4. **Tool trajectory**: For each frame, forward kinematics is solved from the joint angles, rotated into Hermit's tool frame convention, and smoothed with the same Savitzky-Golay filter as for demonstrations. The jaw opening is obtained by converting the jaw joint angle into that arm's opening range.
-5. **Remaining steps**: Removing still segments, dataset timestamps, relative actions, outlier removal, jaw action, and state are the same as for demonstrations.
+5. **Remaining steps**: Removing still segments, dataset timestamps, relative actions, cutting at outliers, jaw action, and state are the same as for demonstrations.
 
 A rollout recording is skipped in these cases.
 
@@ -125,6 +125,14 @@ The safety gate that writes commands to the servos smooths and writes commands 6
 - **Independent of demonstration position**: A change measured in the tool frame has the same value for the same motion, wherever on the desk the object was and wherever the demonstrator stood. The table marker frame cancels out in step 8.
 - **Robot coordinates unknown**: At demonstration time the robot is not there, so Hermit's absolute position cannot be measured relative to the robot, and the robot coordinates fixed with the table marker are approximate. Relative actions keep the error of this approximation out of training.
 - **Result from UMI**: The UMI paper reports that absolute actions drop much more than relative actions on the same data.
+
+### Chunk representation
+
+The dataset stores one step of relative action per frame, but the chunk the policy learns is the trajectory those steps compose. Entry `k` of a chunk is the tool pose `k+1` steps on, seen from the tool pose at the chunk's start time `t`, that is `T_t⁻¹ T_{t+k+1}` (3 position values and the first two rotation columns, 6), and the jaw is that step's opening as it is. The first entry equals the first step. UMI sets its actions the same way.
+
+Learned as single steps, every entry of a chunk is one step in size. In demonstrations at the default 50 fps a step has a median of 0.6 to 0.8 mm and more than half are under 1 mm, about the size of the tracking noise left after smoothing (around 0.4 mm). In the composed trajectory the entry 2 seconds on has a median of 35 mm, so it stands out far more clearly over the same noise. Normalization scales signal and noise by the same factor, so the ratio stays.
+
+`pinkrab-train` does this conversion during training. For each sample it composes the steps of the target chunk, and it recomputes the action's normalization statistics over every chunk entry of the dataset. The dataset therefore keeps its steps, and training with another chunk length needs no new conversion. A checkpoint trained with `pinkrab-train` is saved with `pinkrab_action.json`, and a checkpoint without this mark is not run.
 
 ## Datasets that mix demonstrations and corrections
 

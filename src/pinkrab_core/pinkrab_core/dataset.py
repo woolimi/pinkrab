@@ -11,7 +11,9 @@ simulation's one - and every feature of a hand carries its name:
 
     action            per hand: dp (3, tool frame) + the step's rotation as
                       its first two columns (6, continuous) + the jaw's next
-                      opening (1) - `left_dx` ... `right_gripper`
+                      opening (1) - `left_dx` ... `right_gripper`. A policy
+                      is taught a chunk of them as the relative trajectory
+                      they compose (pinkrab_core.chunks)
     observation.state per hand, by name: the opening; with two hands, then
                       where the right hand's tool is in the left's
                       (`relative_pose`), UMI's inter-gripper
@@ -33,6 +35,7 @@ from pathlib import Path
 
 import numpy as np
 
+from .chunks import as_matrix, as_nine
 from .config import ARMS, SETTINGS
 
 
@@ -119,23 +122,12 @@ def state_vector(names: list[str], apertures: dict[str, float],
 
 def delta_of(T_from: np.ndarray, T_to: np.ndarray) -> np.ndarray:
     """The step between two tool poses (4x4), in the first one's frame: nine numbers."""
-    R = T_from[:3, :3]
-    dp = R.T @ (T_to[:3, 3] - T_from[:3, 3])
-    dR = R.T @ T_to[:3, :3]
-    return np.concatenate([dp, dR[:, 0], dR[:, 1]])
+    return as_nine(np.linalg.inv(T_from) @ T_to)
 
 
 def delta_to_matrix(action) -> np.ndarray:
     """An action's step - dp (3) and two rotation columns (6) - as a 4x4."""
-    a = np.asarray(action, dtype=float)
-    c1 = a[3:6] / max(np.linalg.norm(a[3:6]), 1e-9)
-    c2 = a[6:9] - np.dot(c1, a[6:9]) * c1
-    c2 = c2 / max(np.linalg.norm(c2), 1e-9)
-    c3 = np.cross(c1, c2)
-    T = np.eye(4)
-    T[:3, :3] = np.column_stack([c1, c2, c3])
-    T[:3, 3] = a[:3]
-    return T
+    return as_matrix(np.asarray(action)[:9])
 
 
 # The dataset keeps a window of each gripper camera's sensor - camera.yaml's

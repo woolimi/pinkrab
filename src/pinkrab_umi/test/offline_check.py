@@ -841,12 +841,15 @@ def check_recorded_poses() -> None:
     fast = SETTINGS.filter_max_rot_speed_dps
     spin = np.eye(4)
     spin[:3, :3] = Rotation.from_euler("z", fast / 30 * 1.5, degrees=True).as_matrix()
-    _, despiked = convert.deltas(np.array([np.eye(4), spin]), np.zeros(2), 30)
+    glitch = convert.glitches({"left": np.array([np.eye(4), spin])}, 30)
     ok_turn = np.eye(4)
     ok_turn[:3, :3] = Rotation.from_euler("z", fast / 30 * 0.5, degrees=True).as_matrix()
-    _, kept = convert.deltas(np.array([np.eye(4), ok_turn]), np.zeros(2), 30)
+    kept = convert.glitches({"left": np.array([np.eye(4), ok_turn])}, 30)
     check("a turn the stream filter allows is a hand's and one past it a glitch",
-          despiked == 1 and kept == 0, f"filter allows {fast:.0f} deg/s")
+          glitch.tolist() == [True] and kept.tolist() == [False], f"filter allows {fast:.0f} deg/s")
+    check("a glitch ends one piece of a segment and starts the next",
+          convert.pieces(np.array([False, False, True, False])) == [(0, 3), (3, 5)]
+          and convert.pieces(np.array([False, False])) == [(0, 3)])
 
     times = np.arange(30) * dt
     tools = [np.eye(4) for _ in range(30)]

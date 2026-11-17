@@ -12,11 +12,19 @@ it would have sent, unrounded, one JSON object per line, to
     {"kind": "end", ...}          once, last: done or failed, and why
 
 The studio's training page reads that file - from this machine, or over ssh
-from a cloud box - and draws it. Nothing else changes: the arguments are
-lerobot-train's own, passed through.
+from a cloud box - and draws it. The arguments are lerobot-train's own,
+passed through.
 
-Standard library only until `main()` imports lerobot, so this one file can be
-copied to a machine that has lerobot and nothing of this project:
+One thing it changes: what the policy is taught to answer. A Pinkrab dataset
+keeps a step a frame, and each chunk the policy learns is given to it as the
+relative trajectory those steps compose (pinkrab_core.chunks) - each
+statistic the action is normalised by taken over such chunks - and every
+checkpoint saved is marked so (chunks.MARK_FILE): a rollout refuses one
+without the mark, a policy that answers steps.
+
+Standard library only until `main()` imports lerobot, so this file and
+chunks.py can be copied to a machine that has lerobot and nothing of this
+project:
 
     pinkrab-train --policy.type=act --dataset.repo_id=... --output_dir=...
     python run_log.py --policy.type=act ...          # the same, as a copied file
@@ -99,6 +107,8 @@ class RunLog:
 
     def log_policy(self, checkpoint_dir) -> None:
         path = Path(checkpoint_dir)
+        chunks = _chunks()
+        (path / "pretrained_model" / chunks.MARK_FILE).write_text(json.dumps(chunks.MARK))
         step = int(path.name) if path.name.isdigit() else None
         self._write({"kind": "checkpoint", "step": step, "path": str(path.resolve())})
 
@@ -115,6 +125,67 @@ def _interrupt(signum, _frame):
     raise KeyboardInterrupt(signal.Signals(signum).name)
 
 
+def _chunks():
+    """pinkrab_core.chunks: the installed one here, the copy sent beside
+    this file on a training machine."""
+    try:
+        from pinkrab_core import chunks
+    except ImportError:
+        import chunks
+    return chunks
+
+
+class Relative:
+    """A LeRobotDataset whose items carry their action chunk as the relative
+    trajectory its steps compose. Its action statistics become those of such
+    chunks of `chunk` entries over its own episodes - or `like`'s, another
+    Relative's, so held-out episodes are scored in the training set's units.
+    Everything else is the dataset's."""
+
+    def __init__(self, dataset, chunk: int, like: Relative | None = None) -> None:
+        import numpy as np
+
+        self.dataset = dataset
+        stats = dataset.meta.stats
+        if like is not None:
+            stats["action"] = like.dataset.meta.stats["action"]
+            return
+        table = dataset.hf_dataset.data
+        steps = np.asarray(table.column("action").to_pylist(), dtype=float)
+        episodes = np.asarray(table.column("episode_index").to_numpy())
+        stats["action"] = _chunks().relative_stats(steps, episodes, chunk, stats["action"])
+
+    def __getattr__(self, name):
+        if name == "dataset":    # unpickled in a worker, before __init__'s fields
+            raise AttributeError(name)
+        return getattr(self.dataset, name)
+
+    def __len__(self) -> int:
+        return len(self.dataset)
+
+    def __getitem__(self, index):
+        import torch
+
+        item = self.dataset[index]
+        pad = item.get("action_is_pad")
+        relative = _chunks().relative_chunk(item["action"].numpy(), None if pad is None else pad.numpy())
+        item["action"] = torch.as_tensor(relative, dtype=item["action"].dtype)
+        return item
+
+
+def _teach_relative(trainer) -> None:
+    """lerobot-train's datasets made Relative, at the chunk its policy has."""
+    make = trainer.make_train_eval_datasets
+
+    def made(cfg):
+        dataset, eval_dataset = make(cfg)
+        chunk = int(cfg.policy.chunk_size)
+        train = Relative(dataset, chunk)
+        return train, None if eval_dataset is None else Relative(eval_dataset, chunk, like=train)
+
+    trainer.make_train_eval_datasets = made
+
+
 def main() -> None:
     import lerobot.scripts.lerobot_train as trainer
 
@@ -125,6 +196,7 @@ def main() -> None:
     # lerobot-train makes its wandb logger only when asked for one with a
     # project name; this is asked for, and made in its place.
     trainer.WandBLogger = RunLog
+    _teach_relative(trainer)
     args = [a for a in sys.argv[1:] if not a.startswith(("--wandb.enable", "--wandb.project"))]
     sys.argv = [sys.argv[0], *args, "--wandb.enable=true", "--wandb.project=pinkrab"]
     try:
