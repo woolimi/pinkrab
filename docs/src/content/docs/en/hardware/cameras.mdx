@@ -35,7 +35,7 @@ gripper:
   region: [160, 0, 1600, 1200]
   fps: 30
   fourcc: MJPG
-  latency_s: 0.012
+  latency_s: 0.084
   crop: [0.8125, 0.95]
 
 top:
@@ -44,7 +44,7 @@ top:
   resolution: [1920, 1200]
   fps: 60
   fourcc: MJPG
-  latency_s: 0.012
+  latency_s: 0.046
   exposure_unit_us: 16.667
   hfov_deg: 120.0
 ```
@@ -58,12 +58,20 @@ top:
 | `region` | Gripper camera only. Which part of the sensor (x, y, width, height) the `resolution` mode covers. The AR0234's 1280×960 mode is the central 1600×1200 of the sensor scaled by 0.8, so it covers the lens-side region the dataset uses as is, and the video is a little over half the size of the full sensor. If absent, the whole sensor |
 | `fps` | Frame rate to open at. Requesting 30 on the top camera delivers only about 21 fps, so 60 is requested (about 50 actual) |
 | `fourcc` | Video format. Use `MJPG` when receiving several cameras on the same USB bus |
-| `latency_s` | Time from exposure until the frame arrives at the computer. Used to align timing between cameras and with the jaw |
+| `latency_s` | Time from exposure until the frame arrives at the computer. Convert aligns the video with the poses and the jaw by it, and execution counts how old the picture the policy saw is |
 | `crop` | Gripper camera only. The region the dataset keeps, written as the ratio of the sensor width and height, centered on each camera's lens axis. It trims the black corners of a fisheye lens; for a lens whose image fills the frame, use `[1.0, 1.0]` |
 | `exposure_unit_us` | Top camera only. The length (µs) of exposure control value 1. The UVC standard is 100, but it differs by module |
 | `hfov_deg` | Top camera only. The horizontal field of view stated by the manufacturer. Used only as the starting value of lens measurement |
 
 After plugging in the camera, check the USB id with `system_profiler SPUSBDataType` on macOS or `lsusb` on Linux.
+
+`latency_s` is measured from recorded demonstrations and execution recordings.
+
+```bash
+pinkrab-umi latency
+```
+
+The gripper camera is fixed to the tool, so the camera's turning speed read from the video is the tool's turning speed. The same turning is also read from a side that does not wait for the camera (the top camera's marker poses for demonstrations, forward kinematics of the joint readings for execution recordings), and the two turning speeds are slid against each other in time to find the offset where they match best. It prints that offset for each hand, and the median of them all is what to add to the current `latency_s`. A value near 0 means it is right. The current values were measured this way: the gripper camera's video arrives 67 ms later than the joint readings and 38 ms later than the top camera's poses.
 
 You can find `exposure_unit_us` by raising the exposure value and watching the image brightness. Once the exposure fills the frame period, brightness no longer increases, so the frame period divided by the exposure value at that point is one unit. The AR0234 stops brightening at about 1000 at 60 fps, so 16.7 ms ÷ 1000 = 16.7 µs.
 

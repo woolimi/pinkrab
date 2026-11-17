@@ -426,6 +426,11 @@ class EpisodeWriter:
             fit = lens_fit(lens) if name.startswith("gripper_") else None
             if fit is not None:
                 entry["lens"] = {"camera": lens, **fit}
+        # The latency the top camera's frames were stamped with (sensor_ts,
+        # and the poses' `stamp`): convert reads the exposures off it by the
+        # latency known when it runs.
+        if "head" in self.meta["streams"]:
+            self.meta["streams"]["head"]["latency_s"] = SETTINGS.top_camera_latency_s
         (self.root / "meta.json").write_text(json.dumps(self.meta, indent=2))
         return self.status()
 

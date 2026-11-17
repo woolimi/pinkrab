@@ -396,12 +396,12 @@ def _rollout(root: Path, meta: dict) -> dict:
     }
 
 
-def _exposed(poses: list[dict]) -> np.ndarray:
+def _exposed(poses: list[dict], meta: dict) -> np.ndarray:
     """When each head frame was exposed, on this host's clock - as convert
     reads them - or when it was solved, for a take whose stamps are not on
     this host's clock."""
     try:
-        return exposures(poses)
+        return exposures(poses, meta)
     except ConvertError:
         return np.array([p["host_ts"] for p in poses], dtype=float)
 
@@ -426,7 +426,7 @@ def solve(root: Path) -> dict:
     # splined through the head frames as convert splines it, whatever rate
     # the top camera kept, and each video's last frame by then shown.
     fps = float(CORE.dataset_fps)
-    times = _exposed(poses)
+    times = _exposed(poses, meta)
     rate = rate_of(times) if len(times) > 1 else UMI.fps
     at = grid(float(times[0]), float(times[-1]), int(fps))
     head = np.clip(latest(times, at), 0, max(0, sum(1 for f in frames if f["stream"] == "head") - 1))

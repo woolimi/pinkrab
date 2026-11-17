@@ -104,7 +104,7 @@ def write_take(root: Path, tools: dict[str, list[np.ndarray]], moving: bool = Fa
         writer.release()
     desk = {"solid": UMI.desk_solid, "placement": "chest", "yaw_deg": -90.0, "origin_above_table_mm": 15.0,
             "face_mm": UMI.for_solid(UMI.desk_solid).face_size_mm}
-    streams = {"head": {"fps": FPS}}
+    streams = {"head": {"fps": FPS, "latency_s": UMI.top_camera_latency_s}}
     streams.update({f"gripper_{hand}": {"fps": FPS, "size": list(VIDEO), "centre": [0.5, 0.5]} for hand in tools})
     meta = {"name": root.name, "kind": "demo", "desk": desk, "streams": streams, "seconds": FRAMES / FPS,
             "hands": {f"handheld_{h}": UMI.for_solid(f"handheld_{h}").face_size_mm for h in tools},

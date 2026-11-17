@@ -63,7 +63,7 @@ In this way the KL term holds `q(z | a, s)` close to `N(0, I)` and makes room fo
 
 ## One execution step
 
-Execution has no target chunk, so the CVAE encoder is not used and `z = 0` is fed in. One forward pass with the two images and the state gives a 100-step chunk, whose first 5 entries are turned into steps from the entry before, put in a queue and taken out one by one at the dataset fps. When the queue is empty, inference is run again with the video and state at that time, so it **looks anew every 0.1 second** and discards the other 95 steps.
+Execution has no target chunk, so the CVAE encoder is not used and `z = 0` is fed in. One forward pass with the two images and the state gives a 100-step chunk, whose next 5 entries are turned into steps from the entry before, put in a queue and taken out one by one at the dataset fps. A chunk belongs to the moment its pictures were exposed, so the leading entries for the time that has passed until the answer (the 84 ms camera latency and the inference time) are taken as motion the arm was already making and are skipped, usually 4 to 5 entries at 50 fps. This is the same as UMI dropping the actions its latency has overtaken. When the queue is empty, inference is run again with the video and state at that time, so it **looks anew every 0.1 second** and discards the remaining entries.
 
 The actions of the chunk are values normalized with dataset statistics, so before execution they are returned to the original units with the mean and standard deviation. The video is normalized with ImageNet's mean and standard deviation.
 

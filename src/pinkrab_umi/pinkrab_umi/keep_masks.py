@@ -232,7 +232,7 @@ class Scene:
 
     def _read_hands(self, root: Path, meta: dict) -> None:
         poses = _lines(root / "poses.jsonl")
-        self.times = exposures(poses)
+        self.times = exposures(poses, meta)
         world_T_cams = cameras_on_desk(poses, ARMS)
         for side in ARMS:
             solid_T_tcp = np.array(SETTINGS.recorded_solid_T_tcp(f"handheld_{side}", meta), dtype=float)

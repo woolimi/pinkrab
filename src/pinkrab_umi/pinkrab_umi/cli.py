@@ -116,6 +116,10 @@ def build_parser() -> argparse.ArgumentParser:
                            help="paint everything but each take's keep labels over with a pattern of the take's own "
                                 "(default: the pictures as recorded)")
 
+    p_latency = sub.add_parser("latency", help="how much later each gripper camera's pictures arrive than "
+                                               "camera.yaml's latency_s says, off its takes")
+    p_latency.add_argument("episodes", nargs="*", help="episode names under the workspace's episodes/ (default: all)")
+
     p_bench = sub.add_parser("bench", help="closure error and coverage for a session")
     p_bench.add_argument("session", help="session name, or a path to one")
     p_bench.add_argument("--solid", default=SETTINGS.solid,
@@ -262,6 +266,11 @@ def main(argv: list[str] | None = None) -> int:
             return 1
         print(f"\n  dataset: {report['dataset']}  ({report['seconds']} s)")
         return 0
+
+    if args.command == "latency":
+        from . import latency  # noqa: PLC0415
+
+        return latency.main(args.episodes or None)
 
     if args.command == "bench":
         _choose_solid(args.solid)

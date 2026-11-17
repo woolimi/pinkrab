@@ -362,9 +362,18 @@ def cameras_on_desk(poses: list[dict], hands) -> list[np.ndarray | None]:
     return out
 
 
-def exposures(poses: list[dict]) -> np.ndarray:
-    """When each head frame was exposed, on this host's clock."""
-    stamps = np.array([p["stamp"] for p in poses], dtype=float)
+# The top camera's latency every take was stamped with until meta.json said
+# which (streams.head.latency_s).
+STAMPED_WITH_S = 0.012
+
+
+def exposures(poses: list[dict], meta: dict) -> np.ndarray:
+    """When each head frame was exposed, on this host's clock: its stamp, made
+    by the latency the take was recorded with, moved to the latency known now
+    (top_camera_latency_s)."""
+    head = (meta.get("streams") or {}).get("head") or {}
+    recorded = float(head.get("latency_s", STAMPED_WITH_S))
+    stamps = np.array([p["stamp"] for p in poses], dtype=float) + recorded - SETTINGS.top_camera_latency_s
     lag = float(np.median(np.array([p["host_ts"] for p in poses]) - stamps))
     if not 0.0 <= lag < 1.0:
         raise ConvertError(f"the top camera's stamps are not on this host's clock ({lag:+.2f} s)")
@@ -772,7 +781,7 @@ def _episode(dataset, src: Path, task: str, hands: tuple[str, ...], fps: int, mi
         if background is not None:
             labels = keep_labels(src, hands)
         world_T_cams = cameras_on_desk(poses, hands)
-        exposed = exposures(poses)
+        exposed = exposures(poses, meta)
         solid_T_tcp, opening, grip_t, centre = {}, {}, {}, {}
         for hand in hands:
             key = f"handheld_{hand}"

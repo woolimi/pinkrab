@@ -85,7 +85,7 @@ def write_take(root: Path, tools: dict[str, list[np.ndarray]], placement: str | 
         desk_meta["face_mm"] = desk_face
     if placement:
         desk_meta["placement"] = placement
-    meta = {"name": root.name, "kind": "demo", "desk": desk_meta, "streams": {"head": {"fps": FPS}}}
+    meta = {"name": root.name, "kind": "demo", "desk": desk_meta, "streams": {"head": {"fps": FPS, "latency_s": UMI.top_camera_latency_s}}}
     if sizes:
         meta["hands"] = {f"handheld_{h}": UMI.for_solid(f"handheld_{h}").face_size_mm for h in ("left", "right")}
         meta["solid_T_tcp"] = {f"handheld_{h}": UMI.for_solid(f"handheld_{h}").solid_T_tcp.tolist() for h in ("left", "right")}

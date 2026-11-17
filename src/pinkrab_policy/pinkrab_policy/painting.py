@@ -149,14 +149,15 @@ class Painting:
         with self._lock:
             self._joints = dict(joints)
 
-    def view(self, hand: str) -> np.ndarray:
-        """`hand`'s newest painted picture, BGR at its lens's size, or
+    def view(self, hand: str) -> tuple[np.ndarray, float]:
+        """`hand`'s newest painted picture, BGR at its lens's size, and when
+        the picture it was painted from arrived (time.monotonic()) - or
         RuntimeError: none fresh now, and why."""
         with self._lock:
             newest, trouble = self._newest.get(hand), self._trouble
         if newest is None or time.monotonic() - newest[1] > UMI.camera_share_stale_s:
             raise RuntimeError(trouble or f"no painted picture of the {hand} arm camera yet")
-        return newest[0]
+        return newest
 
     def close(self) -> None:
         self._stop.set()

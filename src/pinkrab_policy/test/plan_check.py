@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import sys
+import time
 
 import numpy as np
 from scipy.spatial.transform import Rotation
@@ -31,6 +32,7 @@ class Brain:
     """Two hands, each chunk the relative trajectory of the steps from `at` on."""
 
     hands = ("left", "right")
+    fps = 50
 
     def __init__(self, settings: dict) -> None:
         self.settings = settings
@@ -53,6 +55,12 @@ def main() -> int:
     check("its entries come back as the steps that composed them", worst < 1e-5 and brain.asked == 1, f"{worst:.2e}")
     plan.next({}, np.zeros(11), tools)
     check("a fresh chunk is asked once the first n_action_steps are spent", brain.asked == 2)
+
+    print("\nthe pictures' latency")
+    plan = Plan(brain)
+    # Pictures exposed 60 ms ago, at 50 fps: three entries are behind.
+    got = plan.next({}, np.zeros(11), tools, exposed=time.monotonic() - 0.06)
+    check("the entries the latency has overtaken are let go", np.abs(got[:10] - step(3)).max() < 1e-5)
 
     print("\nblended")
     brain = Brain({"n_action_steps": 1, "temporal_ensemble_coeff": 0.01})

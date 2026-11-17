@@ -53,7 +53,8 @@ def rollout(root: Path, redone: bool = False) -> None:
         "streams": {f"gripper_{side}": stream for side in ARMS}}))
     t0 = 1000.0
     (root / "frames.jsonl").write_text("".join(
-        json.dumps({"stream": f"gripper_{side}", "index": k, "host_ts": t0 + k / 30}) + "\n"
+        json.dumps({"stream": f"gripper_{side}", "index": k, "host_ts": t0 + k / 30 + SETTINGS.gripper_camera_latency_s})
+        + "\n"
         for k in range(60) for side in ARMS))
     names = [n for side in ARMS for n in ArmKinematics(side).joint_names]
     lines = []
@@ -61,7 +62,7 @@ def rollout(root: Path, redone: bool = False) -> None:
         t = i / 60
         human = 0.8 <= t <= 1.2
         joints = {n: 0.0 for n in names} | {"left_gripper": 0.0, "right_gripper": -1.2 if t >= 1.0 else 0.0}
-        lines.append(json.dumps({"host_ts": t0 + t, "joints": joints, "controller": "human" if human else "policy",
+        lines.append(json.dumps({"host_ts": t0 + t + SETTINGS.robot_state_latency_s, "joints": joints, "controller": "human" if human else "policy",
                                  **({"correction": 1} if human else {})}) + "\n")
     (root / "robot.jsonl").write_text("".join(lines))
     (root / "events.jsonl").write_text(json.dumps({"event": "redo", "correction": 1}) + "\n" if redone else "")

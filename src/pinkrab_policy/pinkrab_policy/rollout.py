@@ -191,6 +191,9 @@ class Observer:
         self.frames = {hand: FrameReader(f"follower_{hand}") for hand in self.hands}
         record = masker_for(checkpoint)
         self.painting = None if record is None else Painting(record, self.centres)
+        # When the oldest of the pictures last observed was exposed
+        # (time.monotonic()): its arrival less the camera's latency.
+        self.exposed: float | None = None
 
     @property
     def masker(self) -> str | None:
@@ -204,16 +207,19 @@ class Observer:
         import cv2
         if self.painting is not None:
             self.painting.set_joints(joints)
-        out = {}
+        out, arrived = {}, []
         for hand in self.hands:
             key = image_key(hand)
             if self.painting is not None:
-                picture = self.painting.view(hand)
+                picture, stamp = self.painting.view(hand)
                 if picture.shape[:2] != self.sizes[key]:
                     picture = cv2.resize(picture, self.sizes[key][::-1], interpolation=cv2.INTER_AREA)
             else:
-                picture = gripper_view(self.frames[hand].read(), self.sizes[key], self.centres[hand])
+                frame, _, stamp = self.frames[hand].newest()
+                picture = gripper_view(frame, self.sizes[key], self.centres[hand])
+            arrived.append(stamp)
             out[key] = cv2.cvtColor(picture, cv2.COLOR_BGR2RGB)
+        self.exposed = min(arrived) - UMI.gripper_camera_latency_s
         return out
 
     def close(self) -> None:
@@ -361,10 +367,14 @@ class Plan:
     """The policy's chunks, a step at a time: ten numbers a hand each tick -
     the step from where its tool was last put, and its jaw's opening.
 
-    One chunk at a time, unless the rig's inference.yaml blends them: the
-    first `n_action_steps` entries of a chunk, each the step from the entry
-    before (chunks.steps_of), and then a fresh chunk from what the cameras
-    see then. Blended (`temporal_ensemble_coeff`, ACT's temporal ensembling),
+    A chunk is of the moment its pictures were exposed, and by the time it
+    is answered that moment has passed: its entries for the steps since are
+    the motion the arm has already been making, so they are let go, as UMI
+    lets go the actions its latency has overtaken. One chunk at a time,
+    unless the rig's inference.yaml blends them: the next `n_action_steps`
+    entries of a chunk, each the step from the entry before
+    (chunks.steps_of), and then a fresh chunk from what the cameras see
+    then. Blended (`temporal_ensemble_coeff`, ACT's temporal ensembling),
     a chunk is asked for every tick, each entry is put where it says - on
     where its tool stood when that chunk was asked - and the entries every
     chunk so far has for this tick are averaged, the oldest weighted
@@ -382,27 +392,49 @@ class Plan:
         self.queue: list[np.ndarray] = []
         self.plans: list[tuple[int, list[dict]]] = []
         self.last: dict[str, np.ndarray] | None = None
+        # Where each tool was put, a tick at a time, newest last.
+        self.history: list[dict[str, np.ndarray]] = []
         self.tick = 0
 
-    def _asked(self, images, state) -> np.ndarray:
+    def _then(self, hand: str, behind: int, now: np.ndarray) -> np.ndarray:
+        """Where `hand`'s tool was put `behind` ticks ago - `now` for none, or
+        for a run younger than that."""
+        return self.history[-behind][hand] if 0 < behind <= len(self.history) else now
+
+    def _asked(self, images, state, exposed: float | None) -> tuple[np.ndarray, int]:
+        """A chunk, and how many of its entries are behind: the steps between
+        when its pictures were exposed (`exposed`, time.monotonic()) and now."""
         chunk = self.brain.chunk(images, state)
         if chunk.ndim != 2 or chunk.shape[1] != chunks.PER_HAND * len(self.brain.hands):
             raise ValueError(f"the policy answered a chunk of {chunk.shape} for {len(self.brain.hands)} hand(s)")
-        return chunk
+        behind = 0 if exposed is None else round(max(0.0, time.monotonic() - exposed) * self.brain.fps)
+        return chunk, min(behind, len(chunk) - self.steps)
 
-    def next(self, images: dict[str, np.ndarray], state: np.ndarray, tools: dict[str, np.ndarray]) -> np.ndarray:
+    def next(self, images: dict[str, np.ndarray], state: np.ndarray, tools: dict[str, np.ndarray],
+             exposed: float | None = None) -> np.ndarray:
         """This tick's answer. `tools` is where each hand's tool was last put,
-        in the handheld's convention."""
+        in the handheld's convention; `exposed` when the pictures were
+        exposed (time.monotonic()) - None for pictures of this very moment,
+        a simulation's."""
         self.tick += 1
         if self.coeff is None:
             if not self.queue:
-                self.queue = list(chunks.steps_of(self._asked(images, state)[:self.steps]))
+                chunk, behind = self._asked(images, state, exposed)
+                self.queue = list(chunks.steps_of(chunk)[behind:behind + self.steps])
             return self.queue.pop(0)
         hands = self.brain.hands
-        chunk = self._asked(images, state)
+        chunk, behind = self._asked(images, state, exposed)
+        # Entry `behind` is this tick's; the ones before it were the arm's
+        # motion while the pictures came and the policy answered. Placed on
+        # the tool's pose of the moment the pictures were exposed - the one
+        # the entries are measured from - which is where it was put `behind`
+        # steps of the last plan ago; with none, where it is.
+        base = {hand: self._then(hand, behind, tools[hand]) for hand in hands}
         self.plans.append((self.tick, [
-            {hand: (tools[hand] @ chunks.as_matrix(row[10 * i:10 * i + 9]), float(row[10 * i + 9]))
-             for i, hand in enumerate(hands)} for row in chunk]))
+            {hand: (base[hand] @ chunks.as_matrix(row[10 * i:10 * i + 9]), float(row[10 * i + 9]))
+             for i, hand in enumerate(hands)} for row in chunk[behind:]]))
+        self.history.append({hand: tools[hand] for hand in hands})
+        self.history = self.history[-len(chunk):]
         self.plans = [(start, plan) for start, plan in self.plans if self.tick - start < len(plan)]
         here = [plan[self.tick - start] for start, plan in self.plans]
         weights = np.exp(-float(self.coeff) * np.arange(len(here)))
@@ -575,10 +607,14 @@ class Driver:
                     if len(self.hands) == 2 else None)
         return state_vector(self.brain.state_names, apertures, relative), apertures
 
-    def step(self, images: dict[str, np.ndarray], grippers_rad: dict[str, float]) -> tuple[dict[str, float], dict]:
+    def step(self, images: dict[str, np.ndarray], grippers_rad: dict[str, float],
+             exposed: float | None = None) -> tuple[dict[str, float], dict]:
+        """One tick: the pictures (exposed at `exposed`, time.monotonic() -
+        None for a simulation's, of this very moment) and the jaws' readings
+        in, each arm's joints out."""
         state, apertures = self.state(grippers_rad)
         try:
-            action = self.plan.next(images, state, {hand: arm.tool() for hand, arm in self.arms.items()})
+            action = self.plan.next(images, state, {hand: arm.tool() for hand, arm in self.arms.items()}, exposed)
         except ValueError as exc:
             raise DriveStopped(str(exc)) from exc
         # An answer that is not a number ends the run: NaN passes every limit
@@ -632,7 +668,8 @@ def _dry_steps(args, driver: Driver, observer: Observer, joints: dict[str, float
             time.sleep(1.0)
             continue
         try:
-            wanted, info = driver.step(images, {hand: arm.band[0] for hand, arm in driver.arms.items()})
+            wanted, info = driver.step(images, {hand: arm.band[0] for hand, arm in driver.arms.items()},
+                                       observer.exposed)
         except DriveStopped as exc:
             print(f"  stopped: {exc}")
             return 1
@@ -796,7 +833,7 @@ def node_main() -> None:
                 return
             grippers = {hand: self.at.get(f"{hand}_gripper", arm.band[0]) for hand, arm in self.driver.arms.items()}
             try:
-                wanted, info = self.driver.step(images, grippers)
+                wanted, info = self.driver.step(images, grippers, self.observer.exposed)
             except DriveStopped as exc:
                 self._halt(exc)
                 return

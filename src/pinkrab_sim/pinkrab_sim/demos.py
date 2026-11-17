@@ -699,7 +699,7 @@ def record(world: World, plans: dict[str, Plan], trajectories: dict[str, Traject
         "gripper_cameras": {},
         "streams": {
             "head": {"file": "head.mp4", "fps": fps, "codec": "libx264", "size": sizes.get("head"),
-                     "frames": n, "dropped": 0},
+                     "frames": n, "dropped": 0, "latency_s": UMI.top_camera_latency_s},
             **{f"gripper_{h}": ({"file": f"gripper_{h}.mp4", "fps": fps, "codec": "libx264", "size": sizes.get(h),
                                  "frames": n, "dropped": 0, "centre": [lens.cx / lens.width, lens.cy / lens.height]}
                                 if h in hands else

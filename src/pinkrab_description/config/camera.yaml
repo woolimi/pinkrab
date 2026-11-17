@@ -47,10 +47,14 @@ gripper:
   region: [160, 0, 1600, 1200]
   fps: 30            # the same mode runs to 120
   fourcc: MJPG
-  # How long after exposure a frame reaches this host, for laying the
-  # handheld's streams on the top camera's exposures: the module stamps
-  # nothing of its own.
-  latency_s: 0.012
+  # How long after exposure a frame reaches this host: the module stamps
+  # nothing of its own. Measured (`pinkrab-umi latency`) as the lag between
+  # the camera's own turning, read off its pictures, and the same turning
+  # read off what does not wait on it - on the arms, the joints the driver
+  # reads (robot_state_latency_s), 67 ms behind them; on the handhelds, the
+  # top camera's poses, 38 ms behind. Convert lays the pictures on the poses
+  # by it, and a rollout counts how old the picture a chunk was asked from is.
+  latency_s: 0.084
   # The window of the frame a dataset keeps, as fractions of its width and
   # height, centred on where each unit's lens axis lands. A fisheye's image
   # circle is wider than its sensor is tall and narrower than it is wide - this
@@ -85,7 +89,10 @@ top:
   # second, at any exposure, and asked for 60 about 50 (measured 10-31).
   fps: 60
   fourcc: MJPG
-  latency_s: 0.012
+  # How long after exposure a frame reaches this host: the gripper camera's
+  # less the 38 ms its pictures trail the top camera's poses by (measured,
+  # `pinkrab-umi latency`). Each frame's exposure is stamped by it.
+  latency_s: 0.046
   # What one count of the camera's exposure control is, in microseconds. UVC
   # says 100; this module counts 1/60 ms - its brightness stops rising where
   # the exposure fills the frame, near 500 counts at 120 fps and near 1000 at

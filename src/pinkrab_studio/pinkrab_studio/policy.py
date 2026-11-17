@@ -512,7 +512,8 @@ class PolicyRun:
             hands = brain.hands
             relative = relative_pose(tools[hands[0]], tools[hands[1]]) if len(hands) == 2 else None
             try:
-                action = plan.next(images, state_vector(brain.state_names, apertures, relative), tools)
+                action = plan.next(images, state_vector(brain.state_names, apertures, relative), tools,
+                                   observer.exposed)
             except Exception as exc:                  # noqa: BLE001
                 self._trouble(f"the policy did not answer: {exc}")
                 if self._stop.wait(0.5):
