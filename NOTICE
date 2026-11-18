@@ -31,17 +31,6 @@ The arm description references these meshes but does not incorporate their
 geometry, so the description itself is unaffected.
 
 
-Meta SAM 3 - SAM License (not included)
----------------------------------------
-https://github.com/facebookresearch/sam3
-
-src/pinkrab_umi/pinkrab_umi/sam_track.py runs SAM 3 to find a task's things in
-the gripper videos. Neither SAM 3's code nor its weights are part of this
-product: they are installed separately (see the docs' install page) and are
-licensed under the SAM License, whose terms - including its acceptable use
-policy - apply to their use.
-
-
 three.js r160 - MIT
 -------------------
 https://github.com/mrdoob/three.js

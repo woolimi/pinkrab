@@ -367,10 +367,85 @@ def two_hands() -> None:
             tool = chains[hand].forward(joints[hand])
             off = float(np.linalg.norm(tool[:3, 3] - T0[:3, 3])) * 1000
             check(f"{hand}: a run starts the arm where the hand began", off < 5.0, f"{off:.1f} mm off")
+        shutil.rmtree(root)
+        robot_drawn(take, name, out)
     finally:
         for old in SETTINGS.episodes_dir.glob(f"{batch}-*"):
             shutil.rmtree(old)
         shutil.rmtree(root, ignore_errors=True)
+
+
+def robot_drawn(take, name: str, out: str) -> None:
+    """The robot drawn into a take of both hands, which shows none: convert
+    draws it into every picture, and what it draws of the arms is where the
+    simulation draws them - its own arms at the same joints, seen by the same
+    camera - and no more."""
+    import cv2
+    from pinkrab_sim.config import SETTINGS
+    from pinkrab_sim.world import BEHIND_LENS_GROUP, TWO_HANDS, World, hermit
+
+    from pinkrab_core.dataset import gripper_view
+    from pinkrab_umi import convert
+    from pinkrab_umi.gripper_scene import OTHER, OWN, Lens
+    from pinkrab_umi.robot_drawn import Look, RobotDrawn, _raster
+
+    print("the robot drawn into a take of both hands")
+    look = Look.described()
+    made = convert.convert([name], out, "put each block in its bowl", hands=TWO_HANDS,
+                           source=SETTINGS.episodes_dir, say=lambda *_: None, fps=SETTINGS.fps, robot_drawn=look)
+    entry = made["episodes"][0]
+    check("convert draws the robot into the take", "skipped" not in entry and made["robot_drawn"] is not None,
+          entry.get("skipped", ""))
+
+    meta = json.loads((take / "meta.json").read_text())
+    truth = [json.loads(line) for line in (take / "truth.jsonl").read_text().splitlines()]
+    side = TWO_HANDS[0]
+    stream = meta["streams"][f"gripper_{side}"]
+    size = Lens(stream).size
+    robot = RobotDrawn(take, look, size)
+    world = World(arms=TWO_HANDS, hermits=TWO_HANDS, scene="bowls")
+    # The arms as drawn: their grippers - the Hermits' - left out, and no
+    # shadows, which the drawing does not cast; nor the Hermits' marker
+    # solids, which no robot has and an arm is drawn over.
+    m = world.model
+    m.geom_group[[m.geom(f"{hermit(h)}_solid").id for h in TWO_HANDS]] = BEHIND_LENS_GROUP
+    m.light_castshadow[:] = 0
+    hands = {m.body(f"{arm}_gripper_link").id for arm in TWO_HANDS}
+
+    def in_hand(body: int) -> bool:
+        while body != 0:
+            if body in hands:
+                return True
+            body = int(m.body_parentid[body])
+        return False
+
+    m.geom_group[[g for g in range(m.ngeom) if m.geom_group[g] == 2 and in_hand(int(m.geom_bodyid[g]))]] = BEHIND_LENS_GROUP
+    try:
+        for k in (len(truth) // 3, 2 * len(truth) // 3):
+            layers = robot.layers(side, k, np.array(look.pink, float))
+            _, drawn = _raster(robot.optics[side], layers[-1:])
+            t = robot.scene.stamps[side][k]
+            pose = {}
+            for names, track in robot.joints.values():
+                pose.update({n: math.radians(float(np.interp(t, robot.times, track[:, j]))) for j, n in enumerate(names)})
+            world.set_joints(pose)
+            for h in TWO_HANDS:
+                world.hold_hermit(h, np.array(truth[k][f"tcp_{h}"]), float(truth[k][f"aperture_{h}"]))
+            world.forward()
+            seen = gripper_view(world.gripper_image(hermit(side)), size, tuple(stream["centre"]))
+            groups = world.model.geom_group.copy()
+            world.hide_arms()
+            bare = gripper_view(world.gripper_image(hermit(side)), size, tuple(stream["centre"]))
+            world.model.geom_group[:] = groups
+            labels = robot.scene.draw(side, k)
+            keep = cv2.dilate(((labels == OWN) | (labels == OTHER)).astype(np.uint8), np.ones((9, 9), np.uint8)) > 0
+            sim = (np.abs(seen.astype(int) - bare.astype(int)).sum(axis=2) > 30) & ~keep
+            ours = (drawn[..., 0] > 0.5) & ~keep
+            iou = (sim & ours).sum() / max((sim | ours).sum(), 1)
+            check(f"frame {k}: the arms are drawn where the simulation draws them", iou > 0.8,
+                  f"IoU {iou:.2f} over {sim.sum()} px the simulation's, {ours.sum()} ours")
+    finally:
+        world.close()
 
 
 if __name__ == "__main__":

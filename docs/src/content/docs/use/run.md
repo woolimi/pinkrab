@@ -1,6 +1,6 @@
 ---
 title: 실행
-description: 학습한 policy 를 Pinkrab 에서 실행하는 방법. 실행 전 점검, studio 의 Policy 페이지, Ask 와 Drive, 추론 설정, 배경 칠한 카메라 화면, Hermit 으로 하는 교정, 실행 기록과 결과 판정.
+description: 학습한 policy 를 Pinkrab 에서 실행하는 방법. 실행 전 점검, studio 의 Policy 페이지, Ask 와 Drive, 추론 설정, Hermit 으로 하는 교정, 실행 기록과 결과 판정.
 ---
 
 [학습](../train/)한 checkpoint 를 studio 의 Policy 페이지에서 Pinkrab 에 실행합니다. 실행 중에 policy 가 실수하면 Hermit 으로 두 팔을 넘겨받아 바로잡을 수 있고, 바로잡은 구간은 다음 학습의 데이터가 됩니다.
@@ -45,17 +45,6 @@ policy 가 숫자가 아닌 값(NaN)을 답하거나, 관절이 한계에 닿은
 Checkpoint 옆의 톱니 버튼을 누르면 설정 창이 열립니다. 위에는 어느 카메라가 어느 팔의 것인지 고르는 칸이 있고, 아래에는 고른 checkpoint 의 policy type 추론 설정이 학습 때 값과 나란히 보입니다. 다시 학습하지 않고 바꿀 수 있는 값들로, 예를 들어 chunk 에서 몇 step 을 실행한 뒤 다시 카메라를 볼지(`n_action_steps`), 한 step 에 겹치는 chunk 들을 섞을지(`temporal_ensemble_coeff`) 같은 것입니다. 모든 policy 에 공통인 값(장치, 관절 속도, 실행을 멈추는 기준)은 "every policy" 에 접혀 있습니다.
 
 **Save** 를 누르면 `~/pinkrab/inference.yaml` 에 저장되고, **다음 Ask 와 Drive 부터** 그 값으로 실행합니다.
-
-## 배경 칠한 카메라 화면
-
-Curate 에서 [무작위 배경](../curate/#배경을-바꾸는-이유)으로 변환한 dataset 으로 학습한 policy 는 그리퍼와 작업 물체만 남기고 나머지를 무늬로 칠한 사진만 보고 배웠습니다. 그래서 Ask 와 Drive 는 두 팔의 카메라 화면도 같은 방식으로 칠해서 policy 에 보여 줍니다. 그 작업의 [masker](../curate/#masker) 가 물체를 찾고, 그리퍼는 팔의 관절값으로 그 자리에 그리고, 렌즈 바깥의 검은 테두리는 그대로 둔 채 나머지를 실행마다 무늬 하나로 칠합니다. 실행하는 동안 손목 카메라 화면에도 policy 가 보는 칠한 화면이 나오고, 화면 아래 글자에 `painted` 가 붙습니다.
-
-| 항목 | 내용 |
-|---|---|
-| masker | 설정 창의 **masker** 칸에서 고릅니다. dataset 의 시연에 적은 물체를 같은 순서로 찾는 masker 들이 학습한 컴퓨터, 학습에 쓴 시연 수, mAP50 과 함께 나오고, 기본값 **newest** 는 그중 가장 최근 것입니다. 고른 값은 바로 저장되고, 같은 물체로 학습한 다른 checkpoint 에도 그대로 쓰입니다. 쓸 masker 가 없으면 Ask 와 Drive 가 시작하지 않고 이유를 보여 줍니다 |
-| 가중치 | masker 를 다른 컴퓨터에서 학습했으면 처음 실행할 때 그 가중치(약 140 MB)를 `~/pinkrab/maskers/<id>/` 로 받아 옵니다 |
-| 속도 | masker 는 이 컴퓨터의 [masker 환경](../../start/install/#masker-환경)에서 따로 돌고, M 시리즈 Mac 에서 두 카메라를 1 초에 19 번쯤 처리합니다 |
-| 끄기 | masker 칸에서 **off** 를 고르면 칠하지 않은 화면을 그대로 보여 줍니다 |
 
 ## 움직임 shaping
 

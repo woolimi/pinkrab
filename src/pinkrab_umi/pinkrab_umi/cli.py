@@ -112,9 +112,9 @@ def build_parser() -> argparse.ArgumentParser:
     p_convert.add_argument("--fps", type=int, default=None,
                            help="the dataset's frames a second, whatever the cameras' own rates - and the rate a "
                                 "policy trained on it is asked at (default: the core settings' dataset_fps)")
-    p_convert.add_argument("--randomised", action="store_true",
-                           help="paint everything but each take's keep labels over with a pattern of the take's own "
-                                "(default: the pictures as recorded)")
+    p_convert.add_argument("--robot-drawn", action="store_true",
+                           help="draw the robot - the arms from the wrist down and the pegboard - into each "
+                                "demonstration's pictures where the replay puts it under the hands")
 
     p_latency = sub.add_parser("latency", help="how much later each gripper camera's pictures arrive than "
                                                "camera.yaml's latency_s says, off its takes")
@@ -255,12 +255,13 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "convert":
         from . import convert  # noqa: PLC0415
+        from .robot_drawn import Look  # noqa: PLC0415
 
         try:
             report = convert.convert(args.episodes, args.out, args.task,
                                      source=Path(args.source).expanduser() if args.source else None,
                                      gop=args.gop, fps=args.fps,
-                                     randomised=args.randomised)
+                                     robot_drawn=Look.rig() if args.robot_drawn else None)
         except convert.ConvertError as exc:
             print(f"error: {exc}", file=sys.stderr)
             return 1

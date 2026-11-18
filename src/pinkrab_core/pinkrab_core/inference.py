@@ -41,12 +41,6 @@ from .dataset import steps_in
 
 # The file's section every kind of policy shares.
 COMMON = "common"
-# The file's section saying which masker paints the pictures of a policy
-# whose dataset painted its takes' backgrounds (pinkrab_policy.painting), by
-# the things those takes kept: a masker's id, AUTO - the newest that finds
-# them, also for things not named - or OFF, the pictures as they are.
-MASKERS = "maskers"
-AUTO, OFF = "auto", "off"
 
 
 class InferenceError(ValueError):
@@ -377,26 +371,6 @@ def save(cfg, values: dict, common_values: dict | None = None) -> None:
     if wrong:
         raise InferenceError("; ".join(wrong))
     _write(data)
-
-
-def masker_choice(things: list[str]) -> str:
-    """Which masker paints the pictures of a policy whose takes kept
-    `things`: a masker's id, AUTO or OFF (MASKERS)."""
-    return str(load().get(MASKERS, {}).get(_things_key(things), AUTO))
-
-
-def choose_masker(things: list[str], choice: str) -> None:
-    """`choice` - a masker's id, AUTO or OFF - kept as the masker for `things`."""
-    data = load()
-    maskers = {k: v for k, v in data.get(MASKERS, {}).items() if k != _things_key(things)}
-    if choice != AUTO:
-        maskers[_things_key(things)] = choice
-    data[MASKERS] = maskers
-    _write(data)
-
-
-def _things_key(things: list[str]) -> str:
-    return ", ".join(things)
 
 
 def _write(data: dict[str, dict]) -> None:

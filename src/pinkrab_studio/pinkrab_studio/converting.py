@@ -7,8 +7,10 @@ episode on the shelf that passes the shelf's tests goes in (verdict.judge):
 one that fails is left out, and says why, whether or not it was deleted
 first. One that passes goes in without the stretches its replay could not
 follow on the arms (verdict.unfollowed). The rest is decided here rather than asked: the core settings' rate,
-and backgrounds randomised once the takes have keep labels. Then the page
-watches: which episode it is on, what the last one said, and the result.
+and the robot drawn into every demonstration's pictures as a rollout's
+cameras will see it (pinkrab_umi.robot_drawn) - the pictures otherwise as
+recorded. Then the page watches: which episode it is on, what the last one
+said, and the result.
 """
 from __future__ import annotations
 
@@ -23,7 +25,7 @@ from pathlib import Path
 from pinkrab_core.config import SETTINGS as CORE
 from pinkrab_core.dataset import check_fps
 from pinkrab_umi.config import SETTINGS as UMI
-from pinkrab_umi.episode import list_episodes
+from pinkrab_umi.episode import EPISODE_NAME, list_episodes
 
 from .alerts import ALERTS
 
@@ -43,6 +45,49 @@ def _bytes(path: Path) -> int:
             except FileNotFoundError:
                 pass
     return total
+
+
+class Preview:
+    """One frame of a demonstration with the robot drawn in, as Convert will
+    keep it - the Curate page's look before converting. The robot is
+    followed through the whole take once (robot_drawn.RobotDrawn, some
+    seconds), and the last take's is kept for the next frame asked."""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._take: tuple[str, object] | None = None
+
+    def frame(self, take: str, side: str, k: int) -> dict:
+        import base64
+
+        import cv2
+
+        from pinkrab_core.config import ARMS
+        from pinkrab_core.dataset import gripper_view
+        from pinkrab_umi.convert import gripper_size
+        from pinkrab_umi.robot_drawn import Look, RobotDrawn
+
+        if not EPISODE_NAME.match(take) or side not in ARMS:
+            raise ValueError(f"no take {take!r} with a {side!r} camera")
+        root = UMI.episodes_dir / take
+        size = gripper_size([take], UMI.episodes_dir, ARMS)
+        with self._lock:
+            if self._take is None or self._take[0] != take:
+                self._take = (take, RobotDrawn(root, Look.rig(), size))
+            robot = self._take[1]
+        stream = json.loads((root / "meta.json").read_text())["streams"][f"gripper_{side}"]
+        cap = cv2.VideoCapture(str(root / f"gripper_{side}.mp4"))
+        try:
+            cap.set(cv2.CAP_PROP_POS_FRAMES, k)
+            ok, picture = cap.read()
+        finally:
+            cap.release()
+        if not ok:
+            raise ValueError(f"the {side} gripper video has no frame {k}")
+        with self._lock:
+            view = robot.draw(gripper_view(picture, size, tuple(stream["centre"])), side, k)
+        jpeg = cv2.imencode(".jpg", view, [cv2.IMWRITE_JPEG_QUALITY, 88])[1].tobytes()
+        return {"picture": "data:image/jpeg;base64," + base64.b64encode(jpeg).decode(), "size": list(size)}
 
 
 def worth_training(names: list[str], say) -> dict[str, list[tuple[float, float]]]:
@@ -119,17 +164,13 @@ class Converter:
             with self._lock:
                 self._error = "no take on the shelf passes its tests"
             return
-        # Their backgrounds randomised once any take has keep labels - a
-        # take without them is then left out - and as recorded while none has.
-        from pinkrab_umi import keep_masks
-        randomised = any(keep_masks.account(UMI.episodes_dir / name) is not None for name in kept)
+        from pinkrab_umi.robot_drawn import Look
         with self._lock:
             asked["episodes"] = list(kept)
-            asked["randomised"] = randomised
             self._left_out = len(self._lines)
         try:
             result = convert.convert(asked["episodes"], asked["out"], asked["task"], say=say,
-                                     fps=asked["fps"], randomised=asked["randomised"], unfollowed=kept)
+                                     fps=asked["fps"], unfollowed=kept, robot_drawn=Look.rig())
         except Exception as exc:  # noqa: BLE001 - the page shows the reason
             with self._lock:
                 self._error = str(exc)
@@ -180,7 +221,7 @@ class Converter:
                     mine = json.loads(ours.read_text())
                     entry["task"] = mine.get("task")
                     entry["sources"] = [e["episode"] for e in mine.get("episodes", [])]
-                    entry["randomised"] = bool(mine.get("randomised"))
+                    entry["robot_drawn"] = bool(mine.get("robot_drawn"))
             except (OSError, ValueError):
                 pass
             out.append(entry)
@@ -218,7 +259,7 @@ class Converter:
                                "from": row[f"videos/{key}/from_timestamp"], "to": row[f"videos/{key}/to_timestamp"]}
             episodes.append({"index": i, "length": row["length"], "seconds": round(row["length"] / fps, 2),
                              "source": sources[i] if i < len(sources) else None, "videos": videos})
-        return {"name": name, "fps": fps, "randomised": bool(mine.get("randomised")), "task": mine.get("task"),
+        return {"name": name, "fps": fps, "robot_drawn": bool(mine.get("robot_drawn")), "task": mine.get("task"),
                 "cameras": cameras, "episodes": episodes}
 
     @staticmethod

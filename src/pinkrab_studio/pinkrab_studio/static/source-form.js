@@ -1,6 +1,5 @@
 // The form a training source - a machine over ssh - is added with, or saved
-// again: the Train page's Sources and the Curate page's SAM 3 on. A source
-// saved here is one both pages list, the moment it is saved.
+// again, on the Train page's Sources.
 
 const FIELDS = `
   <label>name <input name="name" required placeholder="gpu-box"></label>
@@ -9,7 +8,7 @@ const FIELDS = `
   <label>or the file itself <input type="file" name="keyfile"></label>
   <p class="hint">Either way the key is copied into <code>~/pinkrab/keys</code>, readable by this user only, and used from there: the file it came from can be moved or deleted. None needed where <code>ssh</code> logs in without one.</p>
   <label>runs are under <input name="root" required value="~/pinkrab-train"></label>
-  <p class="hint">Read every 30 s: every run under it that <code>pinkrab-train</code> keeps a <code>metrics.jsonl</code> for. SAM 3 is set up there too, when the Curate page asks for it.</p>
+  <p class="hint">Read every 30 s: every run under it that <code>pinkrab-train</code> keeps a <code>metrics.jsonl</code> for.</p>
   <p class="error"></p>
   <div class="choice"><button type="submit" class="primary">Save</button></div>`;
 

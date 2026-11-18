@@ -148,9 +148,6 @@ class Feeds:
                                          "gate": node_already_up("pinkrab_safety", "gate")}),
             topic("clutch", 0.5, state.clutch.state),
             topic("convert", 0.5, state.converter.state),
-            # Takes' keep labels: the job making them, and what each take has.
-            topic("masks", 1.0, lambda: {"job": state.masker.state(), "takes": state.masker.takes(),
-                                         "machine": state.machines.state()}),
             topic("episodes", 1.0, lambda: {"episodes": list_episodes(), "dir": str(UMI.episodes_dir)}),
             # Takes whose replay is still being solved are named as pending,
             # and asking is what sets their solving going.
@@ -233,7 +230,6 @@ class Feeds:
             "episodes": len(episodes),
             "episode_seconds": round(sum(e.get("seconds") or 0 for e in episodes)),
             "datasets": len(self.datasets()),
-            "labelled": len(state.masker.takes()),
             "runs": len(runs),
             "training": [{"name": r["name"], "step": r["last_step"], "steps": r["steps"],
                           "eta_s": r["eta_s"], "source": r["source"]}

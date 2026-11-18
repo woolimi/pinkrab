@@ -134,37 +134,6 @@ sudo udevadm control --reload && sudo udevadm trigger
 </TabItem>
 </Tabs>
 
-## SAM 3 environment
-
-To randomize the background of gripper video when building a dataset, you need [SAM 3](https://github.com/facebookresearch/sam3), which finds the task objects in the video. If you do not plan to change the background, skip this step. SAM 3 uses a newer torch than LeRobot allows, so it is installed separately from the Pinkrab environment, in `~/pinkrab/sam3-env`. The SAM 3 installed is [sam3-silicon-mac](https://github.com/woolimi/sam3-silicon-mac), modified to run on both macOS (MPS) and CUDA.
-
-```bash
-uv venv --python 3.12 ~/pinkrab/sam3-env
-uv pip install --python ~/pinkrab/sam3-env/bin/python "torch>=2.15" torchvision \
-  "sam3[video] @ git+https://github.com/woolimi/sam3-silicon-mac.git"
-```
-
-The SAM 3 weights can only be downloaded after approval on Hugging Face. Request access at [facebook/sam3](https://huggingface.co/facebook/sam3), and once approved, log in once. The weights are downloaded the first time they are used.
-
-```bash
-~/pinkrab/sam3-env/bin/hf auth login
-```
-
-If you plan to run SAM 3 on another computer with a GPU, you do not need to install it on this one. Studio creates the same environment on that computer ([the computer to run SAM 3 and the masker on](../../use/curate/#computer-to-run-sam-3-and-the-masker-on)).
-
-SAM 3 and its weights are covered by Meta's [SAM License](https://github.com/facebookresearch/sam3/blob/main/LICENSE). The Pinkrab repository contains neither SAM 3's code nor its weights.
-
-## Masker environment
-
-When there are many demonstrations, Curate's Make labels tracks only some with SAM 3 and makes the rest with a [masker](../../use/curate/#masker) taught from them. The masker is an [RF-DETR](https://github.com/roboflow/rf-detr) segmentation model, and like SAM 3 it is installed apart from the Pinkrab environment, in `~/pinkrab/masker-env`. Without this environment, Make labels tracks every demonstration with SAM 3. The Policy page also runs the masker in this environment to show a policy trained on random backgrounds [painted camera views](../../use/run/#painted-camera-views).
-
-```bash
-uv venv --python 3.12 ~/pinkrab/masker-env
-uv pip install --python ~/pinkrab/masker-env/bin/python "rfdetr[train]>=1.11"
-```
-
-When Make labels runs on another computer with a GPU, studio creates the same environment on that computer, but the Policy page's painted views use the environment on this computer, the one that runs the robot. RF-DETR's code and weights are under the Apache License 2.0.
-
 ## Verifying the installation
 
 ```bash

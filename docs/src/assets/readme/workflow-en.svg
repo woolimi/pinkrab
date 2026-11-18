@@ -20,8 +20,8 @@
 <circle cx="299.3" cy="60" r="12" fill="#c94f8c"/>
 <text x="299.3" y="64.5" font-size="13" font-weight="700" fill="#ffffff" text-anchor="middle">2</text>
 <text x="321.3" y="66.0" font-size="18" font-weight="700" fill="#23252e" text-anchor="start">Curate</text>
-<text x="287.3" y="100.0" font-size="13.5" font-weight="400" fill="#5c5f6b" text-anchor="start">verdicts, SAM 3</text>
-<text x="287.3" y="121.0" font-size="13.5" font-weight="400" fill="#5c5f6b" text-anchor="start">random backgrounds</text>
+<text x="287.3" y="100.0" font-size="13.5" font-weight="400" fill="#5c5f6b" text-anchor="start">verdicts</text>
+<text x="287.3" y="121.0" font-size="13.5" font-weight="400" fill="#5c5f6b" text-anchor="start">robot drawn in</text>
 <rect x="506.7" y="28" width="184" height="108" rx="12" fill="#ffffff" stroke="#e6d9e0"/>
 <circle cx="536.7" cy="60" r="12" fill="#c94f8c"/>
 <text x="536.7" y="64.5" font-size="13" font-weight="700" fill="#ffffff" text-anchor="middle">3</text>

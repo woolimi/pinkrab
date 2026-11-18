@@ -274,8 +274,8 @@ function drawNow(home) {
   collect.innerHTML = home.episodes
     ? `<b>${home.episodes}</b> episodes, ${minutes} min recorded`
     : 'Nothing recorded yet.';
-  document.getElementById('now-curate').innerHTML = home.datasets || home.labelled
-    ? `<b>${home.labelled}</b> take${home.labelled === 1 ? '' : 's'} labelled; <b>${home.datasets}</b> dataset${home.datasets === 1 ? '' : 's'}`
+  document.getElementById('now-curate').innerHTML = home.datasets
+    ? `<b>${home.datasets}</b> dataset${home.datasets === 1 ? '' : 's'}`
     : 'No dataset yet.';
   const train = document.getElementById('now-train');
   // Recorded runs with their progress; beside them whatever is on a GPU

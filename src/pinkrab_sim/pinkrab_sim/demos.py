@@ -701,7 +701,9 @@ def record(world: World, plans: dict[str, Plan], trajectories: dict[str, Traject
             "head": {"file": "head.mp4", "fps": fps, "codec": "libx264", "size": sizes.get("head"),
                      "frames": n, "dropped": 0, "latency_s": UMI.top_camera_latency_s},
             **{f"gripper_{h}": ({"file": f"gripper_{h}.mp4", "fps": fps, "codec": "libx264", "size": sizes.get(h),
-                                 "frames": n, "dropped": 0, "centre": [lens.cx / lens.width, lens.cy / lens.height]}
+                                 "frames": n, "dropped": 0, "centre": [lens.cx / lens.width, lens.cy / lens.height],
+                                 "lens": {"camera": h, "model": "kannala_brandt", "size": [lens.width, lens.height],
+                                          "fx": lens.f, "fy": lens.f, "cx": lens.cx, "cy": lens.cy, "k": list(lens.k)}}
                                 if h in hands else
                                 {"file": f"gripper_{h}.mp4", "fps": fps, "codec": "", "size": None, "frames": 0,
                                  "dropped": 0})
@@ -788,6 +790,7 @@ def generate(count: int, batch: str, seed: int = 0, say=print, noise: float = 1.
     rng = np.random.default_rng(seed)
     hands = hands_of(scene)
     world = World(arms=hands, hermits=hands, scene=scene)
+    world.hide_arms()
     planner = Planner(world, viewpoint, two_faces)
     planners = {h: Planner(world, viewpoint, two_faces, arm=h) for h in hands}
     out_dir = SETTINGS.episodes_dir

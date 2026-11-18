@@ -57,12 +57,10 @@ from pinkrab_umi.markers import solid_stl, face_poses, marker_modules
 from . import replay, wsock
 from .clutch import Clutch
 from .dagger import STOP_TIMEOUT_S, Dagger
-from .converting import Converter
-from .masking import Looker, Machines, Masker
+from .converting import Converter, Preview
 from .feeds import Feeds
 from .feeds import serve as serve_page
-from .policy import (PolicyError, PolicyRun, checkpoint_hands, checkpoints, choose_masker, fetch_masker,
-                     masker_choices)
+from .policy import PolicyError, PolicyRun, checkpoint_hands, checkpoints
 from .real import MODE_HANDHELD, MODE_IDLE, MODE_POLICY, MODE_STUDIO, RealRobot
 from .rig import Rig, RigError, live_request, live_stats, live_url, node_already_up
 from .launching import DEFAULTS as LAUNCH_DEFAULTS
@@ -176,11 +174,8 @@ class StudioState:
         # their checkpoints home - see launching.py.
         self.train_jobs = Jobs(self.training.store, on_change=self.training.now)
         self.training.after_sync.append(self.train_jobs.fetch_due)
-        # Takes' keep labels, made here one job at a time, for the Curate page,
-        # with SAM 3 on this machine or one of the training sources.
-        self.machines = Machines(self.training.store)
-        self.masker = Masker(self.machines)
-        self.looker = Looker(self.machines)
+        # A take's frame with the robot drawn in, for the Curate page.
+        self.preview = Preview()
         # Set when the server is coming down, so the open event streams let go
         # instead of writing into a socket nobody is reading.
         self.stopping = threading.Event()
@@ -639,16 +634,6 @@ def make_handler(state: StudioState, allowed_hosts: frozenset[str] | None = None
                     self._send_json({"error": str(exc)}, 400)
                 return
 
-            if path == "/policy/masker":
-                # Which masker paints a checkpoint's pictures, and the ones
-                # that could: those that find the things its takes kept.
-                checkpoint = parse_qs(urlparse(self.path).query).get("checkpoint", [""])[0]
-                try:
-                    self._send_json(masker_choices(checkpoint))
-                except PolicyError as exc:
-                    self._send_json({"error": str(exc)}, 400)
-                return
-
             if path == "/model":
                 try:
                     self._send(state.urdf().encode(), "application/xml")
@@ -782,23 +767,6 @@ def make_handler(state: StudioState, allowed_hosts: frozenset[str] | None = None
                                   "why": "how the arms are bolted to the wall - every solve goes through it",
                                   "run": "pinkrab mount"})
                 self._send_json({"needs": needs})
-                return
-
-            if path.startswith("/curate/review/"):
-                # A take's gripper video as its labels leave it, made on first
-                # ask: /curate/review/<take>/<gripper_left|gripper_right>.mp4
-                parts = path.split("/")
-                if (len(parts) != 5 or not EPISODE_NAME.match(parts[3])
-                        or parts[4] not in ("gripper_left.mp4", "gripper_right.mp4")):
-                    self._send_json({"error": "not found"}, 404)
-                    return
-                from pinkrab_umi import keep_masks
-                try:
-                    target = keep_masks.review(UMI.episodes_dir / parts[3], parts[4][:-4])
-                except (OSError, ValueError, KeyError) as exc:
-                    self._send_json({"error": str(exc)}, 404)
-                    return
-                self._send_file(target, "video/mp4")
                 return
 
             if path.startswith("/episodes/"):
@@ -1034,20 +1002,6 @@ def make_handler(state: StudioState, allowed_hosts: frozenset[str] | None = None
                     self._send_json({"error": str(exc)}, 400)
                 return
 
-            if path == "/policy/masker":
-                # The masker chosen for a checkpoint's takes: kept for every
-                # checkpoint whose takes kept the same things, from the next
-                # Ask or Drive on.
-                payload = self._body()
-                if payload is None:
-                    return
-                try:
-                    self._send_json(choose_masker(str(payload.get("checkpoint") or ""),
-                                                  str(payload.get("choice") or "")))
-                except PolicyError as exc:
-                    self._send_json({"error": str(exc)}, 400)
-                return
-
             if path == "/policy/ask":
                 # Ready first, then ask: the arms walk to the ready pose through
                 # the gate - the studio mode, the same walk the teleop page's
@@ -1069,11 +1023,6 @@ def make_handler(state: StudioState, allowed_hosts: frozenset[str] | None = None
                 if wrong:
                     self._send_json({"error": "the inference settings do not fit this checkpoint: "
                                               + "; ".join(wrong)}, 409)
-                    return
-                try:
-                    fetch_masker(checkpoint, state.training.store)
-                except PolicyError as exc:
-                    self._send_json({"error": str(exc)}, 409)
                     return
                 # Then on to where the dataset's takes began - each tool
                 # where its hand began - so the policy is shown pictures, and
@@ -1156,11 +1105,6 @@ def make_handler(state: StudioState, allowed_hosts: frozenset[str] | None = None
                     self._send_json({"error": "the inference settings do not fit this checkpoint: "
                                               + "; ".join(wrong)}, 409)
                     return
-                try:
-                    fetch_masker(checkpoint, state.training.store)
-                except PolicyError as exc:
-                    self._send_json({"error": str(exc)}, 409)
-                    return
                 with state.cameras_lock:
                     unseeing = state.policy_unseeing()
                     if unseeing:
@@ -1230,7 +1174,6 @@ def make_handler(state: StudioState, allowed_hosts: frozenset[str] | None = None
                     return
                 try:
                     if path.endswith("start"):
-                        fetch_masker(str(payload.get("checkpoint") or ""), state.training.store)
                         with state.cameras_lock:
                             unseeing = state.policy_unseeing()
                             if unseeing:
@@ -1452,52 +1395,17 @@ def make_handler(state: StudioState, allowed_hosts: frozenset[str] | None = None
                 self._send_json(state.converter.state())
                 return
 
-            if path == "/masks/look":
-                # One frame of a take with its grippers drawn and the things
-                # named looked for in it - the Curate page's preview.
+            if path == "/curate/drawn":
+                # One frame of a take with the robot drawn in, as Convert
+                # keeps it - the Curate page's preview.
                 payload = self._body()
                 if payload is None:
                     return
                 try:
-                    self._send_json(state.looker.look(str(payload.get("take") or ""), str(payload.get("side") or ""),
-                                                      int(payload.get("frame") or 0),
-                                                      [str(t).strip() for t in payload.get("things") or []
-                                                       if str(t).strip()]))
+                    self._send_json(state.preview.frame(str(payload.get("take") or ""),
+                                                        str(payload.get("side") or ""), int(payload.get("frame") or 0)))
                 except (OSError, ValueError, KeyError, RuntimeError) as exc:
                     self._send_json({"error": str(exc)}, 409)
-                return
-
-            if path == "/masks/machine":
-                # Where SAM 3 runs: chosen, or the chosen one tried again.
-                payload = self._body()
-                if payload is None:
-                    return
-                try:
-                    if payload.get("name"):
-                        state.machines.choose(str(payload["name"]))
-                    else:
-                        state.machines.retry()
-                except ValueError as exc:
-                    self._send_json({"error": str(exc)}, 409)
-                    return
-                state.feeds.touch("masks")
-                self._send_json(state.machines.state())
-                return
-
-            if path in ("/masks", "/masks/stop"):
-                payload = self._body()
-                if payload is None:
-                    return
-                try:
-                    if path == "/masks":
-                        state.masker.start(payload)
-                    else:
-                        state.masker.stop()
-                except ValueError as exc:
-                    self._send_json({"error": str(exc)}, 409)
-                    return
-                state.feeds.touch("masks")
-                self._send_json(state.masker.state())
                 return
 
             if path == "/datasets/delete":

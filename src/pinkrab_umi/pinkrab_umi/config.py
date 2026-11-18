@@ -500,67 +500,8 @@ class Settings:
     # (2026-11-01) - so past this share of its frames lost a take is only
     # pointed out, its tracking being on the edge.
     keep_warn_lost_share: float = 0.05
-
-    # --- what of the gripper pictures is kept (keep_masks) -------------------
-    # SAM 3 tracks the task's things in an environment of its own: it wants a
-    # newer torch than LeRobot allows. This is that environment's Python, and
-    # the size SAM 3 reads each picture at (a multiple of 336: 1008 is its
-    # own, 672 keeps a Hermit's things at a third of the time).
-    sam3_env: str = "sam3-env"
-    # What that environment is made of, on a machine the Curate page sets it
-    # up on (the install page's command, the same three): SAM 3 ported to run
-    # on MPS and CUDA alike, and the torch it needs.
-    sam3_packages: tuple[str, ...] = (
-        "torch>=2.15", "torchvision", "sam3[video] @ git+https://github.com/woolimi/sam3-silicon-mac.git")
-    sam3_resolution: int = 672
-    # SAM 3's bars, in place of its own 0.7 and 0.5: a thing starts being
-    # followed where it scores sam3_new_thing_score and is held where it
-    # scores sam3_thing_score. Its own bars lose a small thing seen from
-    # afar - a block a fisheye sees across the mat scores about 0.3.
-    sam3_new_thing_score: float = 0.4
-    sam3_thing_score: float = 0.3
-    # A task's masker (masker_run): an RF-DETR segmentation model (Apache-2.0)
-    # taught the task's things from pictures SAM 3 labelled, then labelling
-    # every take in seconds, where SAM 3 takes minutes a take. It lives in an
-    # environment of its own, like SAM 3's, made of these packages.
-    masker_env: str = "masker-env"
-    masker_packages: tuple[str, ...] = ("rfdetr[train]>=1.11",)
-    # Its size and the size it reads each picture at (a multiple of 24).
-    masker_model: str = "RFDETRSegMedium"
-    masker_resolution: int = 432
-    masker_epochs: int = 12
-    # A labels job over fewer takes than this has SAM 3 track them all; over
-    # more, SAM 3 looks at masker_frames_per_video frames of each gripper
-    # video of every take - each on its own, seconds a picture - and the
-    # masker taught from those pictures labels the takes.
-    masker_from_takes: int = 10
-    masker_frames_per_video: int = 5
-    # One take in masker_held_out is kept out of the teaching, and on its
-    # pictures each thing the masker finds must overlap SAM 3's by an IoU of
-    # masker_min_iou or more for the masker to be used; else SAM 3 tracks the
-    # takes after all.
-    masker_held_out: int = 5
-    masker_min_iou: float = 0.9
-    # The bar a thing the masker finds must score to be kept.
-    masker_score: float = 0.5
-    # A policy trained on painted backgrounds is shown the arms' pictures
-    # painted the same way (pinkrab_policy.painting): the task's masker finds
-    # its things in each arm camera's newest frame, in a process of its own
-    # (live_mask) - both cameras about 19 times a second on an M-series Mac's
-    # GPU (2026-11-02) - and hands its labels on in shared memory as the
-    # camera live_masks_camera; the pictures the policy is shown go the same
-    # way as policy_view_camera, for the policy page to stream.
-    live_masks_camera: str = "masks_{side}"
-    policy_view_camera: str = "policy_{side}"
-    # The masker's first labels - its model loaded - are waited this long for.
-    live_mask_start_s: float = 60.0
-    # The policy page's stream of what the policy is shown, frames a second.
-    policy_view_fps: float = 15.0
-    # What is kept of a gripper picture is grown by this much before the rest
-    # is painted over, so an edge drawn or tracked a little short of the
-    # thing does not eat into it (backgrounds.kept).
-    keep_grow_px: int = 6
     keep_min_held_s: float = 60 / 60
+
     # UMI filters what the robot cannot follow by its kinematics and gives no
     # number: this share is ours - of the working hand's frames on the replay,
     # those the replay could not place left out, the ones the arm follows: no
@@ -601,6 +542,27 @@ class Settings:
     # turned aside - too high, too near or too flat - or a task that reaches
     # far to one side.
     keep_warn_pan_from_ready_deg: float = 60.0
+
+    # --- the robot drawn into a demonstration (robot_drawn) ----------------
+    # A demonstration's gripper pictures can have the robot drawn into them as
+    # a rollout's cameras will see it (pinkrab_umi.robot_drawn): the arms from
+    # the wrist down, in the pink of the other Hermit in the same picture, and
+    # the pegboard behind them. These are the colours (BGR) of what a picture
+    # does not show itself - the pink where no other Hermit is in view, the
+    # servos, the board and its slots - and the slots' size, 5 x 15 mm, on a
+    # 40 mm pitch across, each row 20 mm above the last and half a pitch along.
+    robot_drawn_pink_bgr: tuple[int, int, int] = (108, 85, 210)
+    robot_drawn_servo_bgr: tuple[int, int, int] = (30, 30, 32)
+    robot_drawn_board_bgr: tuple[int, int, int] = (42, 45, 45)
+    robot_drawn_slot_bgr: tuple[int, int, int] = (18, 18, 20)
+    robot_drawn_slot_mm: tuple[float, float] = (5.0, 15.0)
+    robot_drawn_slot_pitch_mm: float = 40.0
+    robot_drawn_row_pitch_mm: float = 20.0
+    # Drawn this many times the picture's size each way and scaled down, so a
+    # drawn edge blends into the picture as a camera's does.
+    robot_drawn_supersample: int = 3
+    # The arms' meshes are drawn with corners this near each other made one.
+    robot_drawn_cell_m: float = 0.004
 
     # --- derived ----------------------------------------------------------
     # The cameras, as camera.yaml's profiles state them - read there, so a
@@ -826,30 +788,9 @@ class Settings:
         """Where recorded episodes land: pinkrab_core's (`episodes_dir`)."""
         return CORE.episodes_dir
 
-    @property
-    def sam3_python(self) -> Path:
-        """The Python of SAM 3's environment, in the workspace (sam3_env)."""
-        return CORE.workspace / self.sam3_env / "bin" / "python"
-
     def camera_share_lock(self, camera: str) -> Path:
         """The file whose lock guards a camera's shared frame (frame_share)."""
         return CORE.workspace / "frame_share" / f"{camera}.lock"
-
-    @property
-    def masker_python(self) -> Path:
-        """The Python of the masker's environment, in the workspace (masker_env)."""
-        return CORE.workspace / self.masker_env / "bin" / "python"
-
-    @property
-    def maskers_dir(self) -> Path:
-        """The maskers taught here: a folder each, its masker.json saying
-        what it finds, where its weights are and how it scored."""
-        return CORE.workspace / "maskers"
-
-    @property
-    def curate_file(self) -> Path:
-        """The Curate page's choice of machine for SAM 3, kept across restarts."""
-        return CORE.workspace / "curate.json"
 
     # The videos: H.264 through PyAV at a constant quality, a keyframe every
     # second. OpenCV's own writer has no quality knob and wrote 1080p at some
@@ -858,9 +799,8 @@ class Settings:
     # A gripper video is kept at `episode_sensor_scale` of the sensor's
     # pixels, the scale a dataset keeps its window at (GRIPPER_WIDTH across
     # the window's 1560 sensor pixels): the 1280x960 mode's frame is kept at
-    # 800x600, and the window is cut from it without scaling. SAM 3's keep
-    # labels and the randomised pictures come out of it as out of the frame
-    # as read. Written on a thread per video; a frame that finds its queue
+    # 800x600, and the window is cut from it without scaling. Written on a
+    # thread per video; a frame that finds its queue
     # this full is dropped and counted rather than making the camera wait.
     # `episode_codecs` is the fallback order for OpenCV's writer when PyAV
     # cannot encode here.

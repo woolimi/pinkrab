@@ -1,6 +1,6 @@
 ---
 title: Run
-description: How to run a trained policy on Pinkrab. Pre-run check, the Policy page in studio, Ask and Drive, inference settings, painted camera views, correction with Hermit, run records and outcome marking.
+description: How to run a trained policy on Pinkrab. Pre-run check, the Policy page in studio, Ask and Drive, inference settings, correction with Hermit, run records and outcome marking.
 ---
 
 Run a [trained](../train/) checkpoint on Pinkrab from the Policy page in studio. If the policy makes a mistake during a run, you can take over both arms with Hermit and correct it, and the corrected segments become data for the next training.
@@ -45,17 +45,6 @@ The start pose is the average of the first poses of the demonstrations, so the t
 The gear button next to Checkpoint opens the settings window. At the top is a field for choosing which camera belongs to which arm; below it are the inference settings for the chosen checkpoint's policy type, shown next to the values used in training. These are values you can change without retraining, for example how many steps of a chunk to run before looking at the camera again (`n_action_steps`) and whether to blend overlapping chunks at each step (`temporal_ensemble_coeff`). Values common to all policies (device, joint speed, criteria for stopping a run) are folded under "every policy".
 
 **Save** writes them to `~/pinkrab/inference.yaml`, and runs use those values **from the next Ask and Drive**.
-
-## Painted camera views
-
-A policy trained on a dataset converted on Curate with [random backgrounds](../curate/#why-change-the-background) learned only from pictures in which the grippers and the task's objects were kept and everything else was painted over with a pattern. So Ask and Drive paint the arms' camera views the same way before showing them to the policy. The task's [masker](../curate/#masker) finds the objects, the grippers are drawn where the arms' joints put them, the black border outside the lens is kept, and the rest is painted with one pattern per run. During a run the wrist camera views show the painted pictures the policy sees, and their captions say `painted`.
-
-| Item | Details |
-|---|---|
-| Masker | Chosen in the **masker** field of the settings window. It lists the maskers that find the objects named in the dataset's demonstrations, in the same order, with the computer that taught each, how many demonstrations it learned from and its mAP50; the default, **newest**, is the most recent of them. A choice is saved at once and applies to every checkpoint trained on the same objects. If there is no masker to use, Ask and Drive do not start and say why |
-| Weights | If the masker was taught on another computer, its weights (about 140 MB) are fetched to `~/pinkrab/maskers/<id>/` on the first run |
-| Speed | The masker runs on its own in this computer's [masker environment](../../start/install/#masker-environment), about 19 times a second for both cameras on an M-series Mac |
-| Turning it off | Choosing **off** in the masker field shows the pictures as they are |
 
 ## Motion shaping
 

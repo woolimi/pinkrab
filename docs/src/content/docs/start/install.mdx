@@ -134,37 +134,6 @@ sudo udevadm control --reload && sudo udevadm trigger
 </TabItem>
 </Tabs>
 
-## SAM 3 환경
-
-dataset 을 만들 때 그리퍼 영상의 배경을 무작위로 바꾸려면, 영상에서 작업 물체를 찾는 [SAM 3](https://github.com/facebookresearch/sam3) 가 있어야 합니다. 배경을 바꾸지 않을 거라면 이 단계는 건너뜁니다. SAM 3 는 LeRobot 이 허용하는 것보다 새로운 torch 를 쓰기 때문에, Pinkrab 환경과 따로 `~/pinkrab/sam3-env` 에 설치합니다. 설치하는 SAM 3 는 macOS(MPS)와 CUDA 에서 함께 돌도록 고친 [sam3-silicon-mac](https://github.com/woolimi/sam3-silicon-mac) 입니다.
-
-```bash
-uv venv --python 3.12 ~/pinkrab/sam3-env
-uv pip install --python ~/pinkrab/sam3-env/bin/python "torch>=2.15" torchvision \
-  "sam3[video] @ git+https://github.com/woolimi/sam3-silicon-mac.git"
-```
-
-SAM 3 의 가중치는 Hugging Face 에서 승인을 받아야 받을 수 있습니다. [facebook/sam3](https://huggingface.co/facebook/sam3) 에서 접근을 요청해 승인되면 한 번 로그인합니다. 가중치는 처음 쓸 때 내려받습니다.
-
-```bash
-~/pinkrab/sam3-env/bin/hf auth login
-```
-
-GPU 가 있는 다른 컴퓨터에서 SAM 3 를 돌릴 거라면 이 컴퓨터에는 설치하지 않아도 됩니다. 그 컴퓨터에는 studio 가 같은 환경을 만듭니다([SAM 3 와 masker 를 돌릴 컴퓨터](../../use/curate/#sam-3-와-masker-를-돌릴-컴퓨터)).
-
-SAM 3 와 그 가중치는 Meta 의 [SAM License](https://github.com/facebookresearch/sam3/blob/main/LICENSE) 를 따릅니다. Pinkrab 저장소에는 SAM 3 의 코드도 가중치도 들어 있지 않습니다.
-
-## masker 환경
-
-시연이 많을 때 Curate 의 Make labels 는 SAM 3 로 일부만 추적하고, 그 결과로 학습한 [masker](../../use/curate/#masker) 로 나머지를 만듭니다. masker 는 [RF-DETR](https://github.com/roboflow/rf-detr) 의 segmentation 모델이고, SAM 3 와 마찬가지로 Pinkrab 환경과 따로 `~/pinkrab/masker-env` 에 설치합니다. 이 환경이 없으면 Make labels 는 모든 시연을 SAM 3 로 추적합니다. Policy 페이지도 무작위 배경으로 학습한 policy 에 [칠한 카메라 화면](../../use/run/#배경-칠한-카메라-화면)을 보여 줄 때 이 환경에서 masker 를 돌립니다.
-
-```bash
-uv venv --python 3.12 ~/pinkrab/masker-env
-uv pip install --python ~/pinkrab/masker-env/bin/python "rfdetr[train]>=1.11"
-```
-
-Make labels 를 GPU 가 있는 다른 컴퓨터에서 돌리면 그 컴퓨터에는 studio 가 같은 환경을 만들지만, Policy 페이지의 칠한 화면은 로봇을 돌리는 이 컴퓨터의 환경을 씁니다. RF-DETR 의 코드와 가중치는 Apache License 2.0 을 따릅니다.
-
 ## 설치 확인
 
 ```bash

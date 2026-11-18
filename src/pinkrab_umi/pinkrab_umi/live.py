@@ -41,8 +41,6 @@ from urllib.parse import urlparse
 import cv2
 import numpy as np
 
-from pinkrab_core.config import ARMS
-
 from . import bench, ready_guide, record
 from .episode import (EPISODE_NAME, EpisodeError, EpisodeWriter, default_name, delete_episode, list_episodes,
                       set_outcome)
@@ -81,26 +79,6 @@ RATE_WINDOW = SETTINGS.fps
 # down rather than blocking on a socket forever.
 POLL_TIMEOUT_S = 1.0
 
-
-def _shared_jpegs(camera: str) -> Callable[[int], tuple[bytes | None, int]]:
-    """A stream's frames from a block another process shares (frame_share),
-    policy_view_fps of them a second at most: given the count of the last one
-    sent, the next as a JPEG and its count - None while there is nothing new."""
-    from .frame_share import FrameReader
-
-    reader = FrameReader(camera)
-
-    def after(seen: int) -> tuple[bytes | None, int]:
-        time.sleep(1.0 / SETTINGS.policy_view_fps)
-        try:
-            picture, count, _ = reader.newest()
-        except RuntimeError:
-            return None, seen
-        if count == seen:
-            return None, seen
-        ok, jpeg = cv2.imencode(".jpg", picture, [cv2.IMWRITE_JPEG_QUALITY, 80])
-        return (jpeg.tobytes() if ok else None), count
-    return after
 
 @dataclass(frozen=True)
 class Frame:
@@ -954,17 +932,6 @@ def make_handler(live: Live):
 
             if path == "/episodes":
                 self._send_json({"episodes": list_episodes(), "dir": str(SETTINGS.episodes_dir)})
-                return
-
-            if path.startswith("/policy/"):
-                # What a policy is shown of an arm's camera, painted
-                # (pinkrab_policy.painting): from the block its painter
-                # shares, while a policy is being asked.
-                side = path.split("/")[2] if len(path.split("/")) > 2 else ""
-                if side not in ARMS:
-                    self._send_json({"error": "not found"}, 404)
-                    return
-                self._stream(_shared_jpegs(SETTINGS.policy_view_camera.format(side=side)))
                 return
 
             if path.startswith("/gripper/"):

@@ -126,6 +126,4 @@ Apache-2.0, with one exception: `wrist_yaw_bracket_left.stl` and
 `wrist_yaw_bracket_right.stl` are derived from ahb's
 [SO-ARM100 additional wrist joint](https://makerworld.com/en/models/2845098) and
 are **CC BY-SA**, so anything derived from them carries the same license.
-[SAM 3](https://github.com/facebookresearch/sam3), used for background
-randomisation, is installed separately under Meta's SAM License and is not
-part of this repository. See [NOTICE](NOTICE).
+See [NOTICE](NOTICE).

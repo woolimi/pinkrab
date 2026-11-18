@@ -415,6 +415,27 @@ class World:
         self.bands = {arm: shut_wide(*(float(v) for v in m.jnt_range[m.joint(f"{arm}_gripper").id]))
                       for arm in TWO_HANDS}
 
+    def hide_arms(self) -> None:
+        """The arms out of every picture but the head camera's: a take made
+        with the Hermits is a rig take, which no robot stands in view of -
+        convert draws the robot in where it should be (pinkrab_umi.robot_drawn).
+        Their geoms that are drawn - the moving links' and the bases' fixed
+        to the world, the description's visuals (group 2) - go to the group
+        the gripper cameras leave out."""
+        m = self.model
+        roots = {m.body(f"{arm}_shoulder_link").id for arm in TWO_HANDS}
+
+        def robot(body: int) -> bool:
+            while body != 0:
+                if body in roots:
+                    return True
+                body = int(m.body_parentid[body])
+            return False
+
+        drawn = [g for g in range(m.ngeom) if m.geom_group[g] == 2
+                 and (m.geom_bodyid[g] == 0 or robot(int(m.geom_bodyid[g])))]
+        m.geom_group[drawn] = BEHIND_LENS_GROUP
+
     def close(self) -> None:
         for r in (self._face_renderer, self._head_renderer, *self._views.values()):
             r.close()

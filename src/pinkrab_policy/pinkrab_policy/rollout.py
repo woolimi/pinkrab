@@ -16,9 +16,7 @@ the pictures the policy sees at rollout are the pictures that were recorded,
 cut and resized the same way (`gripper_view`, about each arm camera's own lens
 axis - a run does not start on an arm whose lens is not measured): each
 camera's newest frame, whole, from shared memory (pinkrab_umi.frame_share),
-which the tick copies without waiting for anything. A checkpoint whose
-dataset painted its takes' backgrounds is shown them painted the same way
-(`painting`), with the masker the policy page chose for its takes. The state is each arm's
+which the tick copies without waiting for anything. The state is each arm's
 own jaw as a fraction of its band and the tools' relative pose, which is what
 the dataset carried.
 
@@ -78,7 +76,6 @@ from pinkrab_core.origin import ready_joints
 from pinkrab_umi.config import SETTINGS as UMI
 from pinkrab_umi.frame_share import FrameReader
 
-from .painting import Painting, PaintingError, masker_for
 
 
 # How the steps' pace is judged: over this long, and slow below this share of
@@ -171,11 +168,9 @@ def carry(desk: dict) -> np.ndarray | None:
 
 
 class Observer:
-    """The live view's pictures, cut and resized the way the dataset had them
-    - and, for a checkpoint trained on painted backgrounds, painted the way
-    its takes were (painting), with the masker chosen for them."""
+    """The live view's pictures, cut and resized the way the dataset had them."""
 
-    def __init__(self, sizes: dict[str, tuple[int, int]], checkpoint: str) -> None:
+    def __init__(self, sizes: dict[str, tuple[int, int]]) -> None:
         self.sizes = sizes   # key -> (height, width)
         self.hands = hands_of(sizes)
         unknown = sorted(set(sizes) - {image_key(hand) for hand in self.hands})
@@ -189,42 +184,23 @@ class Observer:
         for size in sizes.values():
             gripper_cut(size, UMI.gripper_camera_width, UMI.gripper_camera_height)
         self.frames = {hand: FrameReader(f"follower_{hand}") for hand in self.hands}
-        record = masker_for(checkpoint)
-        self.painting = None if record is None else Painting(record, self.centres)
         # When the oldest of the pictures last observed was exposed
         # (time.monotonic()): its arrival less the camera's latency.
         self.exposed: float | None = None
 
-    @property
-    def masker(self) -> str | None:
-        """The masker the pictures are painted with, by id; None: shown as they are."""
-        return None if self.painting is None else self.painting.record["id"]
-
-    def observe(self, joints: dict[str, float]) -> dict[str, np.ndarray]:
+    def observe(self) -> dict[str, np.ndarray]:
         """Each arm's picture as the checkpoint learned from it, or RuntimeError:
-        no picture now. `joints` is where the arms stand, radians by joint
-        name: where painted pictures have the grippers."""
+        no picture now."""
         import cv2
-        if self.painting is not None:
-            self.painting.set_joints(joints)
         out, arrived = {}, []
         for hand in self.hands:
             key = image_key(hand)
-            if self.painting is not None:
-                picture, stamp = self.painting.view(hand)
-                if picture.shape[:2] != self.sizes[key]:
-                    picture = cv2.resize(picture, self.sizes[key][::-1], interpolation=cv2.INTER_AREA)
-            else:
-                frame, _, stamp = self.frames[hand].newest()
-                picture = gripper_view(frame, self.sizes[key], self.centres[hand])
+            frame, _, stamp = self.frames[hand].newest()
+            picture = gripper_view(frame, self.sizes[key], self.centres[hand])
             arrived.append(stamp)
             out[key] = cv2.cvtColor(picture, cv2.COLOR_BGR2RGB)
         self.exposed = min(arrived) - UMI.gripper_camera_latency_s
         return out
-
-    def close(self) -> None:
-        if self.painting is not None:
-            self.painting.close()
 
 
 class Brain:
@@ -640,31 +616,25 @@ def dry_run(args) -> int:
     quiet_ffmpeg_twins()
     try:
         driver = Driver(args.checkpoint, args.device, args.task)
-        observer = Observer(driver.sizes, args.checkpoint)
+        observer = Observer(driver.sizes)
     except (LensMissing, ValueError, RuntimeError) as exc:
         print(f"rollout: {exc}", file=sys.stderr)
         return 1
     ready = {hand: ready_joints(hand, chain.joint_names) for hand, chain in driver.chains.items()}
     driver.start(ready)
-    # Where painted pictures have the grippers: the arms at ready, as here.
-    joints = {n: math.radians(v) for hand, chain in driver.chains.items() for n, v in zip(chain.joint_names, ready[hand])}
     print(f"  policy {driver.policy.config.type} on {driver.device}, arms {', '.join(driver.hands)}, "
           f"images {driver.sizes}, state {driver.state_dim}")
-    print(f"  from the ready pose, {args.seconds:.0f} s at {driver.brain.fps} Hz, against the live view"
-          + (f", painted with masker {observer.masker}" if observer.masker else ""))
-    try:
-        return _dry_steps(args, driver, observer, joints)
-    finally:
-        observer.close()
+    print(f"  from the ready pose, {args.seconds:.0f} s at {driver.brain.fps} Hz, against the live view")
+    return _dry_steps(args, driver, observer)
 
 
-def _dry_steps(args, driver: Driver, observer: Observer, joints: dict[str, float]) -> int:
+def _dry_steps(args, driver: Driver, observer: Observer) -> int:
     started = time.monotonic()
     period = driver.brain.period
     while time.monotonic() - started < args.seconds:
         tick = time.monotonic()
         try:
-            images = observer.observe(joints)
+            images = observer.observe()
         except RuntimeError as exc:
             print(f"  no picture: {exc}")
             time.sleep(1.0)
@@ -736,8 +706,8 @@ def node_main() -> None:
             except (DemoStartError, OSError, ValueError):
                 pass    # no dataset to check here
             try:
-                self.observer = Observer(self.driver.sizes, checkpoint)
-            except (LensMissing, ValueError, PaintingError) as exc:
+                self.observer = Observer(self.driver.sizes)
+            except (LensMissing, ValueError) as exc:
                 raise SystemExit(f"rollout: {exc}") from exc
             self.studio = str(self.get_parameter("studio").value).rstrip("/")
             self.commands = self.create_publisher(JointState, "joint_commands", 10)
@@ -765,7 +735,6 @@ def node_main() -> None:
                 f"policy {self.driver.policy.config.type} on {self.driver.device} drives the "
                 f"{' and '.join(self.driver.hands)} arm(s) in policy mode, {self.driver.brain.fps} Hz, "
                 "pictures from the live view's shared frames"
-                + (f", painted with masker {self.observer.masker}" if self.observer.masker else "")
                 + (f", told {self.driver.brain.task!r}" if self.driver.brain.task else ""))
 
         def _on_state(self, message: JointState) -> None:
@@ -829,7 +798,7 @@ def node_main() -> None:
                 return
             began = time.monotonic()
             try:
-                images = self.observer.observe(self.at)
+                images = self.observer.observe()
             except RuntimeError as exc:
                 self.get_logger().info(f"{exc} - holding", throttle_duration_sec=1.0)
                 return
@@ -885,7 +854,7 @@ def node_main() -> None:
                 # With how the policy is being asked, so the page says what
                 # this run uses rather than what the file says now.
                 self._reports.put_nowait({"hands": list(self.driver.hands), "settings": self.driver.brain.settings,
-                                          "masker": self.observer.masker, **body})
+                                          **body})
             except queue.Full:
                 pass
 
@@ -915,7 +884,6 @@ def node_main() -> None:
     except (KeyboardInterrupt, ExternalShutdownException):
         pass
     finally:
-        node.observer.close()
         node.destroy_node()
         rclpy.try_shutdown()
 

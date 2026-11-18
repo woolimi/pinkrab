@@ -85,9 +85,9 @@ on an arm as it was built before - its meta.json names the description its
 angles are of - is skipped. The poses are turned into the handheld's tool
 convention (TOOL_TURN, which rollout turns back), so a correction's deltas
 mean what a demonstration's do; its `pose.tcp_<hand>` is the arm's tool in
-the robot's base frame, there being no desk-frame pose of an arm. With
-randomised backgrounds a rollout is painted over from its own keep labels,
-as a demonstration is: keep_masks draws its grippers from the arms.
+the robot's base frame, there being no desk-frame pose of an arm. A
+demonstration can have the robot drawn into its pictures as a rollout's
+cameras see it (robot_drawn); a rollout's pictures show it already.
 
 Every episode's task is the command given with --task.
 
@@ -101,7 +101,6 @@ import json
 import math
 import shutil
 import time
-import zipfile
 from pathlib import Path
 
 import cv2
@@ -117,8 +116,6 @@ from pinkrab_core.dataset import (GRIPPER_WIDTH, NO_STEP, POSE_NAMES, STEP_NAMES
                                   gripper_shape, gripper_view, image_key, pose_key, relative_pose, require_lens,
                                   state_names, state_vector)
 
-from .backgrounds import painted, pattern, seed
-from .backgrounds import read as read_labels
 from .config import SETTINGS
 from .episode import ROBOT_GAP_S, _lines, learned_from
 from .trajectory import matrix_to_quat, quat_to_matrix
@@ -191,23 +188,26 @@ def grid(start: float, end: float, fps: int) -> np.ndarray:
 
 class _Video:
     """Frames of one mp4 by index, read in order, held one at a time, each as
-    the dataset keeps it: `gripper_view` at `size` about `centre` - and with
-    `labels` (keep_masks, frame by frame) and a `backdrop`, everything they
-    do not keep painted over with it (backgrounds.painted)."""
+    the dataset keeps it: `gripper_view` at `size` about `centre` - with
+    `drawn`, the robot drawn in (robot_drawn: the picture and its index to
+    the picture)."""
 
-    def __init__(self, path: Path, size: tuple[int, int], centre: tuple[float, float],
-                 labels: np.ndarray | None = None, backdrop: np.ndarray | None = None) -> None:
+    def __init__(self, path: Path, size: tuple[int, int], centre: tuple[float, float], drawn=None) -> None:
         self.cap = cv2.VideoCapture(str(path))
         if not self.cap.isOpened():
             raise ConvertError(f"cannot open {path}")
         self.size = size
         self.centre = centre
-        self.labels = labels
-        self.backdrop = backdrop
+        self.drawn = drawn
         self.next_index = 0
         self.last = None
+        self.kept: tuple[int, np.ndarray] | None = None
 
     def frame(self, index: int) -> np.ndarray:
+        # The dataset's clock runs faster than a camera's: a frame is asked
+        # for again until the next one is taken, and made once.
+        if self.kept is not None and self.kept[0] == index:
+            return self.kept[1]
         if index < self.next_index - 1:
             self.cap.set(cv2.CAP_PROP_POS_FRAMES, index)
             self.next_index = index
@@ -218,23 +218,24 @@ class _Video:
             self.last = picture
             self.next_index += 1
         view = gripper_view(self.last, self.size, self.centre)
-        if self.labels is not None:
-            view = painted(view, self.labels[index], self.backdrop)
-        return cv2.cvtColor(view, cv2.COLOR_BGR2RGB)
+        if self.drawn is not None:
+            view = self.drawn(view, index)
+        self.kept = (index, cv2.cvtColor(view, cv2.COLOR_BGR2RGB))
+        return self.kept[1]
 
     def close(self) -> None:
         self.cap.release()
 
 
-def open_videos(src: Path, hands, size: tuple[int, int], centre: dict, labels: dict | None = None,
-                backdrop: np.ndarray | None = None) -> dict[str, _Video]:
+def open_videos(src: Path, hands, size: tuple[int, int], centre: dict, robot=None) -> dict[str, _Video]:
     """Each hand's gripper video of the take at `src`, opened - or ConvertError
-    for the first that will not open, with the others let go."""
+    for the first that will not open, with the others let go. With `robot`
+    (robot_drawn.RobotDrawn) the robot is drawn into every frame."""
     videos: dict[str, _Video] = {}
     try:
         for hand in hands:
-            videos[hand] = _Video(src / f"gripper_{hand}.mp4", size, tuple(centre[hand]),
-                                  (labels or {}).get(hand), backdrop)
+            drawn = None if robot is None else (lambda view, k, side=hand: robot.draw(view, side, k))
+            videos[hand] = _Video(src / f"gripper_{hand}.mp4", size, tuple(centre[hand]), drawn)
     except ConvertError:
         for video in videos.values():
             video.close()
@@ -525,8 +526,8 @@ def _frames(segment: dict[str, dict], state_names: list[str], task: str, picture
 def convert(episodes: list[str], out: str, task: str, hands: tuple[str, ...] = ARMS,
             min_segment_s: float = MIN_SEGMENT_S, say=print,
             source: Path | None = None, gop: int = DATASET_GOP,
-            fps: int | None = None, randomised: bool = False,
-            unfollowed: dict[str, list[tuple[float, float]]] | None = None) -> dict:
+            fps: int | None = None,
+            unfollowed: dict[str, list[tuple[float, float]]] | None = None, robot_drawn=None) -> dict:
     """`hands` are the hands every take worked with - both on the rig; the
     simulation's one. `source` is where the raw episodes are, the
     workspace's episodes/ by default. `gop` is the dataset video's keyframe
@@ -534,12 +535,13 @@ def convert(episodes: list[str], out: str, task: str, hands: tuple[str, ...] = A
     from the keyframe before it - 2 trains several times faster than 30 at a
     few times the size. `fps` is the dataset's rate, the core settings'
     dataset_fps unless said - and so the rate a policy trained on it is
-    asked at. `randomised` paints everything a take's keep labels do not keep
-    (keep_masks) over with a pattern of the take's own (backgrounds): a take
-    without labels is left out. `unfollowed` is, per take, the stretches
+    asked at. `unfollowed` is, per take, the stretches
     [start, end] on its head camera's exposure clock the arms could not
     follow, cut out of it: the shelf's replay finds them, and a take not
-    named has none."""
+    named has none. With `robot_drawn` (a robot_drawn.Look) every
+    demonstration has the robot drawn into its pictures as a rollout's
+    cameras will see it, and one it cannot be drawn into is left out; a
+    rollout's pictures already show it."""
     from lerobot.datasets.lerobot_dataset import LeRobotDataset
 
     root = CORE.workspace / "datasets" / out
@@ -584,13 +586,17 @@ def convert(episodes: list[str], out: str, task: str, hands: tuple[str, ...] = A
                                     rgb_encoder=RGBEncoderConfig(g=gop), streaming_encoding=True,
                                     encoder_queue_maxsize=0)
     report = {"dataset": str(root), "task": task, "fps": fps, "source": str(source), "hands": list(hands),
-              "gop": gop, "randomised": randomised, "episodes": []}
+              "gop": gop,
+              "robot_drawn": None if robot_drawn is None else {
+                  **{k: (None if v is None else list(v)) for k, v in vars(robot_drawn).items()},
+                  "note": "demonstrations' pictures with the arms (wrist down, in the other Hermit's pink) and the "
+                          "board drawn in where the replay puts them; the grippers kept as recorded"},
+              "episodes": []}
     started = time.monotonic()
     try:
         for name in episodes:
             report["episodes"].append(_episode(dataset, source / name, task, hands, fps, min_segment_s,
-                                               names, size, say, background=seed(name) if randomised else None,
-                                               unfollowed=(unfollowed or {}).get(name, ())))
+                                               names, size, say, unfollowed=(unfollowed or {}).get(name, ()), robot_drawn=robot_drawn))
         if not any(e["segments"] for e in report["episodes"]):
             raise ConvertError("no episode had a segment long enough to keep")
         dataset.finalize()
@@ -726,28 +732,12 @@ def _add_segments(dataset, entry: dict, runs, times: np.ndarray, poses_of, apert
                                       "still_trimmed": list(trimmed)})
 
 
-def keep_labels(src: Path, hands) -> dict[str, np.ndarray]:
-    """Each hand's gripper video's keep labels, frame by frame - or
-    ConvertError for the first that is missing or does not read."""
-    labels = {}
-    for hand in hands:
-        try:
-            labels[hand] = read_labels(src, f"gripper_{hand}")
-        except (OSError, ValueError, zipfile.BadZipFile) as exc:
-            raise ConvertError(f"the {hand} gripper video's keep labels do not read ({exc}) - "
-                               "make them again on the Curate page") from exc
-        if labels[hand] is None:
-            raise ConvertError(f"the {hand} gripper video has no keep labels - make them on the Curate page")
-    return labels
-
-
 def _episode(dataset, src: Path, task: str, hands: tuple[str, ...], fps: int, min_segment_s: float,
-             state_names: list[str], size: tuple[int, int], say, background: int | None = None,
-             unfollowed=()) -> dict:
+             state_names: list[str], size: tuple[int, int], say, unfollowed=(), robot_drawn=None) -> dict:
     """One raw episode into the dataset, as many LeRobot episodes as it has
-    segments - with `background`, its pictures painted over but for what its
-    keep labels keep, with the pattern of that seed - and none of the
-    stretches [start, end] of `unfollowed`, on its exposure clock."""
+    segments - with `robot_drawn`, the robot drawn into its pictures - and
+    none of the stretches [start, end] of `unfollowed`, on its exposure
+    clock."""
     name = src.name
     if not (src / "meta.json").is_file():
         raise ConvertError(f"no episode {name!r} at {src}")
@@ -760,8 +750,7 @@ def _episode(dataset, src: Path, task: str, hands: tuple[str, ...], fps: int, mi
         return {"episode": name, "kind": "demo", "frames": 0, "segments": [], "skipped": f"its files do not read ({exc})"}
     kind = meta.get("kind", "demo")
     if kind == "rollout":
-        return _rollout(dataset, src, meta, frames, task, hands, fps, min_segment_s, state_names, size, say,
-                        background)
+        return _rollout(dataset, src, meta, frames, task, hands, fps, min_segment_s, state_names, size, say)
     if kind != "demo":
         say(f"  {name}: skipped - a {kind} is not converted")
         return {"episode": name, "kind": kind, "frames": 0, "segments": [], "skipped": f"a {kind} is not converted"}
@@ -774,12 +763,7 @@ def _episode(dataset, src: Path, task: str, hands: tuple[str, ...], fps: int, mi
     entry["desk"] = {k: desk[k] for k in ("solid", "face_mm", "origin_above_table_mm", "placement", "yaw_deg")
                      if desk.get(k) is not None}
     streams = meta.get("streams") or {}
-    labels = {}
-    if background is not None:
-        entry["background"] = background
     try:
-        if background is not None:
-            labels = keep_labels(src, hands)
         world_T_cams = cameras_on_desk(poses, hands)
         exposed = exposures(poses, meta)
         solid_T_tcp, opening, grip_t, centre = {}, {}, {}, {}
@@ -797,9 +781,6 @@ def _episode(dataset, src: Path, task: str, hands: tuple[str, ...], fps: int, mi
                 - SETTINGS.gripper_camera_latency_s
             if not len(grip_t[hand]):
                 raise ConvertError(f"no frame from the {hand} gripper camera")
-            if hand in labels and len(labels[hand]) != len(grip_t[hand]):
-                raise ConvertError(f"the {hand} keep labels are for {len(labels[hand])} frames, the video has "
-                                   f"{len(grip_t[hand])} - make them again")
             # Where the lens axis lands in this video: as the recorder wrote
             # it, or, for a take recorded before the lens was measured, as
             # this rig's lens file has that hand now - and with neither, no
@@ -834,9 +815,18 @@ def _episode(dataset, src: Path, task: str, hands: tuple[str, ...], fps: int, mi
     cut = ~bridged(followed, exposed, SETTINGS.convert_max_hole_s)
     if cut.any():
         entry["unfollowed_s"] = round(float(cut.sum()) / rate, 2)
-    backdrop = None if background is None else pattern(background, size)
+    robot = None
+    if robot_drawn is not None:
+        from .robot_drawn import DrawError, RobotDrawn
+
+        try:
+            robot = RobotDrawn(src, robot_drawn, size)
+        except DrawError as exc:
+            entry["skipped"] = f"the robot cannot be drawn in: {exc}"
+            say(f"  {name}: skipped - the robot cannot be drawn in: {exc}")
+            return entry
     try:
-        videos = open_videos(src, hands, size, centre, labels, backdrop)
+        videos = open_videos(src, hands, size, centre, robot)
     except ConvertError as exc:
         entry["skipped"] = str(exc)
         say(f"  {name}: skipped - {exc}")
@@ -862,14 +852,11 @@ def _episode(dataset, src: Path, task: str, hands: tuple[str, ...], fps: int, mi
 
 
 def _rollout(dataset, src: Path, meta: dict, frames: list[dict], task: str, hands: tuple[str, ...],
-             fps: int, min_segment_s: float, state_names: list[str], size: tuple[int, int], say,
-             background: int | None = None) -> dict:
+             fps: int, min_segment_s: float, state_names: list[str], size: tuple[int, int], say) -> dict:
     """One rollout's corrections into the dataset: the arms' cameras are the
     pictures - the first hand's the clock - their forward kinematics the
     tools' poses, their jaws the openings - and only what the hands drove is
-    kept, not what the policy drove nor where the clutch held. With
-    `background`, its pictures painted over but for what its keep labels
-    keep, as a demonstration's."""
+    kept, not what the policy drove nor where the clutch held."""
     from pinkrab_core.follow import TOOL_TURN
     from pinkrab_core.jaw import aperture_of, gripper_band
     from pinkrab_core.kinematics import ArmKinematics, arm_fingerprint
@@ -883,9 +870,6 @@ def _rollout(dataset, src: Path, meta: dict, frames: list[dict], task: str, hand
              "segments": [], "seconds": meta.get("seconds")}
     streams = meta.get("streams") or {}
     centre = {hand: (streams.get(f"gripper_{hand}") or {}).get("centre") for hand in hands}
-    labels = {}
-    if background is not None:
-        entry["background"] = background
     try:
         if sorted(meta.get("arms") or []) != sorted(hands):
             raise ConvertError(f"a rollout of the {' and '.join(meta.get('arms') or ['no'])} arm(s), "
@@ -899,12 +883,6 @@ def _rollout(dataset, src: Path, meta: dict, frames: list[dict], task: str, hand
                 raise ConvertError(f"no frame from the {hand} arm's camera")
             if not (isinstance(centre[hand], list) and len(centre[hand]) == 2):
                 centre[hand] = list(require_lens(f"follower_{hand}"))
-        if background is not None:
-            labels = keep_labels(src, hands)
-            for hand in hands:
-                if len(labels[hand]) != len(shots[hand]):
-                    raise ConvertError(f"the {hand} keep labels are for {len(labels[hand])} frames, the video has "
-                                       f"{len(shots[hand])} - make them again")
     except (ConvertError, LensMissing) as exc:
         entry["skipped"] = str(exc)
         say(f"  {name}: skipped - {exc}")
@@ -965,8 +943,7 @@ def _rollout(dataset, src: Path, meta: dict, frames: list[dict], task: str, hand
         columns[hand] = (at, at + n)
         at += n + 1
     try:
-        backdrop = None if background is None else pattern(background, size)
-        videos = open_videos(src, hands, size, centre, labels, backdrop)
+        videos = open_videos(src, hands, size, centre)
     except ConvertError as exc:
         entry["skipped"] = str(exc)
         say(f"  {name}: skipped - {exc}")

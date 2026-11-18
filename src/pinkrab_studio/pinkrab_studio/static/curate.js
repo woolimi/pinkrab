@@ -1,23 +1,17 @@
-// The Curate page: the shelf's takes with their verdicts and keep labels,
-// the job that makes the labels, a look at each take's labels, and the
-// conversion into a dataset with randomised backgrounds.
+// The Curate page: a take's frame with the robot drawn in as Convert will
+// keep it, and the conversion of the takes that pass into a dataset.
 // Everything it shows comes down its socket (live.js) as it changes.
 
 import { setPage, watch } from './live.js';
-import { sourceForm } from './source-form.js';
 
 const SIDES = ['left', 'right'];
 
 let takes = [];          // complete takes, newest first
 let verdicts = {};
-let labels = {};         // take -> its masks.json account
-let job = null;          // the labels job, as the server has it
-let machine = null;      // where SAM 3 runs, and whether it is ready there
 let converting = false;
-const got = new Set();   // episodes, verdicts and masks once each has come: until then, loading
+const got = new Set();   // episodes and verdicts once each has come: until then, loading
 let judging = 0;         // takes whose replay is still being solved for their verdict
-const posting = { labels: false, convert: false };   // a start asked for, its answer not back yet
-let stopping = false;    // a Stop asked for, the job not ended yet
+const posting = { convert: false };   // a start asked for, its answer not back yet
 
 async function ask(path, body) {
   const r = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -77,134 +71,23 @@ function forgetVideo(video) {
   video.nextElementSibling.hidden = true;
 }
 
-// --- the task's things ---------------------------------------------------------------
-// Named in words, one at a time, kept in this browser until labels are made
-// with them; then the labels' own are the starting point.
-let named = null;
-try { named = JSON.parse(localStorage.getItem('pinkrab.things') || 'null'); } catch { /* no storage, or old */ }
-if (!Array.isArray(named)) named = null;
-function things() { return named || []; }
-function setThings(list) {
-  named = [...new Set(list.map((t) => t.trim()).filter(Boolean))];
-  try { localStorage.setItem('pinkrab.things', JSON.stringify(named)); } catch { /* no storage */ }
-  drawThings();
-  drawTakes();
-  look();
-}
-function sameThings(a, b) { return (a || []).join('\n') === (b || []).join('\n'); }
 const passes = (name) => { const v = verdicts[name]; return !!v && !v.error && !(v.fails || []).length; };
-// The takes a Make labels would do: those that pass, without labels for these things.
-function wanting() {
-  const asked = things();
-  return takes.filter((e) => passes(e.name) && !sameThings(labels[e.name]?.things, asked)).map((e) => e.name);
-}
-
-// --- the takes ------------------------------------------------------------------------
-const takesBody = document.querySelector('#takes tbody');
-function flagCount(account) {
-  return Object.values(account?.flags || {}).reduce((n, spans) => n + spans.length, 0);
-}
-// A take worth a look: labels not made, made for other things, being made,
-// or with spans flagged.
-const PAGE = 20;
-let showAll = false;
-let takesPage = 0;
-function needsLook(e, making) {
-  const account = labels[e.name];
-  return !account || !sameThings(account.things, things()) || e.name === making || flagCount(account) > 0;
-}
 
 function drawTakes() {
-  const count = document.getElementById('takes-count');
-  const empty = document.getElementById('takes-empty');
-  if (!loaded()) {
-    // Until the shelf and its verdicts have come: a row that says so, not
-    // an empty list that reads as no takes.
-    const note = document.createElement('span');
-    waiting(note, 'loading the takes ...');
-    const td = Object.assign(document.createElement('td'), { colSpan: 5 });
-    td.append(note);
-    const tr = Object.assign(document.createElement('tr'), { className: 'loading-row' });
-    tr.append(td);
-    takesBody.replaceChildren(tr);
-    say(count, '');
-    empty.hidden = true;
-    document.getElementById('takes-pager').hidden = true;
-    drawLabels();
-    drawConvert();
-    drawTakeChoice();
-    return;
-  }
-  const making = job?.running ? job.at?.take : null;
   const passing = takes.filter((e) => passes(e.name));
-  const look = passing.filter((e) => needsLook(e, making))
-    .sort((a, b) => flagCount(labels[b.name]) - flagCount(labels[a.name]));
-  const counted = passing.length
-    ? `${passing.length} takes that pass · ${look.length ? `${look.length} to look at` : 'nothing to look at'}` : '';
-  say(count, counted);
-  if (judging) {
-    // The ring by the words for what is still coming, not by the whole count.
-    const still = document.createElement('span');
-    waiting(still, `judging ${judging} take${judging === 1 ? '' : 's'}`);
-    count.replaceChildren(counted ? `${counted} · ` : '', still);
-  }
-  const showLook = document.getElementById('show-look');
-  const showAllEl = document.getElementById('show-all');
-  showLook.textContent = `To look at (${look.length})`;
-  showAllEl.textContent = `All (${passing.length})`;
-  showLook.classList.toggle('on', !showAll);
-  showAllEl.classList.toggle('on', showAll);
-  showLook.setAttribute('aria-pressed', String(!showAll));
-  showAllEl.setAttribute('aria-pressed', String(showAll));
-  const list = showAll ? passing : look;
-  const pages = Math.max(1, Math.ceil(list.length / PAGE));
-  takesPage = Math.min(takesPage, pages - 1);
-  const page = list.slice(takesPage * PAGE, (takesPage + 1) * PAGE);
-  empty.hidden = page.length > 0;
-  if (takes.length && !passing.length && judging) waiting(empty, `judging the takes - ${judging} to go`);
-  else {
-    say(empty, !takes.length ? 'no takes on the shelf - record them on the Collect page'
-      : !passing.length ? 'no take passes yet - see the verdicts on the Collect page'
-        : 'every take has its labels and nothing flagged');
-  }
-  takesBody.replaceChildren(...page.map((e) => {
-    const tr = document.createElement('tr');
-    tr.dataset.name = e.name;
-    const account = labels[e.name];
-    const made = account ? account.things.join(', ') + (sameThings(account.things, things()) ? '' : ' (other things)')
-      + (account.by?.masker ? ' · masker' : '') : 'none';
-    const labelCell = cell(e.name === making ? 'making ...' : made, account ? 'labels made' : 'labels');
-    const n = flagCount(account);
-    const flagCell = cell(account ? (n ? `${n} span${n === 1 ? '' : 's'}` : 'none') : '', `look${n ? ' some' : ''}`);
-    const td = document.createElement('td');
-    const open = document.createElement('button');
-    open.className = 'play';
-    open.textContent = 'Review';
-    open.disabled = !account;
-    open.addEventListener('click', () => openReview(e.name));
-    td.append(open);
-    tr.append(cell(e.name, 'name'), cell(e.seconds == null ? '' : e.seconds.toFixed(1)), labelCell, flagCell, td);
-    return tr;
-  }));
-  const pager = document.getElementById('takes-pager');
-  pager.hidden = list.length <= PAGE;
-  document.getElementById('takes-where').textContent = list.length
-    ? `${takesPage * PAGE + 1}–${takesPage * PAGE + page.length} of ${list.length}` : '';
-  document.getElementById('takes-prev').disabled = takesPage === 0;
-  document.getElementById('takes-next').disabled = takesPage >= pages - 1;
-  drawLabels();
+  const demos = passing.filter((e) => e.kind !== 'rollout');
+  const state = document.getElementById('drawn-state');
+  if (!loaded()) waiting(state, 'loading the takes ...');
+  else if (judging) waiting(state, `judging ${judging} take${judging === 1 ? '' : 's'}`);
+  else say(state, demos.length ? `${demos.length} demonstration${demos.length === 1 ? '' : 's'} pass` : '');
   drawConvert();
   drawTakeChoice();
 }
-document.getElementById('show-look').addEventListener('click', () => { showAll = false; takesPage = 0; drawTakes(); });
-document.getElementById('show-all').addEventListener('click', () => { showAll = true; takesPage = 0; drawTakes(); });
-document.getElementById('takes-prev').addEventListener('click', () => { takesPage -= 1; drawTakes(); });
-document.getElementById('takes-next').addEventListener('click', () => { takesPage += 1; drawTakes(); });
 
 watch('episodes', (answer) => {
   got.add('episodes');
   // A rollout is here for its corrections - what a dataset learns from it -
-  // its seconds theirs; one with none has nothing to label or convert.
+  // its seconds theirs; one with none has nothing to convert.
   takes = (answer?.episodes || [])
     .filter((e) => e.complete && (e.kind !== 'rollout' || (e.corrections || []).length))
     .map((e) => (e.kind === 'rollout'
@@ -219,180 +102,8 @@ watch('verdicts', (answer) => {
   drawTakes();
 });
 
-// --- making the labels -----------------------------------------------------------------
-const labelsGo = document.getElementById('labels-go');
-const labelsStop = document.getElementById('labels-stop');
-const labelsProgress = document.getElementById('labels-progress');
-const labelsLines = document.getElementById('labels-lines');
-// How long each part of a job takes, against SAM 3 tracking a take: SAM 3
-// looking at a take's few pictures for the masker, teaching the masker, and
-// the masker labelling a take.
-const LOOK_TAKE = 0.08;
-const TEACH_TAKES = 6;
-const MASKER_TAKE = 0.1;
-const labelsNote = document.getElementById('labels-note');
-
-function drawLabels() {
-  const running = !!job?.running;
-  const n = wanting().length;
-  labelsGo.disabled = running || posting.labels || !things().length || n === 0 || !machine?.ready;
-  labelsGo.classList.toggle('busy', running || posting.labels);
-  labelsGo.textContent = posting.labels ? 'starting ...' : running ? 'making ...'
-    : n ? `Make labels (${n} take${n === 1 ? '' : 's'})` : 'Make labels';
-  if (!running) stopping = false;
-  labelsStop.hidden = !running;
-  labelsStop.disabled = stopping;
-  labelsStop.classList.toggle('busy', stopping);
-  labelsStop.textContent = stopping ? 'stopping ...' : 'Stop';
-  if (!job?.asked) { labelsProgress.hidden = true; return; }
-  labelsProgress.hidden = false;
-  const total = job.asked.takes.length;
-  const at = job.at || {};
-  const byMasker = !!job.asked.by_masker?.length;
-  const taught = job.asked.masker;
-  // The bar: SAM 3 looking at every take and the masker being taught (when
-  // it is), then the takes labelled - each part counted as long as it takes.
-  const looking = job.asked.teaches ? (at.takes || total) * LOOK_TAKE : 0;
-  const teaching = job.asked.teaches ? TEACH_TAKES : 0;
-  const perTake = byMasker ? MASKER_TAKE : 1;
-  const finished = job.done.length + Object.keys(job.failed).length;
-  let where;
-  if (at.stage === 'look') where = at.index * LOOK_TAKE;
-  else if (at.stage === 'send') where = looking;
-  else if (at.stage === 'teach') where = looking + teaching * (0.05 + 0.95 * (at.epoch || 0) / (at.epochs || 1));
-  else {
-    // SAM 3 follows each thing forward and, found late, back: forward is
-    // most of a video's time. The masker reads each frame once.
-    let within = 0;
-    if (at.frames) {
-      const video = at.video === 'gripper_right' ? 1 : 0;
-      within = (video + (at.stage === 'back' ? 1 : at.frame / at.frames)) / 2;
-    }
-    where = looking + teaching + ((at.index ?? finished) + within) * perTake;
-  }
-  const units = looking + teaching + total * perTake;
-  const share = running ? where / units : 1;
-  labelsProgress.querySelector('.bar > span').style.width = `${Math.min(100, share * 100)}%`;
-  const on = job.asked.machine && job.asked.machine !== 'this machine' ? ` on ${job.asked.machine}` : '';
-  const iou = taught?.iou ? ` (IoU with SAM 3: ${Object.entries(taught.iou).map(([t, v]) => `${t} ${v.toFixed(2)}`).join(' · ')})` : '';
-  const plan = byMasker
-    ? `the masker labels the takes${taught ? iou : ` once it is taught from pictures SAM 3 looks at`}`
-    : job.asked.teaches ? 'SAM 3 tracks the takes' : '';
-  const doing = at.stage === 'look' ? ` · pictures for the masker: take ${at.index + 1} / ${at.takes}`
-    : at.stage === 'send' ? ` · teaching the masker: sending its pictures to ${job.asked.machine}`
-    : at.stage === 'teach' ? ` · teaching the masker from ${at.takes} takes: epoch ${at.epoch} / ${at.epochs}`
-      + (at.map50 != null ? ` · mask mAP50 ${at.map50.toFixed(2)}` : '')
-      : (at.take ? ` · ${at.take}` : '')
-        + (at.stage === 'forward' || at.stage === 'masker' ? ` · ${at.video?.replace('gripper_', '')} · frame ${at.frame} / ${at.frames}`
-          : at.stage === 'back' ? ` · ${at.video?.replace('gripper_', '')} · ${job.asked.things[at.thing] ?? ''} back to the start`
-            : ' · grippers');
-  const head = running
-    ? `${finished} / ${total} takes${on} · ${job.seconds ?? 0} s${doing}`
-    : job.stopped ? `stopped: ${job.done.length} of ${total} takes made` : `done: ${job.done.length} of ${total} takes made in ${job.seconds} s`;
-  labelsLines.textContent = [head, ...(plan ? [plan] : []), ...Object.entries(job.failed).map(([name, why]) => `  ${name}: ${why}`)].join('\n');
-}
-
-labelsGo.addEventListener('click', async () => {
-  labelsNote.textContent = '';
-  posting.labels = true;
-  drawLabels();
-  try {
-    const answer = await ask('/masks', { takes: wanting(), things: things() });
-    if (answer.error) labelsNote.textContent = answer.error;
-    else job = answer;
-  } catch (err) { labelsNote.textContent = String(err); }
-  posting.labels = false;
-  drawTakes();
-});
-// Stopped at the next frame SAM 3 reports, not at once: the button says so
-// until the job has ended.
-labelsStop.addEventListener('click', async () => {
-  stopping = true;
-  drawLabels();
-  await ask('/masks/stop', {}).catch(() => { stopping = false; });
-  drawLabels();
-});
-
-// --- where SAM 3 runs ----------------------------------------------------------------
-const samMachine = document.getElementById('sam-machine');
-const samState = document.getElementById('sam-state');
-const samRetry = document.getElementById('sam-retry');
-const samAdd = document.getElementById('sam-add');
-const samSource = document.getElementById('sam-source');
-function drawMachine() {
-  const names = machine?.machines || [];
-  if ([...samMachine.options].map((o) => o.value).join('\n') !== names.join('\n')) {
-    samMachine.replaceChildren(...names.map((name) => Object.assign(document.createElement('option'), { value: name, textContent: name })));
-  }
-  samMachine.value = machine?.name || '';
-  samMachine.disabled = !machine || machine.busy || !!job?.running;
-  samAdd.disabled = samMachine.disabled;
-  const lines = machine?.lines || [];
-  if (!machine) {
-    if (got.has('masks')) say(samState, '');
-    else waiting(samState, 'finding where SAM 3 runs ...');
-  } else if (machine.busy) waiting(samState, lines[lines.length - 1] || 'getting it ready ...');
-  else say(samState, machine.error ? machine.error : 'ready');
-  samState.classList.toggle('bad', !!machine?.error);
-  samRetry.hidden = !machine?.error;
-}
-samMachine.addEventListener('change', async () => {
-  samMachine.disabled = true;
-  samAdd.disabled = true;
-  waiting(samState, `switching to ${samMachine.value} ...`);
-  samState.classList.remove('bad');
-  const answer = await ask('/masks/machine', { name: samMachine.value }).catch((err) => ({ error: String(err) }));
-  if (answer.error) {
-    say(samState, answer.error);
-    samState.classList.add('bad');
-    samMachine.disabled = samAdd.disabled = false;
-    return;
-  }
-  machine = answer;
-  drawMachine();
-  drawLabels();
-});
-// Saved, the new machine is the one SAM 3 runs on.
-const samForm = sourceForm(document.getElementById('sam-source-form'), async (name) => {
-  const answer = await ask('/masks/machine', { name });
-  if (answer.error) throw new Error(answer.error);
-  machine = answer;
-  drawMachine();
-  drawLabels();
-  samSource.close();
-});
-samAdd.addEventListener('click', () => { samForm.say(''); samSource.showModal(); });
-document.getElementById('sam-source-close').addEventListener('click', () => samSource.close());
-samRetry.addEventListener('click', async () => {
-  samRetry.disabled = true;
-  samRetry.classList.add('busy');
-  const answer = await ask('/masks/machine', {}).catch((err) => ({ error: String(err) }));
-  samRetry.disabled = false;
-  samRetry.classList.remove('busy');
-  if (!answer.error) { machine = answer; drawMachine(); }
-});
-
-watch('masks', (answer) => {
-  got.add('masks');
-  labels = answer?.takes || {};
-  const wasMaking = !!job?.running;
-  job = answer?.job || null;
-  const wasReady = !!machine?.ready && machine?.name === answer?.machine?.name;
-  machine = answer?.machine || null;
-  drawMachine();
-  // Ready now, on a machine the preview has not asked yet, or free again
-  // after making labels: the things looked for again.
-  if (machine?.ready && things().length && (!wasReady || (wasMaking && !answer?.job?.running))) look();
-  // Until some are named here: the things last asked for, else the latest labels'.
-  if (named === null) {
-    const latest = Object.values(labels).sort((a, b) => (b.made || 0) - (a.made || 0))[0];
-    const start = job?.asked?.things || latest?.things;
-    if (start) { named = [...start]; drawThings(); look(); }
-  }
-  drawTakes();
-});
-
-// --- the labeler: one frame, the grippers drawn, the things looked for ----------------
+// --- a frame with the robot drawn in --------------------------------------------------
+// Demonstrations only: a rollout's pictures show the robot already.
 const lookTake = document.getElementById('look-take');
 const lookLeft = document.getElementById('look-left');
 const lookRight = document.getElementById('look-right');
@@ -400,122 +111,14 @@ const lookFrame = document.getElementById('look-frame');
 const lookAt = document.getElementById('look-at');
 const lookBox = document.getElementById('look-box');
 const lookWait = document.getElementById('look-wait');
-const lookCanvas = document.getElementById('look-canvas');
-const thingsList = document.getElementById('things-list');
-const thingInput = document.getElementById('thing-input');
+const lookPicture = document.getElementById('look-picture');
 let lookSide = 'left';
-let seen = null;          // the last answer: picture, grippers, things found
-let picture = null;       // its picture, decoded
-let lit = null;           // the thing whose row the pointer is on
 let asking = false;
 let again = false;        // asked for something else while a look was out
-let failed = false;       // the last look came back without a picture
+let drawnTake = null;     // the take the server has followed, which answers in a moment
 
-const css = (name, fallback) => getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback;
-
-function trace(g, flat, sx, sy) {
-  g.moveTo(flat[0] * sx, flat[1] * sy);
-  for (let i = 2; i < flat.length; i += 2) g.lineTo(flat[i] * sx, flat[i + 1] * sy);
-  g.closePath();
-}
-
-function drawLook() {
-  const box = lookCanvas.getBoundingClientRect();
-  const w = Math.max(1, Math.round(box.width * devicePixelRatio));
-  const h = Math.max(1, Math.round(box.height * devicePixelRatio));
-  lookCanvas.width = w;
-  lookCanvas.height = h;
-  const g = lookCanvas.getContext('2d');
-  g.fillStyle = '#141416';
-  g.fillRect(0, 0, w, h);
-  if (!seen || !picture) return;
-  const [ph, pw] = seen.size;
-  const sx = w / pw;
-  const sy = h / ph;
-  g.drawImage(picture, 0, 0, w, h);
-  // What is not kept, dimmed: a veil with the kept shapes cut out of it.
-  const veil = document.createElement('canvas');
-  veil.width = w;
-  veil.height = h;
-  const v = veil.getContext('2d');
-  v.fillStyle = 'rgba(20, 12, 18, 0.62)';
-  v.fillRect(0, 0, w, h);
-  v.globalCompositeOperation = 'destination-out';
-  v.beginPath();
-  for (const flat of seen.grippers) trace(v, flat, sx, sy);
-  for (const t of seen.things) for (const flat of t.outlines) trace(v, flat, sx, sy);
-  v.fill();
-  g.drawImage(veil, 0, 0);
-  const lw = 2 * devicePixelRatio;
-  g.lineWidth = lw;
-  g.setLineDash([6 * devicePixelRatio, 4 * devicePixelRatio]);
-  g.strokeStyle = '#ffffff';
-  g.beginPath();
-  for (const flat of seen.grippers) trace(g, flat, sx, sy);
-  g.stroke();
-  g.setLineDash([]);
-  const pink = css('--shell', '#e2488e');
-  g.font = `600 ${12 * devicePixelRatio}px Pretendard, system-ui, sans-serif`;
-  g.textBaseline = 'top';
-  for (const t of seen.things) {
-    if (!t.outlines.length) continue;
-    g.beginPath();
-    for (const flat of t.outlines) trace(g, flat, sx, sy);
-    if (t.text === lit) { g.fillStyle = 'rgba(226, 72, 142, 0.38)'; g.fill(); }
-    g.strokeStyle = pink;
-    g.stroke();
-    // Its name by its top-left corner, on the studio's pink.
-    let x = Infinity;
-    let y = Infinity;
-    for (const flat of t.outlines) for (let i = 0; i < flat.length; i += 2) { x = Math.min(x, flat[i] * sx); y = Math.min(y, flat[i + 1] * sy); }
-    const pad = 4 * devicePixelRatio;
-    const tw = g.measureText(t.text).width + 2 * pad;
-    const th = 18 * devicePixelRatio;
-    const tx = Math.min(Math.max(0, x), w - tw);
-    const ty = Math.max(0, y - th - 2 * devicePixelRatio);
-    g.fillStyle = css('--shell-deep', '#b8306f');
-    g.fillRect(tx, ty, tw, th);
-    g.fillStyle = '#ffffff';
-    g.fillText(t.text, tx + pad, ty + 3 * devicePixelRatio);
-  }
-}
-
-function drawThings() {
-  const found = Object.fromEntries((seen?.things || []).map((t) => [t.text, t]));
-  thingsList.replaceChildren(...things().map((text) => {
-    const li = document.createElement('li');
-    const t = found[text];
-    const name = Object.assign(document.createElement('span'), { className: 'thing-name', textContent: text });
-    const n = t ? t.scores.length : null;
-    const here = Object.assign(document.createElement('span'), {
-      className: `thing-here${n === 0 ? ' none' : ''}`,
-      textContent: n == null ? '' : n ? `${n} here` : 'not in this frame',
-      title: t?.scores.length ? `scores ${t.scores.join(', ')}` : '',
-    });
-    const drop = document.createElement('button');
-    drop.className = 'icon';
-    drop.title = `remove ${text}`;
-    drop.setAttribute('aria-label', `remove ${text}`);
-    drop.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>';
-    drop.addEventListener('click', () => setThings(things().filter((x) => x !== text)));
-    li.append(name, here, drop);
-    li.addEventListener('pointerenter', () => { lit = text; drawLook(); });
-    li.addEventListener('pointerleave', () => { lit = null; drawLook(); });
-    return li;
-  }));
-}
-
-document.getElementById('thing-add').addEventListener('submit', (event) => {
-  event.preventDefault();
-  const text = thingInput.value.trim();
-  if (!text) return;
-  thingInput.value = '';
-  setThings([...things(), text]);
-});
-
-// The takes the labeler can show: those that pass, newest first.
 function drawTakeChoice() {
-  const passing = takes.filter((e) => passes(e.name)).map((e) => e.name);
+  const passing = takes.filter((e) => passes(e.name) && e.kind !== 'rollout').map((e) => e.name);
   const was = lookTake.value;
   const same = [...lookTake.options].map((o) => o.value).join() === passing.join();
   if (!same) {
@@ -527,59 +130,55 @@ function drawTakeChoice() {
   const n = ep?.frames?.[`gripper_${lookSide}`] || 1;
   lookFrame.max = String(n - 1);
   lookAt.textContent = `frame ${lookFrame.value} / ${n - 1}`;
+  lookTake.disabled = lookFrame.disabled = lookLeft.disabled = lookRight.disabled = !lookTake.value;
   // No take to show yet: the empty frame says whether one is coming.
   if (!lookTake.value && !asking) {
-    lookWait.hidden = loaded();
+    lookPicture.hidden = true;
+    lookWait.hidden = false;
     lookWait.classList.add('first');
-    if (!loaded()) waiting(lookWait, 'loading the takes ...');
+    if (!loaded() || judging) waiting(lookWait, 'loading the takes ...');
+    else say(lookWait, 'no demonstration passes yet - see the verdicts on the Collect page');
   }
 }
 
-// Until SAM 3 is ready where it runs, the frame and its grippers alone.
 async function look() {
   if (!lookTake.value) return;
-  // Said at once, even when this waits for the look already out: the frame
-  // never shows the last answer while the next is on its way. The first
-  // picture in the middle of the empty frame, a new look in its corner.
+  // Said at once, even when this waits for the look already out. A take not
+  // yet followed takes some seconds; a frame of the one followed, a moment.
   lookBox.setAttribute('aria-busy', 'true');
   lookWait.hidden = false;
-  lookWait.classList.toggle('first', !seen);
-  const sam = machine?.ready && things().length;
-  waiting(lookWait, seen ? (sam ? 'looking for the things ...' : 'loading the frame ...')
-    : sam ? 'starting SAM 3 - the first look takes up to a minute' : 'loading the frame ...');
+  lookWait.classList.toggle('first', lookPicture.hidden);
+  waiting(lookWait, drawnTake === lookTake.value ? 'drawing the frame ...'
+    : 'following the take with the robot - some seconds ...');
   if (asking) { again = true; return; }
   asking = true;
-  const note = document.getElementById('labels-note');
+  const take = lookTake.value;
+  let failed = '';
   try {
-    const answer = await ask('/masks/look', { take: lookTake.value, side: lookSide, frame: Number(lookFrame.value), things: machine?.ready ? things() : [] });
-    if (answer.error) {
-      // No picture of this frame: the frame is emptied rather than left on
-      // another take's, and says why beside the note.
-      note.textContent = answer.error;
-      seen = null;
-      picture = null;
-      failed = true;
-    } else {
-      failed = false;
-      note.textContent = answer.note || '';
+    const answer = await ask('/curate/drawn', { take, side: lookSide, frame: Number(lookFrame.value) });
+    if (answer.error) failed = answer.error;
+    else {
       const img = new Image();
       img.src = answer.picture;
       await img.decode();
-      seen = answer;
-      picture = img;
+      lookPicture.src = img.src;
+      lookPicture.hidden = false;
+      drawnTake = take;
     }
-  } catch (err) { note.textContent = String(err); seen = null; picture = null; failed = true; }
+  } catch (err) { failed = String(err); }
   asking = false;
-  drawThings();
-  drawLook();
   // Asked again meanwhile, for a take still there: that look carries on the waiting.
   const next = again && !!lookTake.value;
   again = false;
   if (next) { look(); return; }
   lookBox.setAttribute('aria-busy', 'false');
-  lookWait.hidden = !failed;
-  lookWait.classList.toggle('first', failed);
-  if (failed) say(lookWait, 'no picture of this frame - see the note beside it');
+  if (failed) {
+    // No picture of this frame: the frame is emptied rather than left on
+    // another take's, and says why.
+    lookPicture.hidden = true;
+    lookWait.classList.add('first');
+    say(lookWait, failed);
+  } else lookWait.hidden = true;
 }
 
 function pickSide(side) {
@@ -596,9 +195,6 @@ lookRight.addEventListener('click', () => pickSide('right'));
 lookTake.addEventListener('change', () => { lookFrame.value = '0'; drawTakeChoice(); look(); });
 lookFrame.addEventListener('input', drawTakeChoice);
 lookFrame.addEventListener('change', look);
-addEventListener('resize', drawLook);
-drawThings();
-drawLook();
 
 // --- converting -----------------------------------------------------------------------
 const convertOut = document.getElementById('convert-out');
@@ -608,26 +204,13 @@ const convertProgress = document.getElementById('convert-progress');
 const convertLines = document.getElementById('convert-lines');
 const convertNote = document.getElementById('convert-note');
 const convertView = document.getElementById('convert-view');
-const bgNote = document.getElementById('bg-note');
 try { convertTask.value = localStorage.getItem('pinkrab.task') || ''; } catch { /* no storage */ }
 
 function drawConvert() {
   const passing = takes.filter((e) => passes(e.name));
-  const labelled = passing.filter((e) => labels[e.name]).length;
-  document.getElementById('labels-state').textContent = passing.length ? `${labelled} of ${passing.length} takes that pass labelled` : '';
-  document.getElementById('convert-state').textContent = `${passing.length} take${passing.length === 1 ? '' : 's'} pass`;
-  // As the server decides it: randomised once any take has labels, a
-  // take without them then left out; as recorded while none has.
-  const bare = passing.length - labelled;
-  bgNote.textContent = !passing.length ? ''
-    : !labelled ? `${passing.length} takes, the pictures as recorded - no take has keep labels yet (step 1)`
-      : `${labelled} takes, each with a background of its own outside step 1's labels`
-        + (bare ? ` - ${bare} without labels left out; make them in step 1 to put them in` : '');
-  if (!loaded()) {
-    say(document.getElementById('labels-state'), '');
-    say(document.getElementById('convert-state'), '');
-    bgNote.textContent = '';
-  }
+  const state = document.getElementById('convert-state');
+  if (!loaded()) say(state, '');
+  else say(state, `${passing.length} take${passing.length === 1 ? '' : 's'} pass`);
   convertGo.disabled = converting || posting.convert || passing.length === 0;
   convertGo.classList.toggle('busy', converting || posting.convert);
   convertGo.textContent = posting.convert ? 'starting ...' : converting ? 'converting ...' : 'Convert';
@@ -674,7 +257,7 @@ watch('datasets', (answer) => {
   document.querySelector('#datasets tbody').replaceChildren(...list.map((d) => {
     const tr = document.createElement('tr');
     tr.append(cell(d.name, 'name'), cell(d.episodes ?? ''), cell(d.frames ?? ''),
-      cell(d.randomised ? 'randomised' : 'as recorded'), cell(d.task ?? ''),
+      cell(d.robot_drawn ? 'robot drawn' : 'as recorded'), cell(d.task ?? ''),
       cell(fmtBytes(d.bytes || 0)), cell(`${answer.dir}/${d.name}`, 'path'));
     const td = document.createElement('td');
     td.className = 'actions';
@@ -711,138 +294,6 @@ watch('datasets', (answer) => {
   say(datasetsEmpty, 'no datasets yet');
   datasetsEmpty.hidden = list.length > 0;
 });
-
-// --- the review ------------------------------------------------------------------------
-const dialog = document.getElementById('review');
-const videos = { left: document.getElementById('review-left'), right: document.getElementById('review-right') };
-const scrub = document.getElementById('review-scrub');
-const frameEl = document.getElementById('review-frame');
-const playEl = document.getElementById('review-play');
-const flagsCanvas = document.getElementById('review-flags');
-const listEl = document.getElementById('review-list');
-const noteEl = document.getElementById('review-note');
-let reviewing = null;    // the take open
-
-// The left video is the clock; the right follows it. Frames are counted on
-// the left video's.
-function frames() {
-  return labels[reviewing]?.frames?.gripper_left || Math.max(1, Math.round((videos.left.duration || 0) * 30));
-}
-function frameAt(t) { const d = videos.left.duration; return d ? Math.min(frames() - 1, Math.round((t / d) * frames())) : 0; }
-function seek(frame) {
-  const d = videos.left.duration;
-  if (!d) return;
-  const t = (frame / frames()) * d;
-  for (const side of SIDES) {
-    const v = videos[side];
-    if (v.duration) v.currentTime = Math.min(v.duration, t);
-  }
-  showFrame();
-}
-function showFrame() {
-  const f = frameAt(videos.left.currentTime);
-  scrub.value = String(f);
-  frameEl.textContent = `frame ${f} / ${frames() - 1}`;
-}
-
-function drawFlags() {
-  const account = labels[reviewing];
-  const rect = flagsCanvas.getBoundingClientRect();
-  flagsCanvas.width = Math.max(1, Math.round(rect.width * devicePixelRatio));
-  flagsCanvas.height = Math.max(1, Math.round(rect.height * devicePixelRatio));
-  const g = flagsCanvas.getContext('2d');
-  const css = getComputedStyle(document.documentElement);
-  g.fillStyle = css.getPropertyValue('--line').trim() || '#ecd9e2';
-  g.fillRect(0, 0, flagsCanvas.width, flagsCanvas.height);
-  g.fillStyle = css.getPropertyValue('--shell-deep').trim() || '#b8306f';
-  const half = flagsCanvas.height / 2;
-  SIDES.forEach((side, row) => {
-    const n = account?.frames?.[`gripper_${side}`] || 1;
-    for (const span of account?.flags?.[`gripper_${side}`] || []) {
-      const x0 = (span.start / n) * flagsCanvas.width;
-      const x1 = Math.max(x0 + 2, (span.end / n) * flagsCanvas.width);
-      g.fillRect(x0, row * half + 1, x1 - x0, half - 2);
-    }
-  });
-}
-
-function drawList() {
-  const account = labels[reviewing];
-  const rows = SIDES.flatMap((side) => (account?.flags?.[`gripper_${side}`] || []).map((span) => ({ side, ...span })));
-  rows.sort((a, b) => a.start - b.start);
-  const found = SIDES.map((side) => {
-    const n = account?.frames?.[`gripper_${side}`] || 0;
-    const each = Object.entries(account?.found?.[`gripper_${side}`] || {})
-      .map(([thing, k]) => `${thing} ${n ? Math.round((k / n) * 100) : 0}%`).join(', ');
-    return `${side}: ${each || 'no things'}`;
-  }).join(' · ');
-  noteEl.textContent = `found in ${found}`;
-  if (!rows.length) {
-    listEl.replaceChildren(Object.assign(document.createElement('li'), { className: 'quiet', textContent: 'no span worth a look' }));
-    return;
-  }
-  listEl.replaceChildren(...rows.map((r) => {
-    const li = document.createElement('li');
-    const go = document.createElement('button');
-    go.textContent = `${r.start}`;
-    go.title = 'go to this frame';
-    go.addEventListener('click', () => { pause(); seek(r.start); });
-    li.append(go, `${r.side} · ${r.thing} ${r.why === 'lost' ? 'lost' : 'jumped'} · frames ${r.start}–${r.end - 1}`);
-    return li;
-  }));
-}
-
-function load() {
-  const at = videos.left.currentTime || 0;
-  // A take's review videos are made on their first ask, a few seconds each:
-  // the players say so, and Play waits for both.
-  const take = reviewing;
-  playEl.disabled = scrub.disabled = true;
-  Promise.all(SIDES.map((side) => awaitVideo(videos[side], 'making the review video ...', 'loadeddata')))
-    .then((came) => { if (reviewing === take && came.every(Boolean)) playEl.disabled = scrub.disabled = false; });
-  for (const side of SIDES) {
-    videos[side].src = `/curate/review/${reviewing}/gripper_${side}.mp4?made=${labels[reviewing]?.made || 0}`;
-  }
-  videos.left.addEventListener('loadedmetadata', () => {
-    videos.left.currentTime = at; videos.right.currentTime = at; scrub.max = String(frames() - 1); showFrame();
-  },
-    { once: true });
-}
-
-function openReview(name) {
-  reviewing = name;
-  document.getElementById('review-title').textContent = name;
-  scrub.max = String(frames() - 1);
-  scrub.value = '0';
-  for (const side of SIDES) videos[side].removeAttribute('src');
-  load();
-  dialog.showModal();
-  drawFlags();
-  drawList();
-  showFrame();
-}
-
-function pause() { for (const side of SIDES) videos[side].pause(); playEl.textContent = 'Play'; }
-playEl.addEventListener('click', () => {
-  if (videos.left.paused) {
-    // Played to the end, both start over: a video that has ended starts
-    // over by itself, and the other, set to that end, would stay there.
-    const t = videos.left.ended || videos.left.currentTime >= videos.left.duration - 0.05 ? 0 : videos.left.currentTime;
-    for (const side of SIDES) videos[side].currentTime = t;
-    for (const side of SIDES) videos[side].play().catch(() => {});
-    playEl.textContent = 'Pause';
-  } else pause();
-});
-videos.left.addEventListener('timeupdate', showFrame);
-videos.left.addEventListener('ended', pause);
-scrub.addEventListener('input', () => { pause(); seek(Number(scrub.value)); });
-document.getElementById('review-close').addEventListener('click', () => dialog.close());
-dialog.addEventListener('close', () => {
-  pause();
-  reviewing = null;
-  for (const side of SIDES) { forgetVideo(videos[side]); videos[side].removeAttribute('src'); }
-});
-addEventListener('resize', () => { if (reviewing) drawFlags(); });
 
 // --- a dataset as made ----------------------------------------------------------------
 const dv = document.getElementById('dataset-view');
@@ -915,7 +366,7 @@ async function openDataset(name, button) {
   shown = answer;
   document.getElementById('dv-title').textContent = name;
   document.getElementById('dv-note').textContent = `${answer.episodes.length} episodes · ${answer.fps} Hz · `
-    + `${answer.randomised ? 'backgrounds randomised' : 'as recorded'}${answer.task ? ` · ${answer.task}` : ''}`;
+    + `${answer.robot_drawn ? 'robot drawn' : 'as recorded'}${answer.task ? ` · ${answer.task}` : ''}`;
   dvList.replaceChildren(...answer.episodes.map((e, i) => {
     const li = document.createElement('li');
     li.dataset.i = String(i);
@@ -962,5 +413,4 @@ dv.addEventListener('close', () => {
 
 // Before the socket has said anything: each part says it is loading.
 drawTakes();
-drawMachine();
 setPage('curate');

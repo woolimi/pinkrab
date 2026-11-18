@@ -121,6 +121,4 @@ Apache-2.0 이며 예외가 하나 있습니다. `wrist_yaw_bracket_left.stl` �
 `wrist_yaw_bracket_right.stl` 은 ahb 의
 [SO-ARM100 additional wrist joint](https://makerworld.com/en/models/2845098) 에서
 파생한 것이라 **CC BY-SA** 이고, 이 파일에서 파생한 것도 같은 라이선스를 따릅니다.
-배경 무작위화에 쓰는 [SAM 3](https://github.com/facebookresearch/sam3) 는 Meta 의
-SAM License 로 따로 설치하며 이 리포지토리에 포함되지 않습니다. [NOTICE](NOTICE) 를
-참고하세요.
+[NOTICE](NOTICE) 를 참고하세요.

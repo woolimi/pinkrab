@@ -59,6 +59,9 @@ def build_parser() -> argparse.ArgumentParser:
                            help="keyframe spacing of the dataset video: 2 trains fast, 30 is small")
     p_convert.add_argument("--fps", type=int, default=None,
                            help="the dataset's frames a second (default: the core settings' dataset_fps)")
+    p_convert.add_argument("--robot-drawn", action="store_true",
+                           help="draw the robot into each take's pictures, as convert does a rig take's, in the "
+                                "description's colours")
 
     p_eval = sub.add_parser("evaluate", help="the policy driving the simulated arm")
     p_eval.add_argument("checkpoint", help="a pretrained_model directory")
@@ -116,6 +119,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "convert":
         from pinkrab_umi import convert
+        from pinkrab_umi.robot_drawn import Look
 
         from .config import SETTINGS
 
@@ -134,7 +138,8 @@ def main(argv: list[str] | None = None) -> int:
         scene = scenes.pop()
         try:
             report = convert.convert(names, args.out, args.task or TASKS[scene], hands=hands_of(scene),
-                                     source=SETTINGS.episodes_dir, gop=args.gop, fps=args.fps)
+                                     source=SETTINGS.episodes_dir, gop=args.gop, fps=args.fps,
+                                     robot_drawn=Look.described() if args.robot_drawn else None)
         except convert.ConvertError as exc:
             print(f"error: {exc}", file=sys.stderr)
             return 1

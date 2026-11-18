@@ -39,9 +39,6 @@ from .alerts import ALERTS
 
 # The page draws this many steps of history; the rest is dropped as it ages.
 HISTORY = 600
-# A masker's weights (some 140 MB) are given this long to come from the
-# machine that taught it, in seconds.
-MASKER_FETCH_S = 10 * 60
 
 
 def checkpoint_hands(checkpoint: str | Path) -> tuple[str, ...]:
@@ -70,89 +67,6 @@ def _need_lens(hands) -> None:
             require_lens(f"follower_{arm}")
     except LensMissing as exc:
         raise PolicyError(str(exc)) from exc
-
-
-def masker_choices(checkpoint: str) -> dict:
-    """Which masker paints a checkpoint's pictures (inference.yaml's
-    maskers) and the ones that could - those that find the things its takes
-    kept, the newest first; `things` None for a checkpoint whose takes kept
-    their pictures whole."""
-    from pinkrab_core import inference
-    from pinkrab_policy.painting import PaintingError, painted_things
-    from pinkrab_umi import masker
-
-    try:
-        things = painted_things(checkpoint)
-        choice = None if things is None else inference.masker_choice(things)
-    except (PaintingError, ValueError) as exc:
-        raise PolicyError(str(exc)) from exc
-    found = [] if things is None else masker.maskers(things)
-    return {"things": things, "choice": choice,
-            # How near SAM 3 it found its things: the worst of them.
-            "maskers": [{"id": r["id"], "machine": r.get("machine"), "iou": min(r["iou"].values()),
-                         "takes": len(r.get("taught_from") or []), "made": r.get("made"),
-                         "here": masker.weights_here(r).is_file()} for r in found]}
-
-
-def choose_masker(checkpoint: str, choice: str) -> dict:
-    """`choice` - a masker's id, auto or off - kept as the masker for the
-    things the checkpoint's takes kept; what masker_choices then says."""
-    from pinkrab_core import inference
-
-    now = masker_choices(checkpoint)
-    if now["things"] is None:
-        raise PolicyError("its takes kept their pictures whole: nothing is painted")
-    if choice not in (inference.AUTO, inference.OFF, *(m["id"] for m in now["maskers"])):
-        raise PolicyError(f"no masker {choice!r} finds {', '.join(now['things'])}")
-    try:
-        inference.choose_masker(now["things"], choice)
-    except inference.InferenceError as exc:
-        raise PolicyError(str(exc)) from exc
-    return masker_choices(checkpoint)
-
-
-def fetch_masker(checkpoint: str, store) -> None:
-    """The masker the checkpoint's pictures are painted with, its weights
-    fetched here from the training machine that taught it where they are not
-    (`store`, the training page's): PolicyError where it wants one and none
-    can be used. Nothing for a checkpoint shown its pictures as they are."""
-    import shlex
-    import subprocess
-
-    from pinkrab_policy.painting import PaintingError, masker_wanted
-    from pinkrab_umi import masker
-
-    from .training import TrainError, ssh_base
-
-    if not (Path(checkpoint) / "config.json").is_file():
-        return    # not a checkpoint: starting it says so
-    try:
-        record = masker_wanted(checkpoint)
-    except (PaintingError, ValueError) as exc:
-        raise PolicyError(str(exc)) from exc
-    here = None if record is None else masker.weights_here(record)
-    if here is None or here.is_file():
-        return
-    try:
-        source = store.source(record["machine"])
-    except TrainError as exc:
-        raise PolicyError(f"the masker's weights are on {record['machine']}, which the training page "
-                          f"no longer has: {exc}") from exc
-    part = here.with_name(here.name + ".part")
-    try:
-        with part.open("wb") as out:
-            done = subprocess.run([*ssh_base(source), f"cat {shlex.quote(record['weights'])}"], stdout=out,
-                                  stderr=subprocess.PIPE, timeout=MASKER_FETCH_S, check=False)
-        if done.returncode != 0:
-            said = done.stderr.decode("utf-8", "replace").strip().splitlines()
-            raise PolicyError(f"the masker's weights could not be fetched from {record['machine']}: "
-                              + (said[-1] if said else f"ssh exited {done.returncode}"))
-        part.rename(here)
-    except subprocess.TimeoutExpired as exc:
-        raise PolicyError(f"the masker's weights did not come from {record['machine']} in "
-                          f"{MASKER_FETCH_S // 60} minutes") from exc
-    finally:
-        part.unlink(missing_ok=True)
 
 
 def checkpoints() -> list[dict]:
@@ -245,8 +159,6 @@ class PolicyRun:
         # How the policy is being asked in this run (pinkrab_core.inference):
         # the asking loop's own, or what the rollout node reports.
         self._settings: dict | None = None
-        # The masker its pictures are painted with, by id - None: as they are.
-        self._masker: str | None = None
         # Driving: the rollout node asks the policy and moves the arm, and
         # reports each step here. Nothing is asked in this process then; the
         # history is what the node said.
@@ -280,7 +192,6 @@ class PolicyRun:
                 "latency_ms": round(self._latency_ms, 1),
                 "last": last,
                 "settings": self._settings,
-                "masker": self._masker,
             }
 
     @property
@@ -320,7 +231,6 @@ class PolicyRun:
             self._wild = 0
             self._note = ""
             self._settings = None
-            self._masker = None
             self._loading = True
             self._hz = 0.0
             self._thread = threading.Thread(target=self._run, args=(joints_now,), name="policy", daemon=True)
@@ -364,7 +274,6 @@ class PolicyRun:
             self._latency_ms = 0.0
             self._driving = True
             self._settings = None
-            self._masker = None
             self._phase = "starting"
             self._refused = ""
             self._beat = 0.0
@@ -388,7 +297,6 @@ class PolicyRun:
                 return
             if isinstance(report.get("settings"), dict):
                 self._settings = report["settings"]
-            self._masker = report.get("masker")
             phase = str(report.get("phase", ""))
             self._phase = phase
             if phase == "refused":
@@ -469,7 +377,7 @@ class PolicyRun:
                 tools[hand] = chain.forward(joints) @ turn
                 band = gripper_band(hand)
                 apertures[hand] = aperture_of(hand, now.get(f"{hand}_gripper", band[0]), band)
-            observer = Observer(brain.sizes, self._checkpoint)
+            observer = Observer(brain.sizes)
         except Exception as exc:                      # noqa: BLE001 - said on the page
             ALERTS.say("policy", f"could not load the checkpoint: {exc}")
             with self._lock:
@@ -481,12 +389,8 @@ class PolicyRun:
             self._brain = brain
             self._task = brain.task or ""
             self._settings = brain.settings
-            self._masker = observer.masker
             self._loading = False
-        try:
-            self._ask(brain, Plan(brain), observer, joints_now, tools, apertures)
-        finally:
-            observer.close()
+        self._ask(brain, Plan(brain), observer, joints_now, tools, apertures)
 
     def _ask(self, brain, plan, observer, joints_now, tools: dict, apertures: dict) -> None:
         from pinkrab_core.dataset import delta_to_matrix, relative_pose, state_vector
@@ -502,7 +406,7 @@ class PolicyRun:
         while not self._stop.is_set():
             began = time.monotonic()
             try:
-                images = observer.observe(joints_now() or {})
+                images = observer.observe()
             except Exception as exc:                  # noqa: BLE001
                 self._trouble(f"no picture: {exc}")
                 if self._stop.wait(0.5):
