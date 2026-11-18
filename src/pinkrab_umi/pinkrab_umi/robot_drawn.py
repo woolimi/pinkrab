@@ -164,22 +164,19 @@ def _board() -> tuple[np.ndarray, np.ndarray]:
     return board, np.array(slots).reshape(-1, 3, 3)
 
 
-def _followed(chain, ready: np.ndarray, targets: list[np.ndarray | None], rate_hz: float) -> np.ndarray:
+def _followed(chain, ready: np.ndarray, targets: list[np.ndarray | None], times: np.ndarray,
+              rate_hz: float) -> np.ndarray:
     """An arm's joints (n, dof) under each target in turn, degrees: at ready
-    until the first, which is solved from ready, then followed, held where a
-    target is missing - as the shelf's replay plays a take."""
-    from pinkrab_core.follow import ORIENTATION_WEIGHT
+    until the first, then followed as the shelf's replay follows a take
+    (follow.Following), held where a target is missing."""
+    from pinkrab_core.follow import Following
 
     out = np.empty((len(targets), len(ready)))
-    joints, started = ready.copy(), False
+    follow = Following(chain, ready)
     for i, target in enumerate(targets):
         if target is not None:
-            if not started:
-                joints = chain.solve(target, seed=ready, restarts=1, orientation_weight=ORIENTATION_WEIGHT)
-                started = True
-            else:
-                joints = chain.track(target, joints, orientation_weight=ORIENTATION_WEIGHT, rate_hz=rate_hz)
-        out[i] = joints
+            follow.step(target, float(times[i]), rate_hz)
+        out[i] = follow.joints
     return out
 
 
@@ -225,7 +222,7 @@ class RobotDrawn:
             targets = [None if T is None else world_T_desk @ T for T in self.scene.tools[arm]]
             if not any(T is not None for T in targets):
                 raise DrawError(f"the {arm} hand is never placed")
-            self.joints[arm] = (chain.joint_names, _followed(chain, ready, targets, rate))
+            self.joints[arm] = (chain.joint_names, _followed(chain, ready, targets, times, rate))
 
     def _pose(self, t: float) -> None:
         for names, track in self.joints.values():

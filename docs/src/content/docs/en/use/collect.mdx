@@ -1,6 +1,6 @@
 ---
 title: Demonstration collection
-description: How to record demonstrations with two Hermits. Placement of the top camera and the table marker, the Collect page in studio, the foot pedals, and demonstration verdicts.
+description: How to record demonstrations with two Hermits. Placement of the top camera and the table marker, the Collect page in studio, the robot arm preview, the foot pedals, and demonstration verdicts.
 ---
 
 import Clip from '../../../../components/Clip.astro';
@@ -42,6 +42,18 @@ Before starting to record, overlap the Hermits in both hands with this drawing. 
 
 Ready is the pose in which the demonstrator holds the arms comfortably extended forward. When the policy runs, the arm first goes to the pose where the demonstration started; the start pose needs to be similar from take to take for the policy to learn the start well, and straying far from ready can make a pose the arm can reach only by turning the shoulder a lot. Judge the distance by the size of the drawing. If the real Hermit looks larger than the drawing, you are holding it too close.
 
+## Robot arm preview
+
+The top camera view also overlays the two robot arms as translucent silhouettes. The robot's board is taken to stand at the demonstrator's chest, and each arm follows that hand's Hermit the way the replay in the [demonstration verdict](#demonstration-verdict) does: solved by IK from ready the first time, then followed on from the frame before. Until the hand is found the arm stands at the ready pose, and while the marker is lost it stays where it was. The gripper is not drawn: the Hermit being held stands where it would be.
+
+| Colour | Meaning |
+|---|---|
+| Grey | The arm is following the hand |
+| Green | That hand is within the ready pose (the same bounds as the Hermit drawing above) |
+| Red | The arm falls more than 15 mm or 20° short of the hand; the shortfall is shown beside it |
+
+A stretch drawn red is flagged `short` by the replay and cut from the dataset. If an arm turns red while recording, move that hand to where the arm reaches.
+
 ## Recording
 
 | Pedal | Action on the Collect page |
@@ -62,6 +74,7 @@ Because pedals are used, you never need to take your hands off Hermit while reco
 - Do the work **within about 40 cm of the board**. Farther than that, there are places the arm cannot reach even fully extended.
 - After placing an object, **pull your hand back while lifting it up** from that spot, then stop recording. If many demonstrations stop right after placing, the policy cannot learn the motion that follows the placing, so the verdict checks this too.
 - Record the same task many times, **changing the object's position and orientation slightly**.
+- Demonstrate **where the real robot is out of the gripper cameras' view**. Curation only draws the robot into the demonstration videos and does not erase a real robot they caught, which then makes a picture unlike the one at run time.
 
 ## Demonstration verdict
 

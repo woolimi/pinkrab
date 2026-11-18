@@ -59,6 +59,74 @@ def tool_absolute_target(arm: str, world_T_desk: np.ndarray, desk_T_tcp: np.ndar
     return target
 
 
+# An arm following a take's hand falls short where its solve lands this far
+# from the target: the shelf's replay flags the frame, convert cuts it, and
+# the top camera's picture shows that arm in its own colour.
+SHORT_MM = 15.0
+SHORT_DEG = 20.0
+# An arm held short is solved afresh from ready at most this often, with this
+# many starts: a take whose hand rests out of reach is not solved whole at
+# every moment.
+RESOLVE_S = 0.5
+RESOLVE_RESTARTS = 8
+
+
+class Following:
+    """One arm following a hand's tool targets (base frame) as the shelf's
+    replay plays a take: the first solved from the ready pose alone, as a
+    policy run walks the arm there from ready - a restart from elsewhere
+    could land on a shape of the arm it never passes through on the way -
+    and each after tracked from where the arm was.
+
+    Followed from where it was, an arm sent to a pose beyond it folds against
+    its bands and stays there when the hand comes back within reach: a pose of
+    another shape of the arm is never walked to. So one held short is solved
+    afresh from ready now and then, and the closer answer kept. The attitude
+    is weighed against the position as teleop weighs it."""
+
+    def __init__(self, chain: ArmKinematics, ready: np.ndarray) -> None:
+        self.chain = chain
+        self.ready = ready
+        self.joints = ready
+        self.started = False
+        self.solved_at = -math.inf
+        self.reach = (0.0, 0.0)   # how far the last answer landed from its target: mm, degrees
+
+    @property
+    def short(self) -> bool:
+        return self.reach[0] > SHORT_MM or self.reach[1] > SHORT_DEG
+
+    def start(self, target: np.ndarray) -> np.ndarray:
+        """The arm's joints (degrees) for the first target, solved from ready."""
+        self.joints = self.chain.solve(target, seed=self.ready, restarts=1, orientation_weight=ORIENTATION_WEIGHT)
+        self.started = True
+        self._reached(target)
+        return self.joints
+
+    def step(self, target: np.ndarray, t: float, rate_hz: float) -> np.ndarray:
+        """The arm's joints (degrees) for the next target, `t` seconds on a
+        clock of the caller's: started from ready if it is the first."""
+        if not self.started:
+            return self.start(target)
+        joints = self.chain.track(target, self.joints, orientation_weight=ORIENTATION_WEIGHT, rate_hz=rate_hz)
+        mm, deg = self.chain.reach_error(target, joints)
+        mm *= 1000.0
+        if (mm > SHORT_MM or deg > SHORT_DEG) and t - self.solved_at >= RESOLVE_S:
+            self.solved_at = t
+            fresh = self.chain.solve(target, seed=self.ready, restarts=RESOLVE_RESTARTS,
+                                     orientation_weight=ORIENTATION_WEIGHT)
+            fresh_mm, fresh_deg = self.chain.reach_error(target, fresh)
+            if fresh_mm * 1000.0 + fresh_deg < mm + deg:
+                joints, mm, deg = fresh, fresh_mm * 1000.0, fresh_deg
+        self.joints = joints
+        self.reach = (float(mm), float(deg))
+        return joints
+
+    def _reached(self, target: np.ndarray) -> None:
+        mm, deg = self.chain.reach_error(target, self.joints)
+        self.reach = (float(mm) * 1000.0, float(deg))
+
+
 def desk_tool(arm: str, world_T_desk: np.ndarray, tool: np.ndarray) -> np.ndarray:
     """The hand's tool centre against the desk solid, 4x4 metres, that asks
     this arm for `tool` (base frame): tool_absolute_target undone."""

@@ -41,7 +41,7 @@ from urllib.parse import urlparse
 import cv2
 import numpy as np
 
-from . import bench, ready_guide, record
+from . import bench, hologram, ready_guide, record
 from .episode import (EPISODE_NAME, EpisodeError, EpisodeWriter, default_name, delete_episode, list_episodes,
                       set_outcome)
 from .gripper_cams import GripperCameras
@@ -255,6 +255,9 @@ class Live:
         # and the desk under the solid: drawn into the picture once worked out
         # (ready_guide); None until then.
         self._ready_guide: ready_guide.Guide | None = None
+        # The arms, following the hands in the picture (hologram); None until
+        # built, after the guide.
+        self._hologram: hologram.Hologram | None = None
 
     # --- the capture side -------------------------------------------------
 
@@ -280,6 +283,10 @@ class Live:
             self._ready_guide = ready_guide.load()
         except Exception as exc:  # noqa: BLE001 - the picture goes on without the guide
             print(f"  ready guide not drawn: {type(exc).__name__}: {exc}", file=sys.stderr, flush=True)
+        try:
+            self._hologram = hologram.Hologram()
+        except Exception as exc:  # noqa: BLE001 - the picture goes on without the arms
+            print(f"  arms not drawn: {type(exc).__name__}: {exc}", file=sys.stderr, flush=True)
 
     def stop(self) -> None:
         self.stopping.set()
@@ -662,10 +669,11 @@ class Live:
         followed: two handhelds in one picture are two solved solids, and the one
         that is not primary is not a thrown-away face. The desk's faces are in
         their own colour, so what is world and what is hand is told apart at a
-        glance. Over them, once the desk solid is placed, each hand's solid
-        where the robot's ready pose would hold it, and how far the hand is
-        from it (ready_guide). The picture is copied, so the frame going to
-        disk is not drawn on.
+        glance. Over them, once the desk solid is placed, the robot's arms
+        following the hands (hologram), then each hand's solid where the
+        robot's ready pose would hold it, and how far the hand is from it
+        (ready_guide). The picture is copied, so the frame going to disk is
+        not drawn on.
         """
         canvas = picture.copy() if picture.ndim == 3 else cv2.cvtColor(picture, cv2.COLOR_GRAY2BGR)
         used = {
@@ -703,6 +711,18 @@ class Live:
         if guide is not None and desk is not None and desk.ok and not desk.reason and desk.pose is not None:
             hands = {name.removeprefix("handheld_"): (answer.pose if answer.ok and not answer.reason else None)
                      for name, answer in answers.items() if name.startswith("handheld_")}
+            arms = self._hologram
+            if arms is not None:
+                # Only the picture's: a failure here turns the arms off, and
+                # never costs the frame its place in the recording.
+                try:
+                    arms.follow_hands(desk.pose, hands, time.monotonic())
+                    arms.draw(canvas, self.intrinsics, desk.pose,
+                              {arm: ready_guide.at_ready(desk.pose, arm, pose, guide)[2]
+                               for arm, pose in hands.items() if pose is not None})
+                except Exception as exc:  # noqa: BLE001 - the picture goes on without the arms
+                    self._hologram = None
+                    print(f"  arms no longer drawn: {type(exc).__name__}: {exc}", file=sys.stderr, flush=True)
             ready_guide.draw(canvas, self.intrinsics, desk.pose, hands, guide)
         return canvas
 

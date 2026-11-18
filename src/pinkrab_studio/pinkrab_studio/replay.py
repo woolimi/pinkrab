@@ -56,7 +56,7 @@ import numpy as np
 from pinkrab_core.config import ARMS
 from pinkrab_core.config import SETTINGS as CORE
 from pinkrab_core.demo_start import level, mean_rotation
-from pinkrab_core.follow import ORIENTATION_WEIGHT, tool_absolute_target
+from pinkrab_core.follow import Following, tool_absolute_target
 from pinkrab_core.jaw import shut_wide
 from pinkrab_core.kinematics import ArmKinematics, arm_fingerprint
 from pinkrab_core.origin import READY_DEG, ready_joints
@@ -77,20 +77,14 @@ from pinkrab_umi.convert import placed as has_hand
 from pinkrab_umi.desk_solid import PlacementError, carried
 from pinkrab_umi.episode import ROBOT_GAP_S, STREAMS
 
-# What makes a frame red.
-SHORT_MM = 15.0          # the solver landed this far from the target
-SHORT_DEG = 20.0
+# What makes a frame red, beside an arm short of its target (pinkrab_core.follow's
+# SHORT_MM and SHORT_DEG).
 JUMP_DEG = 15.0          # a joint moved this much between two frames
 AT_LIMIT_DEG = 0.5
 # The flags of a frame the arm does not follow: short of the target, a body
 # of the robot met, a joint jumping. A joint at its band is followed
 # (`limit`), and a frame with no hand placed (`lost`) is the tracking's.
 HELD_BACK = frozenset({"short", "touch", "jump"})
-# An arm held short is solved afresh from ready at most this often, with this
-# many starts: a take whose hand rests out of reach is not solved whole at
-# every moment.
-RESOLVE_S = 0.5
-RESOLVE_RESTARTS = 8
 # A start this far from the mean start of that hand over the takes is pointed out.
 FAR_START_DEG = 20.0
 FAR_START_MM = 50.0
@@ -447,7 +441,7 @@ def solve(root: Path) -> dict:
         chain = _chain(arm)
         ready = np.array(ready_joints(arm, chain.joint_names), dtype=float)
         arms[arm] = {"chain": chain, "ready": ready, "joints": ready, "targets": None, "present": False,
-                     "solved_at": -math.inf}
+                     "follow": Following(chain, ready)}
         arms[arm]["lo"], arms[arm]["hi"] = chain.limits
         readings = jaw_readings(poses, arm)
         arms[arm]["jaw"] = np.interp(at, *readings) if len(readings[0]) else None
@@ -474,18 +468,13 @@ def solve(root: Path) -> dict:
         if first is None:
             unplaced[arm] = "it was never placed for two frames running"
             continue
-        # The first target solved from the ready pose alone, as a policy run
-        # walks the arm there from ready: a restart from elsewhere could land
-        # on a shape of the arm it never passes through on the way. The
-        # attitude is weighed against the position as teleop weighs it.
-        joints = chain.solve(first, seed=ready, restarts=1, orientation_weight=ORIENTATION_WEIGHT)
-        mm, deg = chain.reach_error(first, joints)
         a = arms[arm]
         a["present"] = True
-        a["joints"] = joints
+        a["joints"] = a["follow"].start(first)
         a["targets"] = targets
-        starts[arm] = {"reached": bool(mm * 1000.0 <= SHORT_MM and deg <= SHORT_DEG),
-                       "reach_mm": round(mm * 1000.0, 1), "reach_deg": round(deg, 1),
+        mm, deg = a["follow"].reach
+        starts[arm] = {"reached": not a["follow"].short,
+                       "reach_mm": round(mm, 1), "reach_deg": round(deg, 1),
                        "height_mm": round(float(first[2, 3]) * 1000.0)}
 
     gripper_band = {arm: scene.limits.get(f"{arm}_gripper") for arm in ARMS}
@@ -516,24 +505,12 @@ def solve(root: Path) -> dict:
                 flags.append("lost")   # the hand had no place in the world this moment: the arm holds
                 short = None
             else:
-                joints = chain.track(target, a["joints"], orientation_weight=ORIENTATION_WEIGHT, rate_hz=fps)
-                mm, deg = chain.reach_error(target, joints)
-                # Followed from where it was, an arm sent to a pose beyond it
-                # folds against its bands and stays there when the hand comes
-                # back within reach: a pose of another shape of the arm is
-                # never walked to. So one held short is solved afresh from
-                # ready now and then, and the closer answer kept - the step
-                # across shows as a jump.
-                if (mm * 1000.0 > SHORT_MM or deg > SHORT_DEG) and t - a["solved_at"] >= RESOLVE_S:
-                    a["solved_at"] = t
-                    fresh = chain.solve(target, seed=a["ready"], restarts=RESOLVE_RESTARTS,
-                                        orientation_weight=ORIENTATION_WEIGHT)
-                    fresh_mm, fresh_deg = chain.reach_error(target, fresh)
-                    if fresh_mm * 1000.0 + fresh_deg < mm * 1000.0 + deg:
-                        joints, mm, deg = fresh, fresh_mm, fresh_deg
-                a["joints"] = joints
-                short = {"mm": round(mm * 1000.0, 1), "deg": round(deg, 1)}
-                if mm * 1000.0 > SHORT_MM or deg > SHORT_DEG:
+                # An arm held short is solved afresh from ready now and
+                # then (Following): the step across shows as a jump.
+                a["joints"] = a["follow"].step(target, t, fps)
+                mm, deg = a["follow"].reach
+                short = {"mm": round(mm, 1), "deg": round(deg, 1)}
+                if a["follow"].short:
                     flags.append("short")
             joints = a["joints"]
             at_limit = [n for n, v, lo, hi in zip(chain.joint_names, joints, a["lo"], a["hi"])
