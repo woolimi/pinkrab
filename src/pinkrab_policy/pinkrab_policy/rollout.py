@@ -348,7 +348,10 @@ class Plan:
     A chunk is of the moment its pictures were exposed, and by the time it
     is answered that moment has passed: its entries for the steps since are
     the motion the arm has already been making, so they are let go, as UMI
-    lets go the actions its latency has overtaken. One chunk at a time,
+    lets go the actions its latency has overtaken - and so are those for the
+    time a step takes to become the arm's motion once asked
+    (`action_latency_s`): the entry sent now is the one for when the arm
+    will make it. One chunk at a time,
     unless the rig's inference.yaml blends them: the next `n_action_steps`
     entries of a chunk, each the step from the entry before
     (chunks.steps_of), and then a fresh chunk from what the cameras see
@@ -364,6 +367,7 @@ class Plan:
         self.brain = brain
         self.steps = int(brain.settings.get("n_action_steps") or 1)
         self.coeff = brain.settings.get("temporal_ensemble_coeff")
+        self.lead = float(brain.settings.get("action_latency_s") or 0.0)
         self.reset()
 
     def reset(self) -> None:
@@ -379,14 +383,21 @@ class Plan:
         for a run younger than that."""
         return self.history[-behind][hand] if 0 < behind <= len(self.history) else now
 
-    def _asked(self, images, state, exposed: float | None) -> tuple[np.ndarray, int]:
-        """A chunk, and how many of its entries are behind: the steps between
-        when its pictures were exposed (`exposed`, time.monotonic()) and now."""
+    def _asked(self, images, state, exposed: float | None) -> tuple[np.ndarray, int, int]:
+        """A chunk, the steps since its pictures were exposed (`exposed`,
+        time.monotonic()), and how many of its entries are behind: those
+        steps and the ones until a step asked for now is made. A
+        simulation's pictures (None) are of this very moment and its arms
+        answer at once."""
         chunk = self.brain.chunk(images, state)
         if chunk.ndim != 2 or chunk.shape[1] != chunks.PER_HAND * len(self.brain.hands):
             raise ValueError(f"the policy answered a chunk of {chunk.shape} for {len(self.brain.hands)} hand(s)")
-        behind = 0 if exposed is None else round(max(0.0, time.monotonic() - exposed) * self.brain.fps)
-        return chunk, min(behind, len(chunk) - self.steps)
+        if exposed is None:
+            return chunk, 0, 0
+        since = max(0.0, time.monotonic() - exposed)
+        most = len(chunk) - self.steps
+        return (chunk, min(round(since * self.brain.fps), most),
+                min(round((since + self.lead) * self.brain.fps), most))
 
     def next(self, images: dict[str, np.ndarray], state: np.ndarray, tools: dict[str, np.ndarray],
              exposed: float | None = None) -> np.ndarray:
@@ -397,17 +408,18 @@ class Plan:
         self.tick += 1
         if self.coeff is None:
             if not self.queue:
-                chunk, behind = self._asked(images, state, exposed)
+                chunk, _, behind = self._asked(images, state, exposed)
                 self.queue = list(chunks.steps_of(chunk)[behind:behind + self.steps])
             return self.queue.pop(0)
         hands = self.brain.hands
-        chunk, behind = self._asked(images, state, exposed)
+        chunk, seen, behind = self._asked(images, state, exposed)
         # Entry `behind` is this tick's; the ones before it were the arm's
-        # motion while the pictures came and the policy answered. Placed on
-        # the tool's pose of the moment the pictures were exposed - the one
-        # the entries are measured from - which is where it was put `behind`
-        # steps of the last plan ago; with none, where it is.
-        base = {hand: self._then(hand, behind, tools[hand]) for hand in hands}
+        # motion while the pictures came and the policy answered, and while a
+        # step asked for now becomes the arm's. Placed on the tool's pose of
+        # the moment the pictures were exposed - the one the entries are
+        # measured from - which is where it was put `seen` steps of the last
+        # plan ago; with none, where it is.
+        base = {hand: self._then(hand, seen, tools[hand]) for hand in hands}
         self.plans.append((self.tick, [
             {hand: (base[hand] @ chunks.as_matrix(row[10 * i:10 * i + 9]), float(row[10 * i + 9]))
              for i, hand in enumerate(hands)} for row in chunk[behind:]]))

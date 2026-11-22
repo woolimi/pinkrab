@@ -341,6 +341,14 @@ class Settings:
     # tenth of a second is a new look ten times a second, the rate UMI runs its
     # policies at - three steps at 30 fps.
     policy_action_s: float = 0.1
+    # How long after a step is asked for the arm makes it: the gate's shaping
+    # walks a command in behind it (35-50 ms at the 30 deg/s takes mostly turn
+    # a joint at, worked out on its jerk-limited trajectories; longer near the
+    # speed cap) and the STS3215 answers its setpoint after some 40 ms (its
+    # fitted dead time). A rollout asks for the step of this far ahead, as
+    # UMI sends its actions ahead of the robot's latency. Measured off a run's
+    # recorded commands by `pinkrab-umi latency`.
+    policy_action_latency_s: float = 0.085
     # How fast the gate lets a joint turn while a policy drives, degrees per
     # second - see `inference.policy_dps`. A solver chasing a target out of reach swings
     # the arm through another configuration, and at the gate's own 300 deg/s

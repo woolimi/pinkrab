@@ -30,7 +30,7 @@ When Drive is pressed on the [Policy page](../../use/run/#policy-page), recordin
 | File | Contents |
 |---|---|
 | `gripper_left.mp4`, `gripper_right.mp4` | Video of the two arms' gripper cameras. The top camera video is not saved |
-| `robot.jsonl` | Joint readings of both arms, 60 times per second. Each line has the joint angles, the gate mode, `controller`, and `correction` if in a correction |
+| `robot.jsonl` | Joint readings of both arms, 60 times per second. Each line has the joint angles, the gate mode, `controller`, `correction` if in a correction, and the command at that moment (`asked`) and the setpoint the gate sent (`sent`) |
 | `events.jsonl` | Start and end, and `redo` of a discarded correction |
 | `meta.json` | `kind: rollout`, the arm that ran, the checkpoint, the arm description fingerprint at recording time, the camera lens center, and the verdict of the person watching (`outcome`: `succeeded` or `failed`, only if a verdict was made) |
 

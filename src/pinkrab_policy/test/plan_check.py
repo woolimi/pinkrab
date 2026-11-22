@@ -61,6 +61,10 @@ def main() -> int:
     # Pictures exposed 60 ms ago, at 50 fps: three entries are behind.
     got = plan.next({}, np.zeros(11), tools, exposed=time.monotonic() - 0.06)
     check("the entries the latency has overtaken are let go", np.abs(got[:10] - step(3)).max() < 1e-5)
+    brain.settings = {**brain.settings, "action_latency_s": 0.04}
+    plan = Plan(brain)
+    got = plan.next({}, np.zeros(11), tools, exposed=time.monotonic() - 0.06)
+    check("and those for the time the arm takes to make a step asked for", np.abs(got[:10] - step(5)).max() < 1e-5)
 
     print("\nblended")
     brain = Brain({"n_action_steps": 1, "temporal_ensemble_coeff": 0.01})
@@ -77,6 +81,26 @@ def main() -> int:
         brain.at += 1
     check("chunks that agree blend into the steps they share", worst < 1e-5, f"{worst:.2e}")
     check("the oldest chunk is let go once its entries are spent", len(plan.plans) <= 20)
+
+    # Each tick's tool a different pose; pictures exposed 60 ms ago (three
+    # ticks) and 40 ms for the arm to make a step (two more): the chunk is
+    # placed on where the tool was three ticks ago, not five.
+    brain = Brain({"n_action_steps": 1, "temporal_ensemble_coeff": 0.01, "action_latency_s": 0.04})
+    plan = Plan(brain)
+    poses = []
+    for tick in range(6):
+        pose = np.eye(4)
+        pose[0, 3] = 0.01 * tick
+        poses.append(pose)
+        plan.next({}, np.zeros(11), {hand: pose for hand in brain.hands})
+    now = np.eye(4)
+    now[0, 3] = 0.06
+    plan.next({}, np.zeros(11), {hand: now for hand in brain.hands}, exposed=time.monotonic() - 0.06)
+    placed = plan.plans[-1][1][0]["left"][0]
+    expected = poses[-3] @ chunks.as_matrix(chunks.relative_chunk(
+        np.array([np.concatenate([step(k), step(k)]) for k in range(20)]))[5, :9])
+    check("blended, a chunk is placed on the tool's pose when its pictures were exposed",
+          np.abs(placed - expected).max() < 1e-5)
 
     print("\n" + ("all checks passed" if not FAILURES else f"{len(FAILURES)} failed: {', '.join(FAILURES)}"))
     return 1 if FAILURES else 0

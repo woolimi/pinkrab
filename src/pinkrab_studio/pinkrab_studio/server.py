@@ -976,7 +976,11 @@ def make_handler(state: StudioState, allowed_hosts: frozenset[str] | None = None
                 if isinstance(angles, dict):
                     state.dagger.robot({str(k): float(v) for k, v in angles.items()},
                                        payload.get("teleop") if isinstance(payload.get("teleop"), dict) else None,
-                                       payload.get("following") if isinstance(payload.get("following"), bool) else None)
+                                       payload.get("following") if isinstance(payload.get("following"), bool) else None,
+                                       asked={str(k): float(v) for k, v in payload["asked_rad"].items()}
+                                       if isinstance(payload.get("asked_rad"), dict) else None,
+                                       sent={str(k): float(v) for k, v in payload["sent_rad"].items()}
+                                       if isinstance(payload.get("sent_rad"), dict) else None)
                 self._send_json({"ok": True})
                 return
 

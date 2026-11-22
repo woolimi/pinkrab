@@ -30,7 +30,7 @@ policy 가 움직인 구간은 **dataset 에 넣지 않습니다**. policy 가 �
 | 파일 | 내용 |
 |---|---|
 | `gripper_left.mp4`, `gripper_right.mp4` | 두 팔의 그리퍼 카메라 영상. 탑 카메라 영상은 저장하지 않습니다 |
-| `robot.jsonl` | 두 팔의 관절 읽기값, 초당 60번. 줄마다 관절각, gate 의 mode, `controller`, 교정 중이면 `correction` |
+| `robot.jsonl` | 두 팔의 관절 읽기값, 초당 60번. 줄마다 관절각, gate 의 mode, `controller`, 교정 중이면 `correction`, 그 순간의 명령값(`asked`)과 gate 가 보낸 setpoint(`sent`) |
 | `events.jsonl` | 시작과 끝, 버린 교정의 `redo` |
 | `meta.json` | `kind: rollout`, 실행한 팔, checkpoint, 녹화할 때 팔의 description 지문, 카메라의 렌즈 중심, 지켜본 사람의 판정(`outcome`: `succeeded`·`failed`, 판정한 경우만) |
 

@@ -123,6 +123,10 @@ COMMON_KNOBS: tuple[Knob, ...] = (
          "mixed precision: the policy's arithmetic in half precision where the device allows - "
          "faster, a little rougher. Not with temporal ensembling, which would overflow in it",
          default=False),
+    Knob("action_latency_s", "float",
+         "how long after a step is asked for the arm makes it - the gate's shaping and the servos - seconds: "
+         "each chunk is run this far ahead",
+         default=SETTINGS.policy_action_latency_s, minimum=0.0, maximum=0.5),
     Knob("max_joint_dps", "float",
          "how fast the gate lets a joint turn while a policy drives, deg/s. "
          "The gate reads it each time a policy takes the arms",

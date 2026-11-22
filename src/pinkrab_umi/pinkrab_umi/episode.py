@@ -268,9 +268,11 @@ class EpisodeWriter:
 
     def add_robot(self, samples: list[dict]) -> int:
         """Readings of the robot, for a rollout: each `{host_ts, joints, mode,
-        following, controller, correction}` - `controller` one of CONTROLLERS,
-        who had the arms, and `correction` the number of the take-over the
-        reading is in, None outside one. Returns how many were kept - none for
+        following, controller, correction, asked, sent}` - `controller` one of
+        CONTROLLERS, who had the arms, `correction` the number of the take-over
+        the reading is in, None outside one, and `asked` and `sent` the joint
+        command and the gate's setpoint at that moment, by joint (empty when
+        none was fresh). Returns how many were kept - none for
         a demonstration."""
         kept = 0
         with self._lock:
@@ -289,7 +291,9 @@ class EpisodeWriter:
                                               "mode": sample.get("mode"),
                                               "following": bool(sample.get("following")),
                                               "controller": controller,
-                                              "correction": correction if isinstance(correction, int) else None})
+                                              "correction": correction if isinstance(correction, int) else None,
+                                              **{key: sample[key] for key in ("asked", "sent")
+                                                 if isinstance(sample.get(key), dict)}})
                                   + "\n")
                 # The time to this reading is the previous one's controller's.
                 if self._last_reading is not None:

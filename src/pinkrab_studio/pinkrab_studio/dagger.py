@@ -516,9 +516,14 @@ class Dagger:
 
     # --- the robot's readings -----------------------------------------------
 
-    def robot(self, angles: dict[str, float], teleop: dict | None, following: bool | None) -> None:
+    def robot(self, angles: dict[str, float], teleop: dict | None, following: bool | None,
+              asked: dict[str, float] | None = None, sent: dict[str, float] | None = None) -> None:
         """One push from the bridge: kept, while a run records, for its arms -
-        marked with who had them."""
+        marked with who had them, and with what was asked of them (`asked`,
+        joint_commands) and what the gate let through (`sent`,
+        joint_commands_checked) at that moment: the command, the shaped
+        setpoint and the reading side by side, for how far each trails the
+        one before (pinkrab-umi latency)."""
         with self._lock:
             if self._recording is None or not angles:
                 return
@@ -532,7 +537,9 @@ class Dagger:
             self._samples.append({"host_ts": time.time(), "mode": mode, "following": bool(following),
                                   "controller": controller(mode, bool(following), phase),
                                   "correction": number,
-                                  "joints": {k: v for k, v in angles.items() if k.startswith(prefixes)}})
+                                  "joints": {k: v for k, v in angles.items() if k.startswith(prefixes)},
+                                  "asked": {k: v for k, v in (asked or {}).items() if k.startswith(prefixes)},
+                                  "sent": {k: v for k, v in (sent or {}).items() if k.startswith(prefixes)}})
 
     def _send_samples(self) -> None:
         while True:

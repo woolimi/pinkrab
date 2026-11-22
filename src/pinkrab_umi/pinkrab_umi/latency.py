@@ -17,6 +17,12 @@ are left out). Only the upper part of the picture is followed - the jaws
 fill the lower - and only rays within 60 degrees of the lens axis. A hand
 that hardly turned in a take says nothing, and is left out.
 
+A rollout recorded with its commands (robot.jsonl's `asked`, what the policy
+or the hands asked for, and `sent`, what the gate let through) also says how
+long a step takes to become the arm's motion, the inference setting
+action_latency_s: each joint's speed as asked, as shaped and as read, slid
+against each other the same way.
+
     pinkrab-umi latency                 # every take on the shelf
     pinkrab-umi latency 20261102-000717 20261102-084501
 """
@@ -166,6 +172,45 @@ def lag(pictures: np.ndarray, tool: np.ndarray) -> tuple[float, float] | None:
     return float(LAGS_S[best]), float(scores[best])
 
 
+def _speeds(readings: list[dict], key: str, name: str, at: np.ndarray, less: float) -> np.ndarray | None:
+    """One joint's speed under `key` of the readings that have it, at `at`."""
+    rows = [(r["host_ts"] - less, r[key][name]) for r in readings if name in (r.get(key) or {})]
+    if len(rows) < 30:
+        return None
+    t, q = np.array(rows).T
+    # The speed at each reading, then laid on `at`: speeds taken after
+    # laying the angles would be a staircase of the readings' rate, and two
+    # staircases agree best a whole reading apart.
+    return np.interp(at, t, np.gradient(q, t))
+
+
+def command_lags(root: Path) -> dict[str, float] | None:
+    """A rollout's lags from command to motion, seconds - `gate` (asked to
+    sent), `servo` (sent to read) and `total` (asked to read), each the median
+    over the joints that moved - or None for a run recorded without its
+    commands."""
+    readings = sorted((r for r in _lines(root / "robot.jsonl") if r.get("asked")), key=lambda r: r["host_ts"])
+    if len(readings) < 60:
+        return None
+    at = np.arange(readings[0]["host_ts"] + 0.5, readings[-1]["host_ts"] - 0.5, 0.001)
+    if len(at) < 1000:
+        return None
+    found: dict[str, list[float]] = {"gate": [], "servo": [], "total": []}
+    for name in sorted(readings[-1]["asked"]):
+        asked = _speeds(readings, "asked", name, at, 0.0)
+        sent = _speeds(readings, "sent", name, at, 0.0)
+        read = _speeds(readings, "joints", name, at, SETTINGS.robot_state_latency_s)
+        if asked is None or read is None or np.degrees(np.percentile(np.abs(read), 90)) < MIN_TURN_DPS:
+            continue
+        for what, a, b in (("gate", asked, sent), ("servo", sent, read), ("total", asked, read)):
+            if a is None or b is None:
+                continue
+            found_lag = lag(np.stack([at, b], axis=1), np.stack([at, a], axis=1))
+            if found_lag is not None and found_lag[1] >= MIN_AGREEMENT:
+                found[what].append(found_lag[0])
+    return {what: float(np.median(lags)) for what, lags in found.items() if lags} or None
+
+
 def measure(root: Path) -> dict[str, dict]:
     """One take's lag for each hand that turned enough: {hand: {"lag_s",
     "agreement", "against"}} - against the top camera for a demonstration,
@@ -201,12 +246,19 @@ def main(names: list[str] | None = None) -> int:
     root = SETTINGS.episodes_dir
     names = names or sorted(p.name for p in root.iterdir() if (p / "meta.json").is_file())
     found: dict[str, list[float]] = {"top camera": [], "joints": []}
+    commands: dict[str, list[float]] = {"gate": [], "servo": [], "total": []}
     for name in names:
         try:
             answer = measure(root / name)
+            lags = command_lags(root / name) if (root / name / "robot.jsonl").is_file() else None
         except (OSError, ValueError) as exc:
             print(f"  {name}: skipped - {exc}")
             continue
+        if lags:
+            for what, value in lags.items():
+                commands[what].append(value)
+            print(f"  {name}: a step is made {lags.get('total', float('nan')) * 1000:.0f} ms after it is asked "
+                  f"(gate {lags.get('gate', float('nan')) * 1000:.0f} ms, servo {lags.get('servo', float('nan')) * 1000:.0f} ms)")
         for hand, said in answer.items():
             found[said["against"]].append(said["lag_s"])
             print(f"  {name} {hand}: {said['lag_s'] * 1000:+.0f} ms against the {said['against']} "
@@ -219,4 +271,11 @@ def main(names: list[str] | None = None) -> int:
                   f"{len(lags)} hand(s)) - gripper latency_s {SETTINGS.gripper_camera_latency_s * 1000:.0f} ms now")
     if not any(found.values()):
         print("  no take turned a hand enough to say")
+    if commands["total"]:
+        from pinkrab_core import inference
+
+        print(f"  commands: a step is made {np.median(commands['total']) * 1000:.0f} ms after it is asked "
+              f"({len(commands['total'])} run(s)) - action_latency_s {inference.common()['action_latency_s'] * 1000:.0f} ms now")
+    else:
+        print("  no run recorded its commands")
     return 0
