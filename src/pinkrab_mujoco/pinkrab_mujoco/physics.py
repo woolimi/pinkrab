@@ -167,8 +167,8 @@ class Physics:
         """Ask the servos for a pose. Physics decides whether they get there.
 
         This is the honest half of putting MuJoCo under the studio: a command is not
-        a placement. The desk, the board, the other arm and a 10 N·m force limit all
-        get a say between this call and where the arm ends up - which is exactly
+        a placement. The desk, the board, the other arm and the servos' force limit
+        (the actuators' ±2.94 N·m, an STS3215's stall) all get a say between this call and where the arm ends up - which is exactly
         what happens on the bench, and what a kinematic viewer cannot show.
         """
         with self._lock:

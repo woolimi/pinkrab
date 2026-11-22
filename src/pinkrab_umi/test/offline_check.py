@@ -311,20 +311,6 @@ def check_detection() -> None:
     check("an empty frame is a hole, not an error", not empty.ok and empty.pose is None,
           empty.reason)
 
-    # Solved again from grey, which is what the colour path does underneath.
-    mono = pnp.solve_frame(render(cam_T_solid), CAMERA)
-    check("the grey path agrees", mono.ok
-          and pose_error(cam_T_solid, mono.pose)[0] < 5.0,
-          f"{pose_error(cam_T_solid, mono.pose)[0]:.2f} mm" if mono.ok else mono.reason)
-
-    # The colour path is the same solve with a colour picture in: rendered grey
-    # widened to three channels.
-    in_colour = pnp.solve_colour(cv2.cvtColor(render(cam_T_solid), cv2.COLOR_GRAY2BGR), CAMERA)
-    check("a colour picture solves, in the same frame", in_colour.ok
-          and pose_error(cam_T_solid, in_colour.pose)[0] < 5.0,
-          f"{pose_error(cam_T_solid, in_colour.pose)[0]:.2f} mm"
-          if in_colour.ok else in_colour.reason)
-
     # Solving from one face is the degraded case, not the broken one. The solid
     # has no direction it shows a single face from, so one is drawn alone.
     # Tilted rather than square on, because a planar square seen head-on has two
@@ -939,6 +925,150 @@ def check_failing_recording() -> None:
               "cannot open" in error and opened == ["released"], f"{error}; {opened}")
 
 
+def check_write_failures() -> None:
+    """What cannot be written is said and costs the episode or the take its
+    place on the shelf as a whole one; what cannot be read is refused whole."""
+    print("\nwrite failures and refusals")
+    import json
+
+    from pinkrab_umi import episode, live, record
+
+    class Full:
+        name = "full.jsonl"
+
+        def write(self, text) -> None:
+            raise OSError("no space left on device")
+
+        def close(self) -> None:
+            pass
+
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        writer = episode.EpisodeWriter("r", root / "r", None, 30.0, 30.0, {}, kind="rollout",
+                                       arms=["left"], description={"left": "x"})
+        picture = np.zeros((48, 64, 3), np.uint8)
+        writer.add_head({"stamp": 1.0}, picture, 2.0, 1.0, 1)
+        check("a head frame has a frames line and a poses line", both_lines(writer))
+        before = writer.status()
+        check("a whole episode is not failed", not before["failed"] and before["failure"] is None)
+        try:
+            writer.add_robot([{"joints": {}, "controller": "policy", "host_ts": 1.0},
+                              {"joints": {}, "controller": "policy"}])
+            refused = False
+        except ValueError:
+            refused = True
+        writer._robot.flush()
+        check("a batch with a reading without host_ts is refused before any is kept",
+              refused and (root / "r" / "robot.jsonl").read_text() == "")
+        writer._poses = Full()
+        writer.add_head({"stamp": 2.0}, picture, 3.0, 2.0, 2)
+        failed = writer.status()
+        check("a line that cannot be written fails the episode, and says which file",
+              failed["failed"] and "full.jsonl" in failed["failure"], str(failed["failure"]))
+        closed = writer.close()
+        meta = json.loads((root / "r" / "meta.json").read_text())
+        check("closed, the failure is in meta.json and the status; the meta is whole",
+              closed["failed"] and "full.jsonl" in meta.get("failure", "") and not (root / "r" / "meta.json.partial").exists())
+
+        try:
+            episode.EpisodeWriter("r", root / "r", None, 30.0, 30.0, {})
+            taken = ""
+        except episode.EpisodeError as exc:
+            taken = str(exc)
+        check("an episode that exists is refused, and left as it was",
+              "cannot start" in taken and (root / "r" / "meta.json").is_file(), taken)
+        (root / "file").write_text("")
+        try:
+            episode.EpisodeWriter("n", root / "file" / "n", None, 30.0, 30.0, {})
+            taken = ""
+        except episode.EpisodeError as exc:
+            taken = str(exc)
+        check("an episode whose directory cannot be made is an EpisodeError, not a thread running", bool(taken), taken)
+
+        real = record.session_paths
+        record.session_paths = lambda name: record.SessionPaths(root / name)
+        try:
+            calibration = record.calibration_dict(CAMERA, "test", None)
+            view = live.Live(lambda: None, calibration)
+            view._primary = "handheld_right"
+            view.start_take("t1")
+            take = view._take
+            check("a take keeps the solid in view when it began", take.solid == "handheld_right")
+            check("...in the session, for bench",
+                  json.loads(record.SessionPaths(root / "t1").calibration_file.read_text())["solid"] == "handheld_right")
+            mine = pnp.SolidPose(ok=True, pose=np.eye(4), faces=(1,))
+            other = pnp.SolidPose(ok=False, reason="no markers detected")
+            raws = {"handheld_left": other, "handheld_right": mine, view.desk: other}
+            view._primary = "handheld_left"
+            view._feed_take(live.Frame(picture=picture, sensor_ts=5.0, frame_number=1), raws, 5.0)
+            check("its frames are that solid's, whoever is primary now", take.results == [mine])
+            real_add = take.writer.add
+
+            def full(*args):
+                raise record.RecorderError("a picture could not be written - is the disk full?")
+
+            take.writer.add = full
+            view._feed_take(live.Frame(picture=picture, sensor_ts=5.1, frame_number=2), raws, 5.1)
+            check("a picture the disk refuses ends the take and is the verdict",
+                  view._take is None and "disk full" in (view._verdict or {}).get("error", ""),
+                  str(view._verdict))
+            take.writer.add = real_add
+
+            writer = record.SessionWriter(record.SessionPaths(root / "t2"), calibration, "handheld_left")
+            shutil_rmtree(root / "t2" / "frames")
+            try:
+                writer.add(picture, 1.0, 1, 1.0)
+                said = ""
+            except record.RecorderError as exc:
+                said = str(exc)
+            check("a PNG that cannot be written is a RecorderError", "could not be written" in said, said)
+
+            seen = []
+            real_solve = bench.pnp.solve_frame
+            bench.pnp.solve_frame = lambda gray, intrinsics, cfg=SETTINGS, detections=None: (
+                seen.append(cfg.solid) or real_solve(gray, intrinsics, cfg, detections))
+            try:
+                done = record.SessionWriter(record.SessionPaths(root / "t3"), calibration, "handheld_right")
+                done.add(render(np.linalg.inv(look_at(np.array([0.22, -0.22, 0.22]), np.zeros(3)))), 1.0, 1, 1.0)
+                done.close()
+                bench.solve_session(root / "t3")
+            finally:
+                bench.pnp.solve_frame = real_solve
+            check("bench solves a session for the solid it was recorded with",
+                  seen and seen[0] == "handheld_right", str(seen))
+
+            no_head = live.Live(lambda: None, None)
+            try:
+                no_head.start_episode("e1", "demo")
+                said = ""
+            except live.LiveError as exc:
+                said = str(exc)
+            check("a demonstration without the top camera is refused", "top camera" in said, said)
+        finally:
+            record.session_paths = real
+
+    real = markers.dictionary
+    markers.dictionary = lambda: cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_5X5_50)
+    try:
+        check("a marker's module grid follows the dictionary's size", markers.marker_modules(3).shape == (7, 7))
+    finally:
+        markers.dictionary = real
+
+
+def both_lines(writer) -> bool:
+    def lines(handle) -> int:
+        handle.flush()
+        return len([x for x in Path(handle.name).read_text().splitlines() if x])
+
+    return lines(writer._frames) == lines(writer._poses) == 1
+
+
+def shutil_rmtree(path: Path) -> None:
+    import shutil
+
+    shutil.rmtree(path)
+
+
 def main() -> int:
     check_geometry()
     with tempfile.TemporaryDirectory() as tmp:
@@ -957,6 +1087,7 @@ def main() -> int:
     check_top_light()
     check_recorded_poses()
     check_failing_recording()
+    check_write_failures()
 
     print()
     if FAILURES:

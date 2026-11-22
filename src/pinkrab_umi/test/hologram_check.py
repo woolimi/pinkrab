@@ -93,11 +93,27 @@ def main() -> int:
     for k in range(1, 40):   # long enough for a fresh solve from ready to be tried
         arms.follow_hands(cam_T_desk, away, k / 30.0)
     canvas = np.zeros_like(canvas)
-    arms.draw(canvas, CAMERA, cam_T_desk, {"right": True})
+    arms.draw(canvas, CAMERA, cam_T_desk, {"left": False, "right": True})
     check("a hand out of reach: its arm short and drawn red, the other still green",
           arms.follow["left"].short and not arms.follow["right"].short
           and count(canvas, hologram.SHORT_COLOUR) > 500 and count(canvas, ready_guide.MATCHED_COLOUR) > 500,
           f"left {arms.follow['left'].reach[0]:.0f} mm short")
+
+    canvas = np.zeros_like(canvas)
+    arms.draw(canvas, CAMERA, cam_T_desk, {"right": True})
+    check("a hand out of view: its arm is not drawn short", count(canvas, hologram.SHORT_COLOUR) == 0,
+          f"{count(canvas, hologram.SHORT_COLOUR)} red px")
+
+    arms.reset()
+    canvas = np.zeros_like(canvas)
+    arms.draw(canvas, CAMERA, cam_T_desk, {"left": False, "right": False})
+    check("reset: both arms back at ready, following nothing",
+          not any(f.started or f.short for f in arms.follow.values()) and not arms.seen_at
+          and count(canvas, hologram.SHORT_COLOUR) == 0 and count(canvas, hologram.ARM_COLOUR) > 1000,
+          f"{count(canvas, hologram.ARM_COLOUR)} grey px")
+    arms.follow_hands(cam_T_desk, at_ready, 2.0)
+    check("after a reset the first hand seen is solved from ready again",
+          all(f.started and not f.short for f in arms.follow.values()))
 
     behind = np.linalg.inv(np.linalg.inv(cam_T_desk) @ np.diag([1.0, -1.0, -1.0, 1.0]))
     canvas = np.zeros_like(canvas)

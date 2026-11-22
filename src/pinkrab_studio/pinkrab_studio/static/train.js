@@ -110,23 +110,47 @@ function renderRuns(now) {
     li.title = 'draw this run alone';
     li.style.setProperty('--swatch', colour(r.id));
     const frac = r.steps ? Math.min(1, (r.last_step || 0) / r.steps) : 0;
+    // Each number's words, and the part of them drawn bold.
     const bits = [];
-    if (r.loss != null) bits.push(`loss <b>${num(r.loss)}</b>`);
-    if (r.rate) bits.push(`${r.rate.toFixed(1)} step/s`);
-    if (r.eta_s) bits.push(`${duration(r.eta_s)} left`);
-    if (r.checkpoints) bits.push(`${r.checkpoints} ckpt`);
-    bits.push(r.status === 'running' ? `updated ${ago(r.updated, now)}` : `last ${ago(r.updated, now)}`);
-    li.innerHTML = `
-      <input type="checkbox" title="draw this run beside the others" ${selected.has(r.id) ? 'checked' : ''}>
-      <div class="title-line"><span class="name"></span><button class="details" title="checkpoints and the run's facts">details</button></div>
-      <div class="what"><span class="chip ${r.status}">${r.status}</span> ${r.policy || '?'} · ${r.dataset || '?'} · ${r.source}</div>
-      <div class="progress-line"><span class="meter"><span style="width:${(frac * 100).toFixed(1)}%"></span></span>${steps(r.last_step)} / ${steps(r.steps)}</div>
-      <div class="numbers">${bits.map((b) => `<span>${b}</span>`).join('')}</div>
-      ${r.error && r.status === 'failed' ? '<div class="error"></div>' : ''}`;
-    li.querySelector('.name').textContent = r.name || r.output_dir;
-    li.querySelector('.name').title = r.output_dir;
-    if (r.error && r.status === 'failed') li.querySelector('.error').textContent = r.error;
-    li.querySelector('input').addEventListener('change', (e) => {
+    if (r.loss != null) bits.push(['loss ', num(r.loss)]);
+    if (r.rate) bits.push([`${r.rate.toFixed(1)} step/s`]);
+    if (r.eta_s) bits.push([`${duration(r.eta_s)} left`]);
+    if (r.checkpoints) bits.push([`${r.checkpoints} ckpt`]);
+    bits.push([r.status === 'running' ? `updated ${ago(r.updated, now)}` : `last ${ago(r.updated, now)}`]);
+    const element = (tag, className, text) => {
+      const el = document.createElement(tag);
+      if (className) el.className = className;
+      if (text != null) el.textContent = text;
+      return el;
+    };
+    const tick = element('input');
+    tick.type = 'checkbox';
+    tick.title = 'draw this run beside the others';
+    tick.checked = selected.has(r.id);
+    const name = element('span', 'name', r.name || r.output_dir);
+    name.title = r.output_dir;
+    const details = element('button', 'details', 'details');
+    details.title = "checkpoints and the run's facts";
+    const what = element('div', 'what');
+    what.append(element('span', `chip ${r.status}`, r.status), ` ${r.policy || '?'} · ${r.dataset || '?'} · ${r.source}`);
+    const meter = element('span', 'meter');
+    const fill = element('span');
+    fill.style.width = `${(frac * 100).toFixed(1)}%`;
+    meter.append(fill);
+    const progress = element('div', 'progress-line');
+    progress.append(meter, `${steps(r.last_step)} / ${steps(r.steps)}`);
+    const numbers = element('div', 'numbers');
+    for (const [text, bold] of bits) {
+      const bit = element('span');
+      bit.append(text);
+      if (bold != null) bit.append(element('b', null, bold));
+      numbers.append(bit);
+    }
+    const titleLine = element('div', 'title-line');
+    titleLine.append(name, details);
+    li.append(tick, titleLine, what, progress, numbers);
+    if (r.error && r.status === 'failed') li.append(element('div', 'error', r.error));
+    tick.addEventListener('change', (e) => {
       if (e.target.checked) selected.add(r.id); else selected.delete(r.id);
       store('selected', [...selected]);
       refreshSeries(true);
@@ -140,7 +164,7 @@ function renderRuns(now) {
       renderRuns(serverNow());
       refreshSeries(true);
     });
-    li.querySelector('.details').addEventListener('click', () => openRun(r.id));
+    details.addEventListener('click', () => openRun(r.id));
     return li;
   }));
 }
@@ -204,19 +228,28 @@ function showRuns(answer) {
   renderRuns(answer.now);
   renderSourcesLine(answer.now);
   if (sourcesDialog.open) renderSources(answer.now);
-  refreshSeries(false).catch(() => { /* drawn again with the next update */ });
+  refreshSeries(false);
 }
 
 // --- the points ----------------------------------------------------------------------
 
+// Each ask is numbered: an answer that comes back after a later ask was made
+// is dropped, so the charts never go back to an older run list.
+let seriesAsked = 0;
+
 async function refreshSeries(force) {
+  const mine = ++seriesAsked;
   const ids = runs.filter((r) => selected.has(r.id)).map((r) => r.id);
   const stale = ids.filter((id) => {
     const r = runs.find((x) => x.id === id);
     return force || !(id in series) || fetchedAt[id] !== r.last_step;
   });
   if (stale.length) {
-    const answer = await (await fetch(`/train/series?ids=${stale.join(',')}`)).json();
+    let answer;
+    try {
+      answer = await (await fetch(`/train/series?ids=${stale.join(',')}`)).json();
+    } catch { return; /* drawn again with the next update */ }
+    if (mine !== seriesAsked || !answer.series) return;
     for (const [id, metrics] of Object.entries(answer.series)) {
       series[id] = metrics;
       fetchedAt[id] = runs.find((x) => x.id === Number(id))?.last_step;
@@ -528,7 +561,7 @@ let lastJobs = null;
 function showJobs(state) {
   if (!state || state.error) return;
   lastJobs = state;
-  for (const kind of ['launch', 'fetch']) {
+  for (const kind of ['launch', 'fetch', 'stop']) {
     const j = state[kind];
     const el = document.getElementById(`job-${kind}`);
     const recent = j.ended && Date.now() / 1000 - j.ended < (j.error ? 600 : 30);
@@ -537,7 +570,7 @@ function showJobs(state) {
     el.querySelector('b').textContent = j.what || '';
     el.querySelector('.line').textContent = j.error ? j.error : j.busy ? (j.lines.at(-1) || 'starting') : (j.lines.at(-1) || 'done');
   }
-  jobsEl.hidden = document.getElementById('job-launch').hidden && document.getElementById('job-fetch').hidden;
+  jobsEl.hidden = ['launch', 'fetch', 'stop'].every((kind) => document.getElementById(`job-${kind}`).hidden);
 }
 
 // --- starting a run ------------------------------------------------------------------------------

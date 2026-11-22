@@ -441,18 +441,6 @@ def solve_frame(gray: np.ndarray, intrinsics: Intrinsics,
                      alternate_reproj_px=result.alternate_reproj_px, reason=reason)
 
 
-def solve_colour(bgr: np.ndarray, intrinsics: Intrinsics,
-                 cfg: Settings = SETTINGS, detections=None) -> SolidPose:
-    """The solid's pose in the camera's frame, read off a colour picture.
-
-    The corners stay in image pixels: they are for drawing back over the
-    picture they were found in.
-    """
-    if bgr.ndim != 3:
-        raise ValueError(f"expected a colour frame, got shape {bgr.shape}")
-    return solve_frame(cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY), intrinsics, cfg, detections)
-
-
 def _project(pose: np.ndarray, obj: np.ndarray, intrinsics: Intrinsics) -> np.ndarray:
     """Object points through a pose and a camera, as (n, 2) pixels."""
     rvec = cv2.Rodrigues(pose[:3, :3])[0]

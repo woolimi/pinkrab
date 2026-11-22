@@ -19,12 +19,10 @@ looks bigger than it.
 from __future__ import annotations
 
 import xml.etree.ElementTree as ET
-from pathlib import Path
 from typing import NamedTuple
 
 import cv2
 import numpy as np
-from scipy.spatial.transform import Rotation
 
 from pinkrab_core.config import ARMS
 from pinkrab_core.follow import TOOL_TURN, desk_tool
@@ -32,6 +30,7 @@ from pinkrab_core.origin import ready_joints
 
 from .config import SETTINGS
 from .desk_solid import world_T_desk
+from .gripper_model import gripper, merged, stl_triangles
 from .pnp import Intrinsics, _project
 
 GUIDE_COLOUR = (235, 235, 235)   # BGR: the ready pose's Hermit, not yet matched
@@ -80,37 +79,11 @@ def load() -> Guide:
     return Guide(tools, hermits)
 
 
-def _origin(element) -> np.ndarray:
-    """A URDF <origin> as a 4x4, identity when there is none."""
-    out = np.eye(4)
-    if element is not None:
-        out[:3, :3] = Rotation.from_euler("xyz", [float(v) for v in element.get("rpy", "0 0 0").split()]).as_matrix()
-        out[:3, 3] = [float(v) for v in element.get("xyz", "0 0 0").split()]
-    return out
-
-
-def _stl_triangles(path: Path) -> np.ndarray:
-    """A binary STL's triangles, (n,3,3) in its own units."""
-    data = path.read_bytes()
-    count = int(np.frombuffer(data, "<u4", 1, 80)[0])
-    tris = np.frombuffer(data, np.dtype([("normal", "<3f4"), ("v", "<9f4"), ("attr", "<u2")]), count, 84)
-    return tris["v"].reshape(-1, 3, 3).astype(float)
-
-
 def _shape(tris: np.ndarray) -> Shape:
     """Triangles (n,3,3) as a Shape: corners within HERMIT_CELL_M of each other
     made one, the faces that leaves flat dropped, and an edge a crease where
     its faces meet at more than HERMIT_CREASE_DEG or it has only one."""
-    corners = tris.reshape(-1, 3)
-    cells, which = np.unique(np.floor(corners / HERMIT_CELL_M).astype(np.int64), axis=0, return_inverse=True)
-    which = which.ravel()
-    verts = np.zeros((len(cells), 3))
-    np.add.at(verts, which, corners)
-    verts /= np.bincount(which)[:, None]
-    faces = which.reshape(-1, 3)
-    faces = faces[(faces[:, 0] != faces[:, 1]) & (faces[:, 1] != faces[:, 2]) & (faces[:, 0] != faces[:, 2])]
-    _, first = np.unique(np.sort(faces, axis=1), axis=0, return_index=True)
-    faces = faces[np.sort(first)]
+    verts, faces = merged(tris, HERMIT_CELL_M)
     a, b, c = (verts[faces[:, k]] for k in range(3))
     normals = np.cross(b - a, c - a)
     normals /= np.maximum(np.linalg.norm(normals, axis=1, keepdims=True), 1e-12)
@@ -137,35 +110,13 @@ def hermit_shape(urdf: ET.Element, arm: str, solid_T_tcp: np.ndarray) -> Shape:
     handheld holds it."""
     own = {f"claw_{arm}.stl": SETTINGS.mesh_dir / f"handheld_body_{arm}.stl",
            f"jaw_{arm}.stl": SETTINGS.mesh_dir / f"handheld_jaw_{arm}.stl"}
-    links = {link.get("name"): link for link in urdf.findall("link")}
-    joints = {}
-    for joint in urdf.findall("joint"):
-        joints.setdefault(joint.find("parent").get("link"), []).append(joint)
-    parts, tool = [], None
-    hanging = [(f"{arm}_gripper_link", np.eye(4))]
-    while hanging:
-        name, link_T = hanging.pop()
-        if name == f"{arm}_gripper_frame_link":
-            tool = link_T
-        for visual in links[name].findall("visual"):
-            mesh = visual.find("geometry/mesh")
-            if mesh is None:
-                continue
-            path = Path(mesh.get("filename"))
-            path = own.get(path.name, path)
-            if not path.is_file():
-                continue
-            T = link_T @ _origin(visual.find("origin"))
-            tris = _stl_triangles(path) * float(mesh.get("scale", "1 1 1").split()[0])
-            parts.append(tris @ T[:3, :3].T + T[:3, 3])
-        hanging += [(j.find("child").get("link"), link_T @ _origin(j.find("origin"))) for j in joints.get(name, [])]
-    if tool is None or not parts:
-        raise FileNotFoundError(f"the {arm} gripper's tool frame or meshes are not in the description")
+    model = gripper(urdf, arm, own)
+    tool = model.link_T_tcp
     # Into the tool frame the arm is asked for, then the handheld's: TOOL_TURN of it.
     turn = TOOL_TURN[arm] @ tool[:3, :3].T
-    hermit = (np.concatenate(parts) - tool[:3, 3]) @ turn.T
+    hermit = (model.triangles(0.0) - tool[:3, 3]) @ turn.T
     solid = np.linalg.inv(solid_T_tcp)
-    marker = _stl_triangles(SETTINGS.mesh_dir / f"marker_solid_handheld_{arm}.stl") @ solid[:3, :3].T + solid[:3, 3]
+    marker = stl_triangles(SETTINGS.mesh_dir / f"marker_solid_handheld_{arm}.stl") @ solid[:3, :3].T + solid[:3, 3]
     return _shape(np.concatenate([hermit, marker]))
 
 

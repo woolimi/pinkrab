@@ -18,6 +18,12 @@ from pathlib import Path
 from .config import SETTINGS
 
 
+# One turn of an arm servo's encoder, in ticks (STS3215). The offsets file records the
+# resolution its offsets were measured with and every conversion reads it back, so a
+# file written with another value keeps its meaning.
+ENCODER_TICKS = 4096
+
+
 class OffsetsMissing(RuntimeError):
     """Raised when tick-to-angle offsets have not been recorded for this rig."""
 
@@ -57,6 +63,16 @@ def load_offsets(path: Path | None = None) -> dict:
             + "".join(f"  run `pinkrab calibrate {arm}`\n" for arm in moved).rstrip("\n")
         )
     return data
+
+
+def offsets_problem(arm: str) -> str | None:
+    """Why the offsets file cannot place `arm`'s ticks, or None when it can."""
+    try:
+        if arm in load_offsets()["offsets_deg"]:
+            return None
+        return f"No offsets recorded for the {arm} arm."
+    except OffsetsMissing as exc:
+        return str(exc)
 
 
 def _carries_reversed_sign(data: dict) -> bool:
@@ -100,7 +116,7 @@ OFFSETS_HEADER = """\
 
 def record_zero_pose(
     arm: str, zero_ticks: dict[str, int], path: Path | None = None,
-    neutral: int = 2048, resolution: int = 4095,
+    neutral: int = 2048, resolution: int = ENCODER_TICKS,
 ) -> Path:
     """Write the offsets that make the ticks read at the home pose angle zero."""
     import yaml
@@ -111,8 +127,15 @@ def record_zero_pose(
         loaded = yaml.safe_load(fpath.read_text())
         if isinstance(loaded, dict):
             data = loaded
-    if data.get("neutral_ticks", neutral) != neutral or data.get("resolution", resolution) != resolution:
+    if data.get("neutral_ticks", neutral) != neutral:
         data = {}
+    # Offsets measured with another resolution are the same ticks over another
+    # circle: rescaled, they keep their meaning without measuring the arm again.
+    recorded = data.get("resolution", resolution)
+    if recorded != resolution:
+        data["offsets_deg"] = {
+            other: {name: round(deg * recorded / resolution, 3) for name, deg in joints.items()}
+            for other, joints in (data.get("offsets_deg") or {}).items()}
     # The other arm's offsets are kept only if they mean the same angles: no
     # servo reversed, and measured at the home pose the description has now.
     home = description_home()
@@ -164,7 +187,7 @@ def joint_bands(arm: str) -> dict[str, tuple[float, float]]:
 
 def sweep_direction_disagreements(
     arm: str, sweeps: dict[str, tuple[int, int, int]], bands: dict[str, tuple[float, float]],
-    resolution: int = 4095,
+    resolution: int = ENCODER_TICKS,
 ) -> list[str]:
     """Joints whose sweep says the servo counts against the description's axis.
 
@@ -202,7 +225,7 @@ def ticks_to_degrees(arm: str, ticks: dict[str, int], offsets: dict | None = Non
     """Joint angles in degrees for one arm."""
     data = offsets or load_offsets()
     neutral = data.get("neutral_ticks", 2048)
-    resolution = data.get("resolution", 4095)
+    resolution = data.get("resolution", ENCODER_TICKS)
     per_arm = data["offsets_deg"].get(arm)
     if per_arm is None:
         raise OffsetsMissing(f"No offsets recorded for the {arm} arm.")
@@ -233,7 +256,7 @@ def degrees_to_ticks(arm: str, degrees: dict[str, float], offsets: dict | None =
     """
     data = offsets or load_offsets()
     neutral = data.get("neutral_ticks", 2048)
-    resolution = data.get("resolution", 4095)
+    resolution = data.get("resolution", ENCODER_TICKS)
     per_arm = data["offsets_deg"].get(arm)
     if per_arm is None:
         raise OffsetsMissing(f"No offsets recorded for the {arm} arm.")
@@ -243,7 +266,7 @@ def degrees_to_ticks(arm: str, degrees: dict[str, float], offsets: dict | None =
         if name not in per_arm or not isinstance(angle, (int, float)):
             continue
         tick = round((angle - per_arm[name]) * resolution / 360.0 + neutral)
-        if 0 <= tick <= resolution:
+        if 0 <= tick < ENCODER_TICKS:
             out[name] = int(tick)
     return out
 

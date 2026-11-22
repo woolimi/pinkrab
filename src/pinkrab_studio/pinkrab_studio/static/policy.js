@@ -64,6 +64,16 @@ let dagger = null;
 let corrBusy = false;
 let robotFound = { driver: null, gate: null };
 let asking = false;
+// What the arms are walking to, while this page waits on them - the start
+// before an Ask, or the pose a button named - and the number of the walk it
+// waits on: a Stop, a Drive or a newer walk ends an older one's wait.
+let walking = null;
+let walkGen = 0;
+// How long a pose's walk is waited for, and how long before its start is
+// looked for in the readings: a walk over before the first reading of it
+// came is not one that never began.
+const POSE_WALK_MS = 60000;
+const WALK_SEEN_MS = 3000;
 // What the Connect button last showed, and a Connect or a Disconnect on its
 // way: while one is, the button says which and takes no second click, and the
 // rig's updates leave it alone.
@@ -256,7 +266,9 @@ async function disconnect() {
     // gone - while the bridge is still there to carry the idle; the server
     // refuses the simulation under a policy. So is a hand correcting one,
     // which keeps what it recorded.
-    if (policyState?.running || policyState?.driving || dagger?.hand_has) {
+    const held = walking || policyState?.running || policyState?.driving || dagger?.hand_has;
+    cancelWalk();
+    if (held) {
       await ask('/policy/halt', {});
       await new Promise((r) => setTimeout(r, 600));
     }
@@ -416,17 +428,20 @@ function showWants() {
 let policyState = { running: false, driving: false, loading: false };
 function updateButtons() {
   const idle = !policyState.running && !policyState.driving && !policyState.loading;
-  const may = idle && camsUp && robotUp && fed().all && !commandMissing();
+  // Free for a new order: nothing runs and no walk is under way. A walk is
+  // stopped, and nothing else is begun on top of it.
+  const free = idle && !walking;
+  const may = free && camsUp && robotUp && fed().all && !commandMissing();
   askEl.disabled = !may;
   driveEl.disabled = !may;
   // The poses want the robot's side, not the checkpoint: nothing is asked.
-  readyEl.disabled = !(idle && robotUp);
-  homeEl.disabled = !(idle && robotUp);
-  haltEl.disabled = idle;
-  checkpointEl.disabled = !idle;
-  commandEl.disabled = !idle;
+  readyEl.disabled = !(free && robotUp);
+  homeEl.disabled = !(free && robotUp);
+  haltEl.disabled = free;
+  checkpointEl.disabled = !free;
+  commandEl.disabled = !free;
   const handsHave = !!dagger?.hand_has;
-  settingsOpen.disabled = !idle || handsHave;
+  settingsOpen.disabled = !free || handsHave;
   if (settingsOpen.disabled && drawer.open) drawer.close();
   // The order under way stays lit and says what it is doing; idle, none is.
   const doing = policyState.driving ? driveEl : !idle ? askEl : null;
@@ -659,64 +674,120 @@ function nearReady(angles, ready, tolDeg) {
   return names.every((n) => n in angles && Math.abs(angles[n] - ready[n]) <= tol);
 }
 
+function beginWalk(to) {
+  walking = to;
+  walkGen += 1;
+  return walkGen;
+}
+
+// The wait on a walk ended - by a Stop or a Drive, or by a newer walk.
+function cancelWalk() {
+  walkGen += 1;
+  walking = null;
+}
+
 // The arms to the ready pose or home, through the gate, nothing else driving.
-// What follows is drawn from the readings; the button only orders the walk.
+// What follows is drawn from the readings; the button only orders the walk,
+// and waits for the bridge to report it over.
 async function poseButton(which) {
+  const gen = beginWalk(which);
   noteEl.textContent = '';
   statusEl.textContent = `walking to ${which}`;
-  const answer = await ask('/policy/goto', { pose: which });
-  if (answer.error) { noteEl.textContent = answer.error; statusEl.textContent = ''; }
   updateButtons();
+  try {
+    const answer = await ask('/policy/goto', { pose: which });
+    if (gen !== walkGen) return;
+    if (answer.error) { noteEl.textContent = answer.error; statusEl.textContent = ''; return; }
+    let seen = false;
+    const began = Date.now();
+    await until('servo', (st) => {
+      if (gen !== walkGen) return true;
+      seen = seen || !!st?.walking;
+      return !!st?.fresh && !st.walking && (seen || Date.now() - began > WALK_SEEN_MS);
+    }, POSE_WALK_MS, { fresh: true });
+    if (gen === walkGen) statusEl.textContent = '';
+  } catch (err) {
+    if (gen === walkGen) { noteEl.textContent = String(err); statusEl.textContent = ''; }
+  } finally {
+    if (gen === walkGen) walking = null;
+    updateButtons();
+  }
 }
 readyEl.addEventListener('click', () => poseButton('ready'));
 homeEl.addEventListener('click', () => poseButton('home'));
 
 // Walk to ready and on to the start, watch the readings until the arms are
-// there, then ask.
+// there, then ask. Stop ends the walk, and the wait with it.
 askEl.addEventListener('click', async () => {
-  askEl.disabled = true; driveEl.disabled = true;
+  const gen = beginWalk('the start');
   noteEl.textContent = '';
+  statusEl.textContent = 'walking to the start';
+  updateButtons();
   startTrace();
   try {
     const answer = await ask('/policy/ask', { checkpoint: checkpointEl.value });
-    if (answer.error) { noteEl.textContent = answer.error; updateButtons(); return; }
+    if (gen !== walkGen) return;
+    if (answer.error) { noteEl.textContent = answer.error; statusEl.textContent = ''; return; }
     const start = answer.ready || {};
     if (answer.note) noteEl.textContent = answer.note;
-    statusEl.textContent = 'walking to the start';
     // The readings as they come, until the arms are there or 45 s have gone.
     const there = await until('servo', (st) => {
+      if (gen !== walkGen) return true;
       statusEl.textContent = `walking to the start${st?.fresh ? '' : ' · no readings'}`;
       return !!st?.fresh && nearReady(st.angles_rad || {}, start, answer.ready_tol_deg);
     }, 45000, { fresh: true });
-    if (!there) { noteEl.textContent = 'the arms did not reach the start'; statusEl.textContent = ''; updateButtons(); return; }
+    if (gen !== walkGen) return;
+    if (!there) { noteEl.textContent = 'the arms did not reach the start'; statusEl.textContent = ''; return; }
+    // Asked again of what the studio says now: a run begun, or the hands
+    // having the arms, since the walk began is not to be asked over.
+    if (policyState.running || policyState.driving || dagger?.hand_has) { statusEl.textContent = ''; return; }
     statusEl.textContent = 'asking';
     const started = await ask('/policy/start', { checkpoint: checkpointEl.value, task: command() });
-    if (started.error) { noteEl.textContent = started.error; statusEl.textContent = ''; }
+    if (started.error && gen === walkGen) { noteEl.textContent = started.error; statusEl.textContent = ''; }
   } catch (err) {
-    noteEl.textContent = String(err);
+    if (gen === walkGen) { noteEl.textContent = String(err); statusEl.textContent = ''; }
+  } finally {
+    if (gen === walkGen) walking = null;
+    updateButtons();
   }
-  updateButtons();
 });
 
 // Hand the arms to the rollout node. It drives them from where they stand;
 // what it asked for arrives as steps and is drawn like the asking loop's.
 driveEl.addEventListener('click', async () => {
+  cancelWalk();
   askEl.disabled = true; driveEl.disabled = true;
   noteEl.textContent = '';
   startTrace();
-  const answer = await ask('/policy/drive', { checkpoint: checkpointEl.value, task: command() });
-  if (answer.error) noteEl.textContent = answer.error;
-  updateButtons();
+  try {
+    const answer = await ask('/policy/drive', { checkpoint: checkpointEl.value, task: command() });
+    if (answer.error) noteEl.textContent = answer.error;
+  } catch (err) {
+    noteEl.textContent = String(err);
+  } finally {
+    updateButtons();
+  }
 });
 
-// Idle at the gate: nothing more passes, the servos hold where they are.
+// Idle at the gate: nothing more passes, the servos hold where they are, and
+// a walk under way ends where the arms are.
 haltEl.addEventListener('click', async () => {
+  cancelWalk();
   haltEl.disabled = true;
-  const answer = await ask('/policy/halt', {});
-  if (answer.error) noteEl.textContent = answer.error;
-  statusEl.textContent = 'stopped';
-  updateButtons();
+  try {
+    const answer = await ask('/policy/halt', {});
+    if (answer.error) noteEl.textContent = answer.error;
+    else statusEl.textContent = 'stopped';
+  } catch (err) {
+    noteEl.textContent = String(err);
+  } finally {
+    updateButtons();
+  }
 });
+
+// Whether the policy was running at the last word: what ended it is said when
+// it is not any more.
+let wasRunning = false;
 
 function showPolicy(s) {
   asking = s.running;
@@ -730,8 +801,14 @@ function showPolicy(s) {
     statusEl.textContent = 'loading';
   } else if (s.running) {
     statusEl.textContent = 'asking';
+  } else if (!walking && (wasRunning || s.stopped)) {
+    // A run that ended without this page's Stop - a pedal, the gate refusing,
+    // the studio stopping it - does not stay standing as driving.
+    statusEl.textContent = 'stopped';
   }
+  wasRunning = s.running || s.driving || s.loading;
   updateButtons();
+  if (s.stopped && !s.driving) noteEl.textContent = `the studio stopped it: ${s.stopped}`;
   if (s.note) noteEl.textContent = s.note;
 
   const last = s.last;
@@ -1089,8 +1166,15 @@ corr.stop.addEventListener('click', async () => {
     order('/dagger/throw');
     return;
   }
-  const answer = await ask('/policy/halt', {});
-  corr.note.textContent = answer.error || 'stopped · recording kept';
+  cancelWalk();
+  try {
+    const answer = await ask('/policy/halt', {});
+    corr.note.textContent = answer.error || 'stopped · recording kept';
+  } catch (err) {
+    corr.note.textContent = String(err);
+  } finally {
+    updateButtons();
+  }
 });
 
 // A press on the floor flashes its pedal here, as on the collect page.

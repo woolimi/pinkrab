@@ -31,6 +31,7 @@ from __future__ import annotations
 import collections
 import getpass
 import json
+import math
 import os
 import signal
 import subprocess
@@ -71,6 +72,9 @@ BRIDGE_START_S = 2.5   # for the teleop loop too
 
 TAIL_LINES = 20
 
+# How long what the process table said of the bridge is believed.
+PS_CACHE_S = 3.0
+
 
 class RigError(RuntimeError):
     """A start or stop that cannot be done as asked - not a process that failed."""
@@ -97,7 +101,7 @@ def node_already_up(package: str, executable: str) -> int | None:
     try:
         listing = subprocess.run(
             ["ps", "-axo", "pid=,command="],
-            capture_output=True, text=True, check=False, timeout=3.0,
+            capture_output=True, text=True, errors="replace", check=False, timeout=3.0,
         ).stdout
     except (OSError, subprocess.TimeoutExpired):
         return None
@@ -113,14 +117,10 @@ def node_already_up(package: str, executable: str) -> int | None:
         # merely mentioned the bridge and has already exited - in which case the
         # studio would decline to start the bridge nobody is running.
         alive = subprocess.run(["ps", "-p", pid, "-o", "command="],
-                               capture_output=True, text=True, check=False)
+                               capture_output=True, text=True, errors="replace", check=False)
         if alive.returncode == 0 and _looks_like_node(alive.stdout.strip(), package, executable):
             return int(pid)
     return None
-
-
-def _looks_like_bridge(command: str) -> bool:
-    return _looks_like_node(command, "pinkrab_bridge", "bridge")
 
 
 def robot_already_up() -> dict[str, int | None]:
@@ -244,7 +244,7 @@ def _orphan_group(pid: int, label: str) -> bool:
     from pinkrab_core.parent import is_orphan
 
     alive = subprocess.run(["ps", "-p", str(pid), "-o", "command="],
-                           capture_output=True, text=True, check=False)
+                           capture_output=True, text=True, errors="replace", check=False)
     command = alive.stdout.strip()
     if alive.returncode != 0 or not command or not is_orphan(command):
         return False
@@ -293,7 +293,7 @@ def _spawn(label: str, command: list[str], typed: str) -> subprocess.Popen | Non
     try:
         proc = subprocess.Popen(
             command,
-            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1,
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, errors="replace", bufsize=1,
             env=_child_env(),
             # Its own session, so it can be stopped as a group. `ros2 run` is a
             # launcher that execs the node as a CHILD: signal the launcher alone
@@ -463,6 +463,13 @@ def footswitch_sudoers_line() -> str:
     return f"{getpass.getuser()} ALL=(root) NOPASSWD: {FOOTSWITCH}"
 
 
+# Said wherever the line is: the rule runs a file of the user's own
+# environment as root.
+SUDOERS_RISK = ("that rule runs this file as root, so whoever can write its environment gets root; where that "
+                "matters, run the studio from an environment only root can write and allow that "
+                "environment's pinkrab-footswitch instead")
+
+
 def start_footswitch(port: int) -> tuple[subprocess.Popen | None, str]:
     """Run the pedal reader beside this studio, or say why not.
 
@@ -479,7 +486,7 @@ def start_footswitch(port: int) -> tuple[subprocess.Popen | None, str]:
         command = ["sudo", "-n", *command]
     try:
         proc = subprocess.Popen(
-            command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1,
+            command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, errors="replace", bufsize=1,
             env={**os.environ, "PYTHONUNBUFFERED": "1"}, start_new_session=True,
         )
     except OSError as exc:
@@ -501,8 +508,11 @@ def start_footswitch(port: int) -> tuple[subprocess.Popen | None, str]:
     if "password is required" in said or "sudo:" in said:
         print("  pedal:  the foot switch needs root here and the studio cannot type a password.")
         print(f"          Allow this one command, in sudoers: {footswitch_sudoers_line()}")
-        ALERTS.say("pedal", "needs root, and sudo asks a password", [f"in sudoers: {footswitch_sudoers_line()}"])
-        return None, f"needs root, and sudo asks a password - in sudoers: {footswitch_sudoers_line()}"
+        print(f"          Mind that {SUDOERS_RISK}.")
+        ALERTS.say("pedal", "needs root, and sudo asks a password",
+                   [f"in sudoers: {footswitch_sudoers_line()}", f"mind that {SUDOERS_RISK}"])
+        return None, (f"needs root, and sudo asks a password - in sudoers: {footswitch_sudoers_line()} "
+                      f"(mind that {SUDOERS_RISK})")
     print(f"  pedal:  it stopped at once (exit {proc.returncode}):")
     for line in list(tail)[-4:]:
         print(f"          {line}")
@@ -616,6 +626,9 @@ class Rig:
         # stay up takes seconds, and `_lock` is not held for that: every page's
         # poll of `state()` would wait with it.
         self._policy_turn = threading.Lock()
+        # A bridge found in the process table, and when it was looked for: the
+        # servo topic asks several times a second while nothing has arrived.
+        self._found_bridge: tuple[float, int | None] = (-math.inf, None)
 
     # --- what the page reads ----------------------------------------------
 
@@ -633,6 +646,22 @@ class Rig:
                                "exit": None if policy is None or policy_alive else policy.returncode,
                                **self._policy_options}}
 
+    def bridge_pid(self) -> int | None:
+        """The bridge's pid: the one this rig started and still runs, else one
+        found in the process table, which is looked at no more often than
+        every PS_CACHE_S."""
+        with self._lock:
+            proc = self._robot.get("bridge")
+            if proc is not None and proc.poll() is None:
+                return proc.pid
+            asked, pid = self._found_bridge
+            if time.monotonic() - asked < PS_CACHE_S:
+                return pid
+        pid = bridge_already_up()
+        with self._lock:
+            self._found_bridge = (time.monotonic(), pid)
+        return pid
+
     # --- the policy node --------------------------------------------------
 
     def start_policy(self, checkpoint: str, task: str = "") -> dict:
@@ -643,6 +672,9 @@ class Rig:
                 old = self._policy
             if old is not None and old.poll() is None:
                 stop_bridge(old)
+            # Not the old node's exit, for as long as the new one is starting.
+            with self._lock:
+                self._policy = None
             proc = start_policy_node(checkpoint, self.studio_port or CORE.studio_port, task)
             with self._lock:
                 self._policy = proc
@@ -857,7 +889,7 @@ class Rig:
             try:
                 proc = subprocess.Popen(
                     command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                    text=True, bufsize=1, cwd=str(Path.home()), env=env,
+                    text=True, errors="replace", bufsize=1, cwd=str(Path.home()), env=env,
                 )
             except OSError as exc:
                 raise RigError(f"could not start {which}: {exc}") from exc

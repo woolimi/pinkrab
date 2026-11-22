@@ -1,28 +1,35 @@
-"""Serve the Pinkrab studio: a one-page three.js view of the robot.
+"""Serve the Pinkrab studio: the browser pages that run the rig, and the HTTP and
+WebSocket API under them.
 
 Why a browser and not RViz: the arms are attached to a laptop that has no ROS, and
 the rig itself needs no display - the page opens from whatever machine is nearby.
 
-What it does today is show the robot: the description, posed by sliders, by dragging
-a handle, or by whatever the servos currently report.
+The pages are the front page and, behind it, Teleop (the robot in three.js, posed by
+sliders, by dragging a handle, or by what the servos report), Collect (the
+handhelds' demonstrations), Curate, Policy (a checkpoint asked about the
+cameras, driven, and corrected by hand) and Train. Each page keeps one WebSocket
+for what it watches (feeds.py); what is an action with an answer is a POST here.
 
-Under it is the MuJoCo scene - stepped headless in a thread here, with the page as
-its only window. The sliders ask the simulated servos for a pose rather than placing
-the arm, so the desk, the board, the other arm and the force limit all get a say in
-where it ends up.
-
-MuJoCo is therefore required, not optional: a page that tested contact itself would
-give a move two meanings, and would know nothing about the arms meeting each other.
+Under Teleop is the MuJoCo scene - stepped headless in a thread here, with the page
+as its only window. The sliders ask the simulated servos for a pose rather than
+placing the arm, so the desk, the board, the other arm and the force limit all get
+a say in where it ends up. MuJoCo is therefore required, not optional: a page that
+tested contact itself would give a move two meanings, and would know nothing about
+the arms meeting each other.
 
 Switched to the real robot on the page, the simulated arms are stood
 where the real ones are, reading by reading, so the picture is the arms on the wall.
 A command has nothing to move while that is so - the next reading puts the arm back
 where the metal is. The page still carries a third number per joint: where the
-metal is, beside what the model made of it.
+metal is, beside what the model made of it. The studio does not open the servo bus;
+the bridge (pinkrab_bridge) pushes readings in and carries the page's requests out.
 
-Only the standard library. three.js is vendored beside this file rather than pulled
-from a CDN, so a rig without internet still comes up and nothing here depends on
-another host staying reachable.
+The studio also starts the processes beside it (rig.py), keeps the policy runs and
+their recordings (policy.py, dagger.py), and runs conversion and training
+(converting.py, training.py, launching.py). The HTTP server is the standard
+library's; three.js is vendored beside this file rather than pulled from a CDN,
+so a rig without internet still comes up and nothing here depends on another host
+staying reachable.
 """
 
 from __future__ import annotations
@@ -33,8 +40,6 @@ import math
 import signal
 import threading
 import time
-import urllib.error
-import urllib.request
 from dataclasses import replace
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -55,6 +60,7 @@ from pinkrab_umi.desk_solid import PlacementError, chest_x, solid_in_world, worl
 from pinkrab_umi.markers import solid_stl, face_poses, marker_modules
 
 from . import replay, wsock
+from .alerts import ALERTS
 from .clutch import Clutch
 from .dagger import STOP_TIMEOUT_S, Dagger
 from .converting import Converter, Preview
@@ -62,7 +68,7 @@ from .feeds import Feeds
 from .feeds import serve as serve_page
 from .policy import PolicyError, PolicyRun, checkpoint_hands, checkpoints
 from .real import MODE_HANDHELD, MODE_IDLE, MODE_POLICY, MODE_STUDIO, RealRobot
-from .rig import Rig, RigError, live_request, live_stats, live_url, node_already_up
+from .rig import Rig, RigError, live_request, live_stats, node_already_up
 from .launching import DEFAULTS as LAUNCH_DEFAULTS
 from .launching import RECIPES, Jobs, LaunchError, image_shape, save_key
 from .training import TrainError, TrainWatch
@@ -86,7 +92,6 @@ PAGES = {
     "/teleop": "index.html",
     "/collect": "handheld.html",
     "/curate": "curate.html",
-    "/handheld": "handheld.html",
     "/policy": "policy.html",
     "/train": "train.html",
 }
@@ -95,6 +100,9 @@ PAGES = {
 # itself with its Connect: none of them needs the choice made first.
 ARM_PAGES = {"/teleop"}
 
+
+# How often the policy run is looked at for a page or a node that has gone.
+POLICY_WATCH_S = 0.5
 
 # What the live view can be asked to open again, one thing at a time.
 RETRIES = {f"/rig/live/{thing}/retry" for thing in
@@ -186,19 +194,65 @@ class StudioState:
         # and sent down every page's socket when it changes.
         self.feeds = Feeds(self)
 
-    def halt_policy(self) -> dict:
-        """Stop, not limp: idle at the gate, so nothing more passes and the
-        servos keep holding where they are; then the node and the asking loop
-        go, and the run's recording is kept - on a thread, since closing its
-        videos takes seconds and the stop must not wait on it."""
+    def halt_policy(self, reason: str = "") -> dict:
+        """Stop, not limp: idle at the gate, so nothing more passes - a walk
+        under way ends where the arms are - and the servos keep holding where
+        they are; then the node and the asking loop go, and the run's
+        recording is kept - on a thread, since closing its videos takes
+        seconds and the stop must not wait on it. `reason` is what the page
+        is told when the studio stopped the run itself."""
         halt = self.dagger.halt_begun()
         queued = self.real.request("mode", mode=MODE_IDLE)
+        with self._walk_lock:
+            self._walk_target = None
         self.policy.stop_quietly()
-        self.policy.end_driven()
+        self.policy.end_driven(reason)
         node = self.rig.stop_policy()
         self._halting = threading.Thread(target=self._after_halt, args=(halt,), name="dagger-stop", daemon=True)
         self._halting.start()
         return {"ok": True, "queued": queued, "node": node, "policy": self.policy.state()}
+
+    def policy_halt_reason(self) -> str | None:
+        """Why the policy driving the arms is to be stopped now, or None. The
+        page is what can stop it, so a policy drives only while a policy page's
+        socket answers here (feeds.POLICY_PING_S; a tab behind another answers
+        too); and the rollout node is what drives, so a node that has exited
+        ends the run."""
+        run = self.policy.state()
+        if not (run["driving"] or self.dagger.correcting):
+            return None
+        node = self.rig.state()["policy"]
+        if run["driving"] and node["exit"] is not None:
+            return f"the rollout node exited (exit {node['exit']})"
+        if self.feeds.policy_page_gone_s() > SETTINGS.policy_page_lost_s:
+            return f"no policy page has answered for {SETTINGS.policy_page_lost_s:g} s"
+        return None
+
+    def watch_policy(self) -> None:
+        """Stop a policy run whose page or node has gone (policy_halt_reason);
+        the gate is idled and the correction in hand kept, the cameras and the
+        bridge are left up."""
+        while not self.stopping.wait(POLICY_WATCH_S):
+            # A stop under way is not stopped again: its correction is still
+            # being put away, and asking again would queue a stop after it.
+            if self._halting is not None and self._halting.is_alive():
+                continue
+            try:
+                reason = self.policy_halt_reason()
+                if reason:
+                    print(f"  policy:  stopped - {reason}")
+                    ALERTS.say("policy", f"stopped - {reason}")
+                    self.halt_policy(reason)
+            except Exception as exc:  # noqa: BLE001 - the watch must outlive one bad look
+                print(f"  policy:  watching the run failed: {type(exc).__name__}: {exc}")
+
+    def arm_taken(self) -> str | None:
+        """Why the arms are not free for a walk of the page's own, or None: a
+        policy asks or drives, or the handhelds have them."""
+        run = self.policy.state()
+        if run["running"] or run["driving"] or self.dagger.hand_has():
+            return "a policy has the arm - stop it first"
+        return None
 
     def halted(self) -> None:
         """Once the last stop's recording is closed: the live view it records
@@ -783,7 +837,8 @@ def make_handler(state: StudioState, allowed_hosts: frozenset[str] | None = None
                     return
                 if parts[3] == "replay.json":
                     try:
-                        self._send_json(replay.load_or_solve(root))
+                        self._send_json({**replay.solved(root),
+                                         "start_vs_others": state.verdicts.start_vs_others(root.name)})
                     except Exception as exc:  # noqa: BLE001 - a bad episode is a message, not a crash
                         self._send_json({"error": f"could not solve the episode: {exc}"}, 500)
                     return
@@ -910,14 +965,10 @@ def make_handler(state: StudioState, allowed_hosts: frozenset[str] | None = None
                 self._send_json({"ok": True, "rig": state.rig.state()})
                 return
 
-            if path.startswith("/rig/") and len(path.split("/")) == 4:
-                # /rig/<live|teleop>/<start|stop>. Start takes options in the body;
-                # stop takes nothing, but the socket is drained either way.
-                parts = path.split("/")
-                which, verb = (parts[2], parts[3]) if len(parts) == 4 else ("", "")
-                if which not in ("live", "teleop") or verb not in ("start", "stop"):
-                    self._send_json({"error": "not found"}, 404)
-                    return
+            if path in ("/rig/live/start", "/rig/live/stop"):
+                # Start takes options in the body; stop takes nothing, but the
+                # socket is drained either way.
+                verb = path.rsplit("/", 1)[1]
                 length = int(self.headers.get("Content-Length") or 0)
                 raw = self.rfile.read(min(length, 64_000)) if length > 0 else b""
                 try:
@@ -926,26 +977,22 @@ def make_handler(state: StudioState, allowed_hosts: frozenset[str] | None = None
                     self._send_json({"error": f"bad JSON: {exc}"}, 400)
                     return
                 options = options if isinstance(options, dict) else {}
-                if which == "live":
-                    # Whose gripper cameras, said either way: a view started
-                    # without it and one asked for the handhelds' are the same.
-                    from pinkrab_umi.gripper_cams import CAMERA_SETS
-                    options = {"cameras": "handheld", **options}
-                    if options["cameras"] not in CAMERA_SETS:
-                        self._send_json({"error": f"cameras must be one of {', '.join(CAMERA_SETS)}"}, 400)
-                        return
+                # Whose gripper cameras, said either way: a view started
+                # without it and one asked for the handhelds' are the same.
+                from pinkrab_umi.gripper_cams import CAMERA_SETS
+                options = {"cameras": "handheld", **options}
+                if options["cameras"] not in CAMERA_SETS:
+                    self._send_json({"error": f"cameras must be one of {', '.join(CAMERA_SETS)}"}, 400)
+                    return
                 try:
-                    if verb == "start" and which == "live":
+                    if verb == "start":
                         refused = state.start_live(options)
                         if refused:
                             self._send_json({"error": refused}, 409)
                             return
-                    elif verb == "start":
-                        state.rig.start(which, options)
                     else:
-                        if which == "live":
-                            state.halted()
-                        state.rig.stop(which)
+                        state.halted()
+                        state.rig.stop("live")
                 except RigError as exc:
                     self._send_json({"error": str(exc)}, 409)
                     return
@@ -1015,6 +1062,12 @@ def make_handler(state: StudioState, allowed_hosts: frozenset[str] | None = None
                 payload = self._body()
                 if payload is None:
                     return
+                # Not while a policy asks or drives, or the hands have the
+                # arms: those own them, and the walk would take them away.
+                taken = state.arm_taken()
+                if taken:
+                    self._send_json({"error": taken}, 409)
+                    return
                 checkpoint = str(payload.get("checkpoint") or "")
                 # Settings that do not hold - the common ones, and the
                 # checkpoint's kind's against it - are refused before the
@@ -1065,7 +1118,8 @@ def make_handler(state: StudioState, allowed_hosts: frozenset[str] | None = None
                 # The ready pose or home, walked through the gate in the studio
                 # mode - the same walk the teleop page's pose buttons order -
                 # so a session can be set up or put away from this page too.
-                # Not while a policy is asking or driving: those own the arm.
+                # Not while a policy is asking or driving, or the hands have
+                # the arms: those own the arm.
                 payload = self._body()
                 if payload is None:
                     return
@@ -1077,8 +1131,9 @@ def make_handler(state: StudioState, allowed_hosts: frozenset[str] | None = None
                 else:
                     self._send_json({"error": f"no such pose: {which!r} - ready or home"}, 400)
                     return
-                if state.policy.state()["running"] or state.policy.state()["driving"]:
-                    self._send_json({"error": "a policy has the arm - stop it first"}, 409)
+                taken = state.arm_taken()
+                if taken:
+                    self._send_json({"error": taken}, 409)
                     return
                 state.real.drive(MODE_STUDIO)
                 queued = state.walk([goal], open_jaws=which == "ready")
@@ -1232,7 +1287,6 @@ def make_handler(state: StudioState, allowed_hosts: frozenset[str] | None = None
                 # top camera, a gripper camera, a jaw: asked of the live
                 # server, which answers at once; the stats that follow say how
                 # it went.
-                from .rig import live_url
                 self._body()
                 # A gripper camera or a jaw reopened drops what an episode or a
                 # policy is reading from it meanwhile.
@@ -1242,13 +1296,7 @@ def make_handler(state: StudioState, allowed_hosts: frozenset[str] | None = None
                     if held:
                         self._send_json({"error": held}, 409)
                         return
-                request = urllib.request.Request(live_url() + path.removeprefix("/rig/live/"), data=b"{}",
-                                                 headers={"Content-Type": "application/json"})
-                try:
-                    with urllib.request.urlopen(request, timeout=2.0) as answer:
-                        self._send_json(json.loads(answer.read().decode()))
-                except (urllib.error.URLError, TimeoutError, ValueError, OSError) as exc:
-                    self._send_json({"error": f"the live view did not answer: {exc}"}, 502)
+                self._send_json(*live_request(path.removeprefix("/rig/live"), {}, timeout=2.0))
                 return
 
             if path == "/cameras":
@@ -1424,6 +1472,11 @@ def make_handler(state: StudioState, allowed_hosts: frozenset[str] | None = None
                     self._send_json({"error": f"{name} is waiting to be sent to a training machine, or being "
                                               "sent - delete it when the launch is done"}, 409)
                     return
+                training = state.training.store.local_run_on(name)
+                if training:
+                    self._send_json({"error": f"{training} is training on {name} here - delete it when that "
+                                              "run is over"}, 409)
+                    return
                 try:
                     Converter.delete_dataset(name)
                 except ValueError as exc:
@@ -1445,12 +1498,17 @@ def make_handler(state: StudioState, allowed_hosts: frozenset[str] | None = None
                 payload = self._body()
                 if payload is None:
                     return
-                if path.endswith("start"):
+                starting = path.endswith("start")
+                if starting:
                     # Not while the pair is being switched under it.
                     with state.cameras_lock:
-                        self._send_json(*live_request(path.replace("/rig/live", ""), payload))
-                    return
-                self._send_json(*live_request(path.replace("/rig/live", ""), payload))
+                        answer, code = live_request(path.replace("/rig/live", ""), payload)
+                else:
+                    answer, code = live_request(path.replace("/rig/live", ""), payload)
+                # What the pedals' clutch believes is recording follows this.
+                if code == 200:
+                    state.clutch.sync(answer.get("name") if starting else None)
+                self._send_json(answer, code)
                 return
 
             if path == "/real/request":
@@ -1465,12 +1523,9 @@ def make_handler(state: StudioState, allowed_hosts: frozenset[str] | None = None
                     self._send_json({"error": f"no such request: {kind!r}"}, 400)
                     return
                 fields = {k: v for k, v in payload.items() if k != "kind"}
-                # Pedal 3 while an episode records is the recording's stop, not
-                # the arms': the clutch took the press already.
-                if (kind == "mode" and payload.get("pedal") and state.clutch.armed
-                        and state.clutch.recording is not None):
-                    self._send_json({"queued": None, "note": "the clutch has this pedal"})
-                    return
+                # A stop reaches the gate whichever page is in front: with the
+                # collect page up the pedal also ends the recording (clutch.py),
+                # never instead of stopping the arms.
                 if kind == "drive":
                     # A pedal: arms live, and handed to this driver.
                     try:
@@ -1560,7 +1615,7 @@ def serve(state: StudioState, host: str, port: int) -> None:
     try:
         state.physics.start()
         state.rig.studio_port = port
-        state.clutch.live_url = live_url().rstrip("/")
+        threading.Thread(target=state.watch_policy, name="policy-watch", daemon=True).start()
         # The pedals, for as long as the page is up: they record on the collect
         # page with no robot, so they are not the robot switch's to start.
         state.rig.start_footswitch(port)

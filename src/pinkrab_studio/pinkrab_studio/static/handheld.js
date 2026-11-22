@@ -43,6 +43,12 @@ let running = false;
 // takes no second click, and the rig's updates leave it alone.
 let switching = null;
 
+// What a delete answered, as a line for the note: the server names each
+// episode it could not delete.
+function deleteFailures(answer) {
+  return [...(answer?.errors || []), ...(answer?.error ? [answer.error] : [])].join(' · ');
+}
+
 async function ask(path, body) {
   const r = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' },
                                 body: JSON.stringify(body ?? {}) });
@@ -358,7 +364,8 @@ function showEpisode(ep) {
   pedalCancel.classList.toggle('on', !!recording);
   if (recording) {
     const f = ep.frames || {};
-    recLine.textContent = `recording ${ep.seconds}s · head ${f.head ?? 0} · left ${f.gripper_left ?? 0} · right ${f.gripper_right ?? 0}`;
+    recLine.textContent = `recording ${ep.seconds}s · head ${f.head ?? 0} · left ${f.gripper_left ?? 0} · right ${f.gripper_right ?? 0}`
+      + (ep.failed ? ` · failing: ${ep.failure}` : '');
     recLine.title = ep.name;
   } else {
     recLine.textContent = running ? 'not recording' : 'not connected';
@@ -373,7 +380,10 @@ function showEpisode(ep) {
     else { saving = was; if (ep?.closing?.name === was) say('Saving', 'stop'); }
   }
   if (saving && ep?.closed?.name === saving && ep?.closing?.name !== saving) {
-    say(ep.closed.cancelled ? 'Recording cancelled' : 'Saved', 'stop');
+    // A take that could not be written whole is kept with what it lost said,
+    // and is not announced as saved.
+    if (ep.closed.failure) recNote.textContent = `${ep.closed.name}: ${ep.closed.failure}`;
+    say(ep.closed.cancelled ? 'Recording cancelled' : ep.closed.failure ? 'Saved with errors' : 'Saved', 'stop');
     saving = null;
   }
 }
@@ -523,8 +533,12 @@ deleteTicked.addEventListener('click', async () => {
     return;
   }
   deleteTicked.disabled = true;
-  await ask('/rig/live/episode/delete', { names: [...ticked] }).catch(() => {});
-  ticked.clear();
+  try {
+    const answer = await ask('/rig/live/episode/delete', { names: [...ticked] });
+    // What the server deleted leaves the ticks; what it could not stays ticked.
+    for (const name of answer.deleted || []) ticked.delete(name);
+    recNote.textContent = deleteFailures(answer);
+  } catch (err) { recNote.textContent = String(err); }
   deleteTicked.classList.remove('sure');
   showTicks();
 });
@@ -612,7 +626,12 @@ function drawShelf() {
     del.addEventListener('click', async () => {
       if (!del.classList.contains('sure')) { del.classList.add('sure'); del.textContent = 'sure?'; setTimeout(() => { del.classList.remove('sure'); del.textContent = 'delete'; }, 4000); return; }
       del.disabled = true;
-      await ask('/rig/live/episode/delete', c ? { name: ep.name, correction: c.correction } : { name: ep.name }).catch(() => {});
+      try {
+        const answer = await ask('/rig/live/episode/delete', c ? { name: ep.name, correction: c.correction } : { name: ep.name });
+        recNote.textContent = deleteFailures(answer);
+        if (answer.ok) return;
+      } catch (err) { recNote.textContent = String(err); }
+      del.disabled = false; del.classList.remove('sure'); del.textContent = 'delete';
     });
     td.append(del);
     return tr;

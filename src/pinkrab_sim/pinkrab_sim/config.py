@@ -105,16 +105,24 @@ def measured_lenses() -> dict[str, LensSpec]:
     for hand, fit in data.items():
         if not isinstance(fit, dict) or fit.get("model") != "kannala_brandt":
             continue
-        name = f"ar0234_{hand}"
-        w, h = fit["size"]
-        spec = LensSpec(name, int(w), int(h), (fit["fx"] + fit["fy"]) / 2.0, fit["cx"], fit["cy"],
-                        math.pi, tuple(float(x) for x in fit["k"]))
-        # The image circle bounds the field; where the fit turns before it, the
-        # turn does.
-        circle = fit.get("circle") or {}
-        edge = float(spec.theta_at(circle["diameter"] / 2.0)) if circle.get("diameter") else math.inf
-        out[name] = dataclasses.replace(spec, fov=2.0 * min(edge, spec.reach))
+        try:
+            out[f"ar0234_{hand}"] = _measured(f"ar0234_{hand}", fit)
+        except (KeyError, TypeError, ValueError) as exc:
+            # One entry the sim cannot read leaves out that lens, not the rest.
+            print(f"  {CORE.lens_file.name}: the {hand} fit is not used ({type(exc).__name__}: {exc})",
+                  file=sys.stderr)
     return out
+
+
+def _measured(name: str, fit: dict) -> LensSpec:
+    w, h = fit["size"]
+    spec = LensSpec(name, int(w), int(h), (fit["fx"] + fit["fy"]) / 2.0, fit["cx"], fit["cy"],
+                    math.pi, tuple(float(x) for x in fit["k"]))
+    # The image circle bounds the field; where the fit turns before it, the
+    # turn does.
+    circle = fit.get("circle") or {}
+    edge = float(spec.theta_at(circle["diameter"] / 2.0)) if circle.get("diameter") else math.inf
+    return dataclasses.replace(spec, fov=2.0 * min(edge, spec.reach))
 
 
 @dataclass(frozen=True)
@@ -326,9 +334,6 @@ class Settings:
     def episodes_dir(self) -> Path:
         return self.root / "episodes"
 
-    @property
-    def camera_file(self) -> Path:
-        return CORE.description_pkg / "config" / "camera.yaml"
 
 
 SETTINGS = Settings()

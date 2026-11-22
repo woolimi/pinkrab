@@ -235,6 +235,11 @@ class Dagger:
         teleop = self._real.snapshot().get("teleop") or {}
         return bool(teleop.get("armed")) and teleop.get("mode") == MODE_CORRECT
 
+    def hand_has(self) -> bool:
+        """Whether the handhelds have the arms: taken over from here, or by a
+        studio that was started again mid-correction."""
+        return self.correcting or self._hand_has()
+
     @property
     def thrown(self) -> bool:
         with self._lock:
@@ -243,7 +248,7 @@ class Dagger:
     def toggle(self) -> dict:
         if self.thrown:
             return self.redo()
-        return self.hand_back() if self.correcting or self._hand_has() else self.take_over()
+        return self.hand_back() if self.hand_has() else self.take_over()
 
     def _busy_redoing(self) -> dict | None:
         """An order refused while a redo walks the arms back, rather than left

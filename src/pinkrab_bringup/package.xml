@@ -17,6 +17,7 @@
   <exec_depend>pinkrab_core</exec_depend>
   <exec_depend>pinkrab_description</exec_depend>
   <exec_depend>pinkrab_bridge</exec_depend>
+  <exec_depend>pinkrab_teleop</exec_depend>
   <exec_depend>pinkrab_safety</exec_depend>
   <exec_depend>pinkrab_driver</exec_depend>
   <exec_depend>robot_state_publisher</exec_depend>

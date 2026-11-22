@@ -9,7 +9,7 @@ returns a pose that is wrong by however far they drifted.
 The solid frame has its origin at the centre of the solid, +Z out of the face
 opposite the stalk. Each marker face gets a frame with X right, Y up and Z along
 the outward normal, which is the frame ArUco reports a marker in, so a face's
-transform into the solid is the whole of what pnp needs to fuse five faces into
+transform into the solid is the whole of what pnp needs to fuse a solid's faces into
 one pose.
 """
 
@@ -125,7 +125,7 @@ def marker_modules(marker_id: int) -> np.ndarray:
     dictionary is OpenCV's business, and a second implementation of it is a second
     thing that can disagree with the detector.
     """
-    side = 6  # 4x4 payload plus the one-module black border
+    side = dictionary().markerSize + 2  # the payload plus the one-module black border
     img = cv2.aruco.generateImageMarker(dictionary(), marker_id, side * 10)
     return img.reshape(side, 10, side, 10)[:, 5, :, 5] < 128
 
@@ -199,7 +199,7 @@ def _patch_shapes(name: str, x0: float, y0: float, cfg: Settings = SETTINGS) -> 
     up = "+Y" if name == "z_plus" else "+Z"
     # Two short lines rather than one long one. A caption wider than the column
     # runs into the patch beside it, and what it ran into was the id of the face
-    # somebody was about to glue on. The part that is the same on all five - cut
+    # somebody was about to glue on. The part that is the same on all of them - cut
     # on the line, glue it bar up - is said once, in the heading.
     # The solid's name is in the heading; under a patch there is room for the id
     # and the face, and a second line for which way the bar goes.

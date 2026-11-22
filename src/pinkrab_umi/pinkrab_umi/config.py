@@ -310,6 +310,10 @@ class Settings:
     # this is the width of a whole frame while it is not.
     gripper_stream_width: int = 960
     gripper_stream_every: int = 2
+    # A gripper camera that sends no frame for this long is let go and found
+    # again: a read waits for a frame with no limit, so a camera whose USB link
+    # dropped can leave it waiting for good.
+    gripper_stall_s: float = 3.0
     # Every camera's frames, for any other process: each frame, whole, in
     # shared memory under this name - {camera} `top`, or a gripper set and side
     # (`follower_left`) - written by the thread reading the camera as it
@@ -450,7 +454,8 @@ class Settings:
     # The longest take the live view will record before stopping it itself. A
     # closure take is half a minute of moving plus a still start and end; four
     # minutes is room for a slow one, and a forgotten one stops filling the disk
-    # at ninety megabytes a minute instead of overnight.
+    # - a lossless picture per frame, at the camera's frame rate - instead of
+    # overnight.
     take_max_seconds: float = 240.0
 
     # --- the desk solid in the robot's world --------------------------------

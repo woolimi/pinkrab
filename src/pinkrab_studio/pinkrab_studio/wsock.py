@@ -15,6 +15,7 @@ import hashlib
 import select
 import socket
 import struct
+import time
 from urllib.parse import urlparse
 
 GUID = b"258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
@@ -64,6 +65,8 @@ class WebSocket:
         # Sends wait this long at most; receives are polled with select.
         sock.settimeout(SEND_TIMEOUT_S)
         self._buffer = bytearray()
+        # When the page last sent anything - a message or a pong (time.monotonic()).
+        self.heard_at = time.monotonic()
         # A message arriving in pieces: its kind and the pieces so far.
         self._kind = 0
         self._parts: list[bytes] = []
@@ -80,6 +83,7 @@ class WebSocket:
             raise Closed(str(exc)) from exc
         if not data:
             raise Closed("the page went")
+        self.heard_at = time.monotonic()
         self._buffer += data
         return self._messages()
 

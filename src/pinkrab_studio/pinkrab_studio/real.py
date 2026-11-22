@@ -162,8 +162,9 @@ class RealRobot:
         with self._lock:
             if not self.expected and not self._stops(kind, fields):
                 return None
-            entry = {"id": self._next_id, "kind": kind, "at": time.monotonic(), "delivered": None,
-                     "token": f"{self._epoch}:{self._next_id}", **fields}
+            # The studio's own fields last: a page's fields cannot overwrite them.
+            entry = {**fields, "id": self._next_id, "kind": kind, "at": time.monotonic(), "delivered": None,
+                     "token": f"{self._epoch}:{self._next_id}"}
             self._next_id += 1
             self._requests.append(entry)
             return entry["id"]

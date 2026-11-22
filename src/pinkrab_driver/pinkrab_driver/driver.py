@@ -6,12 +6,14 @@ ramp were applied by `pinkrab_safety` before a pose got here, and a driver that
 also made those decisions would be the hardware deciding policy - the thing that
 cannot be undone later, because by then the bands live next to the serial port.
 
-The checked topic is the only subscription. There is no path from
-`/joint_commands` to a servo that does not cross the gate, so a gate that is not
-running is a robot that takes no new commands rather than one taking them
-unchecked. A pose whose stamp is older than `command_timeout_s` is dropped for
-the same reason: a command that queued up somewhere is a statement about a
-moment that has passed.
+The checked topic is the only subscription. The normal path from
+`/joint_commands` to a servo crosses the gate, so a gate that is not running is
+a robot that takes no new commands rather than one taking them unchecked. The
+topic itself is open to any publisher in the same ROS domain, and nothing here
+can tell the gate's poses from another node's; keeping foreign publishers off the
+graph is a matter of domain isolation. A pose whose stamp is missing or older
+than `command_timeout_s` is dropped: a command that queued up somewhere is a
+statement about a moment that has passed.
 
 Torque is left as the port found it, which on a rig that was just powered up is
 off, and a limp arm stays limp until somebody asks for torque. Opening a port
@@ -143,15 +145,20 @@ class DriverNode(Node):
             self.get_logger().warn("a checked command needs matching name and position")
             return
         stamp = message.header.stamp
-        if stamp.sec or stamp.nanosec:
-            age = (self.get_clock().now().nanoseconds
-                   - (stamp.sec * 1_000_000_000 + stamp.nanosec)) / 1e9
-            if age > self.timeout:
-                self.get_logger().warn(
-                    f"dropped a command {age:.2f}s old - is the gate keeping up?",
-                    throttle_duration_sec=1.0,
-                )
-                return
+        if not (stamp.sec or stamp.nanosec):
+            self.get_logger().warn(
+                "dropped a command with no stamp - the gate stamps every pose it passes",
+                throttle_duration_sec=1.0,
+            )
+            return
+        age = (self.get_clock().now().nanoseconds
+               - (stamp.sec * 1_000_000_000 + stamp.nanosec)) / 1e9
+        if age > self.timeout:
+            self.get_logger().warn(
+                f"dropped a command {age:.2f}s old - is the gate keeping up?",
+                throttle_duration_sec=1.0,
+            )
+            return
         pose = dict(zip(message.name, (float(v) for v in message.position)))
         try:
             self.arms.write(pose)

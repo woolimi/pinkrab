@@ -29,7 +29,7 @@ from pinkrab_umi.episode import list_episodes
 from .alerts import ALERTS
 from .converting import Converter
 from .policy import checkpoints
-from .rig import bridge_already_up, live_hands, live_stats, live_url, node_already_up
+from .rig import live_hands, live_stats, live_url, node_already_up
 from .wsock import Closed, WebSocket
 
 # The policy page's trace: sent as steps arrive, from where that page has got
@@ -40,6 +40,11 @@ TICK_S = 0.25
 # A page that has had nothing new for this long is pinged: a socket that has
 # gone quiet and one that has died look the same until something is sent.
 PING_S = 15.0
+# A policy page's socket is pinged this often whatever it is sent, and the
+# browser's pong - answered under the page, a tab behind another too - is
+# what says it is still there: a socket the network dropped, or a laptop
+# gone to sleep, closes nothing for minutes, it only stops answering.
+POLICY_PING_S = 0.5
 # The page whose being in front makes the pedals record.
 COLLECT_PAGE = "collect"
 POLICY_PAGE = "policy"
@@ -125,6 +130,10 @@ class Feeds:
         self.state = state
         self._datasets: tuple[tuple, list[dict]] = ((None,), [])
         self._datasets_lock = threading.Lock()
+        # When a policy page's socket was last heard from (time.monotonic()):
+        # what the studio's dead man's switch waits on.
+        self._policy_heard = time.monotonic()
+        self._policy_heard_lock = threading.Lock()
         rate = 1.0 / STREAM_HZ
 
         def topic(name: str, every: float, produce: Callable[[], object], volatile: tuple[str, ...] = ()) -> Topic:
@@ -137,7 +146,7 @@ class Feeds:
             topic("rig", 0.5, self._rig),
             # The live view's numbers, while it runs. Not asked otherwise: the
             # studio would wait on a port nobody answers.
-            topic("stats", 0.5, lambda: live_stats() if state.rig.state()["live"]["running"] else None),
+            topic("stats", 0.5, self._stats),
             # The handhelds against the desk solid, at the camera's pace, for
             # the hands view. The live server has no push, so it is asked.
             topic("hands", 1.0 / 30.0,
@@ -174,7 +183,29 @@ class Feeds:
         for name in names:
             self.topics[name].touch()
 
+    def policy_heard(self, at: float) -> None:
+        """A policy page's socket was heard from at `at` (time.monotonic())."""
+        with self._policy_heard_lock:
+            self._policy_heard = max(self._policy_heard, at)
+
+    def policy_page_gone_s(self) -> float:
+        """How long since any policy page's socket was last heard from here."""
+        with self._policy_heard_lock:
+            return time.monotonic() - self._policy_heard
+
     # --- the topics that are more than one call ----------------------------
+    def _stats(self) -> dict | None:
+        """The live view's numbers, while it runs, and what they say of an
+        episode kept for the clutch: one the live view ended by itself is not
+        a recording any more."""
+        if not self.state.rig.state()["live"]["running"]:
+            return None
+        stats = live_stats()
+        if stats:
+            episode = stats.get("episode") or {}
+            self.state.clutch.sync(episode.get("name") if episode.get("active") else None)
+        return stats
+
     def _rig(self) -> dict:
         return {**self.state.rig.state(), "live_url": live_url()}
 
@@ -196,7 +227,7 @@ class Feeds:
         if state.real.expected and not answer.get("heard"):
             # Nothing has come. Say which of the two usual reasons it is
             # rather than leaving the page to repeat "waiting" forever.
-            answer["quiet"] = state.real.why_quiet(CORE.shell_ros_domain(), bridge_already_up())
+            answer["quiet"] = state.real.why_quiet(CORE.shell_ros_domain(), state.rig.bridge_pid())
         return answer
 
     def datasets(self) -> list[dict]:
@@ -256,7 +287,8 @@ def serve(ws: WebSocket, feeds: Feeds) -> None:
     # The trace is sent whole, and drawn afresh, on a new socket and when the
     # page starts it over: a page that reconnects still holds the steps it had.
     restart = True
-    spoke = time.monotonic()
+    spoke = pinged = time.monotonic()
+    policy = False       # whether this is a policy page's socket
     try:
         while not state.stopping.is_set():
             tick = min([feeds.topics[n].every for n in watching if n in feeds.topics] + [TICK_S])
@@ -272,6 +304,7 @@ def serve(ws: WebSocket, feeds: Feeds) -> None:
                     said = {n: b for n, b in said.items() if n in watching}
                 if "page" in message:
                     page = str(message["page"])
+                    policy = page == POLICY_PAGE
                 # In front, as the page says once a second while it is visible:
                 # what makes the floor's pedals record rather than drive. Armed
                 # by what is heard, so a page gone quiet - closed, frozen, off
@@ -299,6 +332,13 @@ def serve(ws: WebSocket, feeds: Feeds) -> None:
                     ws.send(json.dumps({"topic": name, "data": value}, separators=(",", ":")))
                     said[name] = basis
                     spoke = time.monotonic()
+            if policy:
+                feeds.policy_heard(ws.heard_at)
+                # Pinged on its own clock: what is sent to a page brings
+                # nothing back, a ping brings its pong.
+                if time.monotonic() - pinged >= POLICY_PING_S:
+                    ws.ping()
+                    pinged = spoke = time.monotonic()
             if time.monotonic() - spoke >= PING_S:
                 ws.ping()
                 spoke = time.monotonic()

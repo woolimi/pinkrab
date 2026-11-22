@@ -38,6 +38,13 @@ def main() -> int:
     robot._requests[0]["at"] -= real.REQUEST_TTL_S + 1.0
     check("and is dropped once the bridge has been away too long", not robot.take_requests())
 
+    robot.request("mode", mode=real.MODE_STUDIO, id=99, at=0.0, delivered=1.0, token="x")
+    entry = robot._requests[-1]
+    check("a page's fields do not overwrite the studio's own",
+          entry["id"] != 99 and entry["token"] != "x" and entry["delivered"] is None and entry["at"] > 0.0,
+          str(entry))
+    robot.take_requests()
+
     print("\na stop")
     robot.request("estop")
     robot._requests[0]["at"] -= real.STOP_KEEP_S + 100.0

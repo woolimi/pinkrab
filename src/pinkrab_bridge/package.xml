@@ -24,6 +24,7 @@
   <exec_depend>std_msgs</exec_depend>
   <exec_depend>std_srvs</exec_depend>
   <exec_depend>pinkrab_core</exec_depend>
+  <exec_depend>pinkrab_interfaces</exec_depend>
 
   <export>
     <build_type>ament_python</build_type>

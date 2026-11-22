@@ -36,16 +36,18 @@ studio 를 실행한 컴퓨터에 GPU 가 없으면, ssh 로 접속할 수 있�
 |---|---|
 | name | 아무 이름, 예: `gpu-box` |
 | ssh 줄 | `ssh -i ~/.ssh/id_ed25519 -p 22 user@gpu.example.com` 같은 접속 명령 |
-| key | 개인 키 파일. `~/pinkrab/keys/` 에 복사해 이 사용자만 읽게 해 두고 씁니다. 비밀번호 로그인은 쓰지 않습니다 |
+| key | 개인 키 파일. `~/pinkrab/keys/` 에 source 별 파일로 복사해 이 사용자만 읽게 해 두고 쓰며, source 를 지우면 함께 지웁니다. 비밀번호 로그인은 쓰지 않습니다 |
 | runs are under | 그 컴퓨터에서 dataset, Python 환경, 학습 결과를 둘 폴더, 기본 `~/pinkrab-train` |
 
 저장한 뒤 **test** 를 누르면 그 컴퓨터의 GPU, 메모리, 드라이버, CPU, 남은 디스크를 확인하고, 학습에 모자란 것이 있으면 무엇인지 알려 줍니다.
+
+ssh 는 처음 접속하는 컴퓨터의 host key 를 받아 `~/pinkrab/keys/` 의 source 별 `known_hosts` 파일에 적어 두고, 이후에는 그 key 와 같을 때만 접속합니다. 클라우드 세션은 같은 주소와 포트로 새 컴퓨터가 올 수 있어 host key 가 바뀌면 접속이 거절되고 오류 줄에 source 를 다시 저장하라고 나옵니다. Sources 에서 그 source 를 다시 저장하면 적어 둔 key 를 비우고 새 key 를 받습니다.
 
 원격 컴퓨터에서 학습해도 다루는 방법은 이 컴퓨터에서 학습할 때와 같습니다.
 
 - **보내기**: 학습을 시작하면 studio 가 dataset 을 그 컴퓨터로 보내고, 필요한 Python 환경을 설치한 뒤 학습을 띄웁니다.
 - **지표**: studio 가 30 초마다 그 컴퓨터의 학습 기록을 읽어 와 이 컴퓨터에 쌓으므로, loss 같은 지표가 Train 페이지에 이 컴퓨터의 run 과 똑같이 그려집니다. 연결이 끊겼다 다시 이어지면 그동안의 기록도 이어서 가져옵니다.
-- **checkpoint**: checkpoint 는 저장될 때마다 이 컴퓨터로 복사됩니다. studio 가 꺼져 있던 동안 저장된 것은 다시 켜질 때 가져옵니다. 복사된 checkpoint 는 바로 Policy 페이지에서 [실행](../run/)할 수 있습니다.
+- **checkpoint**: checkpoint 는 저장될 때마다 이 컴퓨터로 복사됩니다. studio 가 꺼져 있던 동안 저장된 것은 다시 켜질 때 가져옵니다. 복사된 checkpoint 는 `~/pinkrab/train/<run>@<source>/checkpoints/` 에 source 별 폴더로 놓이므로 source 가 다른 같은 이름의 run 은 서로 덮어쓰지 않습니다. 바로 Policy 페이지에서 [실행](../run/)할 수 있습니다.
 
 ## 새 학습
 
@@ -78,7 +80,7 @@ studio 를 실행한 컴퓨터에 GPU 가 없으면, ssh 로 접속할 수 있�
 
 run 의 **details** 에서 학습을 관리합니다.
 
-- **Stop**: **두 번 누르면** 학습을 멈춥니다.
+- **Stop**: **두 번 누르면** 학습을 멈춥니다. dataset 을 보내거나 환경을 설치하는 중인 시작 작업과 별개로 바로 실행됩니다.
 - **Resume**: **마지막 checkpoint 부터** 같은 컴퓨터에서 이어서 학습합니다. 컴퓨터가 꺼져 quiet 이 된 run 에 씁니다.
 - **delete**: checkpoint 하나를 학습한 컴퓨터와 이 컴퓨터 양쪽에서 지웁니다. 두 번 눌러야 지워지고, Policy 페이지에서 실행 중인 checkpoint 는 지우지 않습니다. 마지막 checkpoint 를 지우면 Resume 은 남은 것 중 가장 최근 checkpoint 부터 이어 갑니다.
 

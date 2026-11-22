@@ -9,7 +9,12 @@ const hint = document.getElementById('teleop-hint');
 // Where a page sent us from, to go on to once sim or real is chosen.
 const next = (() => {
   const asked = new URLSearchParams(location.search).get('next');
-  return asked && asked.startsWith('/') && !asked.startsWith('//') ? asked : null;
+  if (!asked) return null;
+  // Only a path on this page's own origin: '//host' and '/\\host' resolve elsewhere.
+  try {
+    const url = new URL(asked, location.origin);
+    return url.origin === location.origin ? url.pathname + url.search + url.hash : null;
+  } catch { return null; }
 })();
 if (next) hint.textContent = `Choose the real robot or the simulation first - ${next} opens after.`;
 const buttons = [...document.querySelectorAll('button[data-real]')];

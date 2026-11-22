@@ -17,6 +17,7 @@ points; nothing here keeps a file open or a connection up between polls.
 from __future__ import annotations
 
 import base64
+import hashlib
 import inspect
 import json
 import os
@@ -32,6 +33,9 @@ from pinkrab_core.config import SETTINGS as CORE
 
 LOCAL = "this machine"
 SOURCE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 _.-]{0,39}$")
+# A run's name is a directory name here and there: it starts with a letter or
+# a digit, so it is neither '.' nor '..' nor an option.
+RUN_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
 # Where a run's metrics are, under a source's root: in the run's directory,
 # beside its checkpoints, or one level down (a root that keeps runs under train/).
 PATTERNS = ("*/metrics.jsonl", "*/*/metrics.jsonl")
@@ -70,12 +74,39 @@ CREATE TABLE IF NOT EXISTS launches (
 # An older file keeps the runs' `hidden` and the launches' `auto_fetch` columns,
 # which nothing reads now: left there, a studio still running from before reads the same file unbroken.
 MIGRATIONS = ("ALTER TABLE checkpoints ADD COLUMN local TEXT", "ALTER TABLE sources ADD COLUMN gpu TEXT")
-# How a training names its run on its command line - the same argument Stop
-# finds a run's process by.
-OUTPUT_DIR_ARG = "--output_dir="
+# The line ssh ends with when the host answering is not the one it knows.
+HOST_KEY_REFUSED = "Host key verification failed"
+
 
 class TrainError(RuntimeError):
     pass
+
+
+def _keys_dir() -> Path:
+    CORE.keys_dir.mkdir(parents=True, exist_ok=True)
+    os.chmod(CORE.keys_dir, 0o700)
+    return CORE.keys_dir
+
+
+def _source_file(name: str, suffix: str) -> Path:
+    """A file of a source's own under the keys directory. The hash keeps
+    'a b' and 'a_b', which read alike, apart."""
+    digest = hashlib.sha256(name.encode()).hexdigest()[:8]
+    return _keys_dir() / f"{name.replace(' ', '_')}-{digest}{suffix}"
+
+
+def known_hosts_file(name: str) -> Path:
+    """Where ssh keeps the host keys it has taken for a source: this studio's
+    own, apart from the user's ~/.ssh/known_hosts."""
+    return _source_file(name, ".known_hosts")
+
+
+def ssh_said(source: dict, said: str) -> str:
+    """What ssh said, with what to do about it when it refused the host's key."""
+    if HOST_KEY_REFUSED in said:
+        return (f"{said} - {source['name']} answers with a different host key than the one kept; "
+                "saving the source again in Sources takes the new one")
+    return said
 
 
 def keep_key(name: str, text: str) -> str:
@@ -84,9 +115,7 @@ def keep_key(name: str, text: str) -> str:
     that folder is cleared. Returns the kept file's path."""
     if "PRIVATE KEY" not in text:
         raise TrainError("that is not a private key file")
-    CORE.keys_dir.mkdir(parents=True, exist_ok=True)
-    os.chmod(CORE.keys_dir, 0o700)
-    path = CORE.keys_dir / f"{name.replace(' ', '_')}.key"
+    path = _source_file(name, ".key")
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, "w") as f:
         # ssh refuses a key whose last line does not end.
@@ -228,7 +257,9 @@ def ssh_base(source: dict) -> list[str]:
                # A connection that goes quiet is dropped after about a minute,
                # not left to hold a poll or a launch for good.
                "-o", f"ServerAliveInterval={SSH_ALIVE_S}", "-o", f"ServerAliveCountMax={SSH_ALIVE_MAX}",
-               "-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null",
+               # A host is taken on first sight and held to its key after; a
+               # source saved again forgets the keys it took.
+               "-o", "StrictHostKeyChecking=accept-new", "-o", f"UserKnownHostsFile={known_hosts_file(source['name'])}",
                "-o", "LogLevel=ERROR",
                # One connection per poll, not a shared master: a socket left by an
                # earlier session to the same host:port is a session that ended.
@@ -260,7 +291,7 @@ def _read_ssh(source: dict, offsets: dict[str, int]) -> tuple[dict[str, dict], l
         raise TrainError(f"no answer in {SSH_TIMEOUT_S:.0f} s") from exc
     if done.returncode != 0:
         why = (done.stderr.strip().splitlines() or [f"ssh exited {done.returncode}"])[-1]
-        raise TrainError(why)
+        raise TrainError(ssh_said(source, why))
     try:
         answer = json.loads(done.stdout)
     except ValueError as exc:
@@ -269,17 +300,25 @@ def _read_ssh(source: dict, offsets: dict[str, int]) -> tuple[dict[str, dict], l
     return files, answer.get("gpu")
 
 
-def _output_dir(args: list[str]) -> str | None:
+def output_dir_of(args):
+    """The output directory a training's command line names: `--output_dir=`
+    for one started, `--config_path=<dir>/checkpoints/...` for one resumed.
+    None for any other command.
+
+    Standard library only, and self-contained: its source is sent to a remote
+    machine and run there as it is run here."""
     for arg in args:
-        if arg.startswith(OUTPUT_DIR_ARG):
-            return arg[len(OUTPUT_DIR_ARG):]
+        if arg.startswith("--output_dir="):
+            return arg[len("--output_dir="):]
+        if arg.startswith("--config_path=") and "/checkpoints/" in arg:
+            return arg[len("--config_path="):].split("/checkpoints/", 1)[0]
     return None
 
 
 def _unrecorded(process: dict) -> dict:
     """A GPU process no recorded run accounts for, named by its output
     directory when it has one, by the programme it runs when not."""
-    output_dir = _output_dir(process["args"])
+    output_dir = output_dir_of(process["args"])
     name = Path(output_dir).name if output_dir else " ".join(Path(a).name for a in process["args"][:2]) or f"pid {process['pid']}"
     return {"name": name, "pid": process["pid"], "memory_mb": process["memory_mb"]}
 
@@ -328,7 +367,7 @@ class TrainStore:
             row["runs"] = counts.get(row["name"], 0)
             gpu = json.loads(row.pop("gpu") or "null")
             row["unrecorded"] = None if gpu is None else [
-                _unrecorded(p) for p in gpu if _output_dir(p["args"]) not in known.get(row["name"], set())]
+                _unrecorded(p) for p in gpu if output_dir_of(p["args"]) not in known.get(row["name"], set())]
         return rows
 
     def save_source(self, payload: dict) -> dict:
@@ -364,6 +403,9 @@ class TrainStore:
                           ON CONFLICT(name) DO UPDATE SET host=excluded.host, port=excluded.port, user=excluded.user,
                           key=excluded.key, root=excluded.root, error=NULL""",
                        (name, host, port, user, key, root))
+        # The machine saved again may be a new session on the same host and
+        # port, with a new host key.
+        known_hosts_file(name).unlink(missing_ok=True)
         return self.source(name)
 
     def set_key(self, name: str, key: str) -> None:
@@ -386,7 +428,14 @@ class TrainStore:
                 db.executemany(f"DELETE FROM {table} WHERE run_id = ?", [(i,) for i in ids])
             db.execute("DELETE FROM runs WHERE source = ?", (name,))
             db.execute("DELETE FROM files WHERE source = ?", (name,))
+            row = db.execute("SELECT key FROM sources WHERE name = ?", (name,)).fetchone()
+            key = row["key"] if row else None
             db.execute("DELETE FROM sources WHERE name = ?", (name,))
+        # Only a key this studio kept is its to remove: a source may name a
+        # key file anywhere.
+        if key and Path(key).parent == CORE.keys_dir:
+            Path(key).unlink(missing_ok=True)
+        known_hosts_file(name).unlink(missing_ok=True)
 
     # --- syncing ----------------------------------------------------------
     def sync(self, name: str) -> dict:
@@ -468,6 +517,16 @@ class TrainStore:
             kind = line.get("kind")
             if kind == "run":
                 fields = {k: line.get(k) for k in ("name", "policy", "dataset", "steps", "batch_size", "log_freq", "host")}
+                # The name is a directory name on this machine when its
+                # checkpoints are copied here: a name that cannot be one is
+                # replaced by the output directory's, and a run with neither
+                # is not recorded - nor the lines that follow it.
+                if not (isinstance(fields["name"], str) and RUN_NAME.match(fields["name"])):
+                    fallback = Path(str(line.get("output_dir") or "")).name
+                    if not RUN_NAME.match(fallback):
+                        state.pop("run_id", None)
+                        continue
+                    fields["name"] = fallback
                 fields["config"] = json.dumps(line.get("config")) if line.get("config") is not None else None
                 fields["started"] = line.get("t")
                 state["run_id"] = self._run_id(db, source, line.get("output_dir") or "", fields)
@@ -542,11 +601,23 @@ class TrainStore:
             launch = db.execute("SELECT * FROM launches WHERE source = ? AND output_dir = ?",
                                 (found["source"], found["output_dir"])).fetchone()
             found["launch"] = dict(launch) if launch else None
-        # Where its checkpoints are on this machine: a run trained elsewhere is
-        # copied home under the train directory, by its name.
-        found["here"] = str(Path(found["output_dir"]) / "checkpoints" if found["source"] == LOCAL
-                            else CORE.train_dir / found["name"] / "checkpoints")
+        found["here"] = str(self.checkpoints_here(found))
         return found
+
+    @staticmethod
+    def checkpoints_here(run: dict) -> Path:
+        """Where a run's checkpoints are on this machine. One trained elsewhere
+        is copied home under the train directory, to a directory of its own
+        for its name and its source: runs of two sources may share a name."""
+        if run["source"] == LOCAL:
+            return Path(run["output_dir"]) / "checkpoints"
+        if not RUN_NAME.match(str(run["name"])):
+            raise TrainError(f"{run['name']!r} cannot be a run's directory name")
+        # '@' is not in a run's name, so no run of this machine is named like it.
+        home = CORE.train_dir / f"{run['name']}@{run['source']}"
+        if not home.resolve().is_relative_to(CORE.train_dir.resolve()):
+            raise TrainError(f"{home} is outside {CORE.train_dir}")
+        return home / "checkpoints"
 
     def record_launch(self, source: str, output_dir: str, recipe: dict, log: str) -> None:
         with self._lock, self._db() as db:
@@ -560,6 +631,22 @@ class TrainStore:
     def forget_checkpoint(self, run_id: int, step: int) -> None:
         with self._lock, self._db() as db:
             db.execute("DELETE FROM checkpoints WHERE run_id = ? AND step = ?", (run_id, step))
+
+    def local_run_on(self, dataset: str) -> str | None:
+        """The name of a run on this machine that is going - running, or quiet
+        without having ended - and reads the dataset `dataset` of the workspace,
+        through its link or by its name; None if there is none. Such a dataset
+        is not to be deleted from under it."""
+        here = (CORE.workspace / "datasets" / dataset).resolve()
+        with self._db() as db:
+            rows = db.execute("SELECT name, dataset, config FROM runs WHERE source = ? AND status = 'running'",
+                              (LOCAL,)).fetchall()
+        for row in rows:
+            config = json.loads(row["config"]) if row["config"] else None
+            root = ((config or {}).get("dataset") or {}).get("root") if isinstance(config, dict) else None
+            if row["dataset"] == f"pinkrab/{dataset}" or (root and Path(root).expanduser().resolve() == here):
+                return row["name"]
+        return None
 
     def to_fetch(self) -> list[dict]:
         """Checkpoints saved on another machine and not yet here."""

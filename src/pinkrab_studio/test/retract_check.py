@@ -112,9 +112,9 @@ def main() -> int:
     print("\nended at ready")
     desk = world_T_desk()
     chain = ArmKinematics("right")
-    ready = desk_tool("right", desk, chain.forward(np.array([READY_DEG["right"][n.removeprefix("right_")]
-                                                             for n in chain.joint_names])))
-    answer = {"desk": desk.tolist()}
+    ready_tool = chain.forward(np.array([READY_DEG["right"][n.removeprefix("right_")] for n in chain.joint_names]))
+    ready = desk_tool("right", desk, ready_tool)
+    answer = {"desk": desk.tolist(), "ready_tool": {"right": ready_tool.tolist()}}
     back_home = stay + [{"stamp": len(stay) / 30, "solids": {"handheld_right": {"solved": True, "pose": ready.tolist(),
                                                       "world_pose": ready.tolist()}}, "jaw": {"right": 0.9}}]
     home = end_from_ready(back_home, META, "right", answer)

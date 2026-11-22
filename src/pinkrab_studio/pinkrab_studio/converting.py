@@ -157,28 +157,28 @@ class Converter:
             self._thread.start()
 
     def _run(self) -> None:
-        from pinkrab_umi import convert
         asked = self._asked or {}
 
         def say(line: str) -> None:
             with self._lock:
                 self._lines.append(line.strip())
-        kept = worth_training(asked["episodes"], say)
-        if not kept:
-            with self._lock:
-                self._error = "no take on the shelf passes its tests"
-            return
-        from pinkrab_umi import latency
-        from pinkrab_umi.robot_drawn import Look
-        with self._lock:
-            asked["episodes"] = list(kept)
-            self._measuring = 0
 
         def measured(line: str) -> None:
             with self._lock:
                 self._lines.append(line.strip())
                 self._measuring += 1
         try:
+            from pinkrab_umi import convert, latency
+            from pinkrab_umi.robot_drawn import Look
+
+            kept = worth_training(asked["episodes"], say)
+            if not kept:
+                with self._lock:
+                    self._error = "no take on the shelf passes its tests"
+                return
+            with self._lock:
+                asked["episodes"] = list(kept)
+                self._measuring = 0
             found = latency.demo_latency(UMI.episodes_dir, asked["episodes"], asked["fps"], say=measured)
             with self._lock:
                 self._lines.append(latency.said(found).strip())
@@ -190,8 +190,9 @@ class Converter:
         except Exception as exc:  # noqa: BLE001 - the page shows the reason
             with self._lock:
                 self._error = str(exc)
+                self._measuring = None
                 said = list(self._lines[-5:])
-            ALERTS.say("convert", f"{asked['out']} failed: {exc}", said)
+            ALERTS.say("convert", f"{asked.get('out')} failed: {exc}", said)
             # Half a dataset is worse than none: it would list as one.
             shutil.rmtree(self.datasets_dir() / asked["out"], ignore_errors=True)
             return
@@ -239,7 +240,7 @@ class Converter:
                     entry["task"] = mine.get("task")
                     entry["sources"] = [e["episode"] for e in mine.get("episodes", [])]
                     entry["robot_drawn"] = bool(mine.get("robot_drawn"))
-            except (OSError, ValueError):
+            except (OSError, ValueError, KeyError, TypeError):
                 pass
             out.append(entry)
         return out

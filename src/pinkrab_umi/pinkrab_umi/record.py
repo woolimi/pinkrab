@@ -88,9 +88,11 @@ class SessionWriter:
     as it comes.
     """
 
-    def __init__(self, paths: SessionPaths, calibration: dict):
+    def __init__(self, paths: SessionPaths, calibration: dict, solid: str):
         self.paths = paths.create()
-        self.paths.calibration_file.write_text(json.dumps(calibration, indent=2) + "\n")
+        # `solid` is the one whose pose the take is judged by: bench solves a
+        # session again for that one.
+        self.paths.calibration_file.write_text(json.dumps({**calibration, "solid": solid}, indent=2) + "\n")
         self._records: list[dict] = []
         self._closed = False
 
@@ -100,13 +102,16 @@ class SessionWriter:
 
     def add(self, picture, sensor_ts: float, frame_number: int, arrival: float) -> bool:
         """One frame down, as PNG. False once closed, for the frame that was
-        already in flight when somebody ended the take.
+        already in flight when somebody ended the take. RecorderError when the
+        picture cannot be written (a full disk): a take with a hole in it is
+        not a take.
         """
         if self._closed:
             return False
         index = len(self._records)
         path = self.paths.pictures / f"{index:06d}.png"
-        cv2.imwrite(str(path), picture)
+        if not cv2.imwrite(str(path), picture):
+            raise RecorderError(f"{path} could not be written - is the disk full?")
         self._records.append({
             "index": index,
             "sensor_ts": sensor_ts,
@@ -118,12 +123,16 @@ class SessionWriter:
         return True
 
     def close(self) -> Path:
-        """Write frames.jsonl, and hand back the session."""
+        """Write frames.jsonl, and hand back the session. RecorderError when
+        frames.jsonl cannot be written: without it the PNGs are not a session."""
         if not self._closed:
             self._closed = True
-            with self.paths.frames_file.open("w") as handle:
-                for record_ in self._records:
-                    handle.write(json.dumps(record_) + "\n")
+            try:
+                with self.paths.frames_file.open("w") as handle:
+                    for record_ in self._records:
+                        handle.write(json.dumps(record_) + "\n")
+            except OSError as exc:
+                raise RecorderError(f"{self.paths.frames_file} could not be written: {exc}") from exc
         return self.paths.root
 
 
@@ -133,20 +142,3 @@ def load_frames(root: Path) -> list[dict]:
     if not paths.frames_file.exists():
         raise RecorderError(f"{paths.frames_file} is not there - not a session directory")
     return [json.loads(line) for line in paths.frames_file.read_text().splitlines() if line.strip()]
-
-
-def load_intrinsics(root: Path) -> Intrinsics:
-    """The intrinsics the session was solved with, or a stated failure.
-
-    Deliberately no nominal fallback. A session solved against another unit's
-    focal length comes out scaled, and a scaled trajectory looks exactly like a
-    correct one.
-    """
-    paths = SessionPaths(Path(root))
-    if not paths.calibration_file.exists():
-        raise RecorderError(
-            f"{paths.calibration_file} is not there. It is written at record time - the "
-            "lens fit it was solved with; without it there is no "
-            "honest scale for this session."
-        )
-    return camera_of(json.loads(paths.calibration_file.read_text()))

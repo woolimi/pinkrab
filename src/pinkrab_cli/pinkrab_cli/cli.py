@@ -33,12 +33,6 @@ def build_parser() -> argparse.ArgumentParser:
             "the two sets may share the rig's camera sockets.\n"
             "\n"
             "  7. pinkrab-studio           look at it in a browser\n"
-            "\n"
-            "There is no teleop command yet. Both arms are followers - a leader arm\n"
-            "would have to be clamped down and the board is taken - so driving them\n"
-            "means inverse kinematics. The studio is where that will land, and it is\n"
-            "its own command now: it comes from pinkrab_studio and needs MuJoCo,\n"
-            "which nothing in this CLI does.\n"
         ),
     )
     sub = parser.add_subparsers(dest="command", required=True)
@@ -54,7 +48,6 @@ def build_parser() -> argparse.ArgumentParser:
         help=f"only these arms, in plug order (default: {' '.join(ARMS)})",
     )
     ports_sub.add_parser("swap", help="flip left and right when the arms are mirrored")
-    ports_sub.add_parser("env", help='shell exports - eval "$(pinkrab ports env)"')
     ports_sub.add_parser("clear", help="forget the assignment (board replaced)")
 
     p_check = sub.add_parser("check", help="ping every servo (read-only)")
@@ -72,7 +65,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_setup.add_argument(
         "--joints", nargs="+", metavar="JOINT", choices=SETTINGS.joint_names,
-        help=f"only these joints (default: all six, {' '.join(SETTINGS.joint_names)})",
+        help=f"only these joints (default: all {len(SETTINGS.joint_names)}, {' '.join(SETTINGS.joint_names)})",
     )
     p_setup.add_argument(
         "--port", help="write to this device instead of the stored assignment (needs one arm)"
@@ -112,8 +105,6 @@ def main(argv: list[str] | None = None) -> int:
             return commands.ports_detect(tuple(args.arms) if args.arms else ARMS)
         if args.ports_command == "swap":
             return commands.ports_swap()
-        if args.ports_command == "env":
-            return commands.ports_env()
         if args.ports_command == "clear":
             return commands.ports_clear()
     if args.command == "check":

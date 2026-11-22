@@ -1,7 +1,8 @@
 """`pinkrab-studio` - the browser view of the robot.
 
-One purpose: serve the page. The MuJoCo scene under it is stepped headless beside
-the server, so the page is the only window there is.
+Serves the studio's pages and the API under them. The MuJoCo scene beneath the
+Teleop page is stepped headless beside the server, so the browser is the only
+window there is.
 
 Its own command rather than a subcommand of `pinkrab`, because it needs MuJoCo and
 the CLI does not. The rig the arms are bolted to installs the CLI to bring the
@@ -22,7 +23,7 @@ WARN = "\033[33m!\033[0m"
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="pinkrab-studio", description="Look at the Pinkrab robot."
+        prog="pinkrab-studio", description="Run the Pinkrab studio in the browser."
     )
     parser.add_argument("--port", type=int, help=f"default {SETTINGS.studio_port}")
     parser.add_argument(

@@ -31,7 +31,7 @@ from pinkrab_core.config import ARMS
 from pinkrab_core.config import SETTINGS as CORE
 from pinkrab_core.jaw import aperture_of, gripper_band
 from pinkrab_core.follow import desk_tool
-from pinkrab_core.origin import READY_DEG, ready_joints
+from pinkrab_core.origin import READY_DEG
 from pinkrab_umi.config import SETTINGS as UMI
 from pinkrab_umi.convert import ConvertError, cameras_on_desk, placed, rate_of
 from pinkrab_umi.ready_guide import apart
@@ -200,9 +200,7 @@ def end_from_ready(poses: list[dict], meta: dict, hand: str, answer: dict) -> di
     if last is None:
         return None
     world_T_cam, p = last
-    chain = replay._chain(hand)
-    ready = desk_tool(hand, np.array(answer["desk"], dtype=float),
-                      chain.forward(np.array(ready_joints(hand, chain.joint_names), dtype=float)))
+    ready = desk_tool(hand, np.array(answer["desk"], dtype=float), np.array(answer["ready_tool"][hand], dtype=float))
     mm, deg = apart(world_T_cam @ np.array(p["solids"][f"handheld_{hand}"]["pose"], dtype=float) @ solid_T_tcp, ready)
     return {"mm": round(mm, 1), "deg": round(deg, 1)}
 
@@ -543,25 +541,54 @@ class Verdicts:
                               "jaw_read": 0.0, "jaw_spread": 0.0, "fails": [], "warns": [], "error": why}
         return {"verdicts": verdicts, "pending": [name for name, _ in pending]}
 
+    def start_vs_others(self, name: str) -> dict:
+        """Per hand in the take `name`: how far its start lies from the mean
+        start of that hand over every take on the shelf that was judged, this
+        one included - near the mean a policy run begins from, which is taken
+        over the converted episodes' first frames (attitude in degrees, height
+        in mm) - and whether that is far enough to point out. Hands whose start
+        is not had are left out."""
+        self.get()
+        with self._lock:
+            kept = dict(self._kept)
+        if name not in kept:
+            return {}
+        return self._compare(kept[name][2], self._starts_by_hand(kept))
+
+    @staticmethod
+    def _starts_by_hand(kept: dict) -> dict[str, list]:
+        by_hand: dict[str, list] = {}
+        for _, _, starts in kept.values():
+            for hand, start in starts.items():
+                if start is not None:
+                    by_hand.setdefault(hand, []).append(start)
+        return by_hand
+
+    @staticmethod
+    def _compare(starts: dict, by_hand: dict[str, list]) -> dict[str, dict]:
+        out = {}
+        for hand, start in starts.items():
+            if start is None:
+                continue
+            others = by_hand.get(hand, [])
+            if len(others) < 3:
+                out[hand] = {"takes": len(others), "note": "too few takes to compare with"}
+            else:
+                out[hand] = {"takes": len(others), **replay.start_apart(start, others)}
+        return out
+
     @staticmethod
     def _with_starts(kept: dict) -> dict:
         """Each verdict, with each hand's start set beside the mean start of
         that hand over the takes - pointed out, never failed on: varied
         starts are wanted."""
         out = {}
-        by_hand: dict[str, list] = {}
-        for name, (_, verdict, starts) in kept.items():
-            for hand, start in starts.items():
-                if start is not None:
-                    by_hand.setdefault(hand, []).append(start)
+        by_hand = Verdicts._starts_by_hand(kept)
         for name, (_, verdict, starts) in kept.items():
             verdict = dict(verdict, warns=list(verdict["warns"]))
-            for hand, start in starts.items():
-                others = by_hand.get(hand, [])
-                if start is not None and len(others) >= 3:
-                    apart = replay.start_apart(start, others)
-                    if apart["far"]:
-                        verdict["warns"].append(f"{hand}: start {apart['deg']:.0f} deg / {apart['mm']:+.0f} mm "
-                                                "from the others")
+            for hand, vs in Verdicts._compare(starts, by_hand).items():
+                if vs.get("far"):
+                    verdict["warns"].append(f"{hand}: start {vs['deg']:.0f} deg / {vs['mm']:+.0f} mm "
+                                            "from the others")
             out[name] = verdict
         return out

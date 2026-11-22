@@ -20,7 +20,7 @@ ros2 launch pinkrab_bringup robot.launch.py
 
 <Output out={bringup} />
 
-This launch starts the driver that opens the servo bus and the safety gate. Commands to the arms **all go through the safety gate**, which checks the joint range, collisions with the desk and board, and the joint speed (300° per second or less), and sends only the commands that pass to the driver. The driver is the only process that opens the servo bus, so there is no path to the servos that skips the gate.
+This launch starts the driver that opens the servo bus and the safety gate. Commands to the arms **all go through the safety gate**, which checks the joint range, collisions with the desk and board, and the joint speed (300° per second or less), and sends only the commands that pass to the driver. The driver is the only process that opens the servo bus, and the normal path is the gate alone. It cannot stop another publisher on the same ROS domain from writing to the driver's input topic directly, so keep the robot's network on its own domain.
 
 ## Running Pinkrab Studio
 

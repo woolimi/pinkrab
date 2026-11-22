@@ -34,11 +34,19 @@ Press the Policy card on the studio home screen. The top bar has the connection 
 |---|---|
 | Ask | Moves both arms through the Ready pose to the pose where the demonstrations started, then asks the policy and only draws its answer on the screen. The arms do not move further |
 | Drive | Moves both arms as the policy answers, starting right from the pose they are in. The arms are not moved anywhere first |
-| Stop | Stops in place. The servos hold the stopped position |
+| Stop | Stops in place. The servos hold the stopped position. While the arms are walking to the start pose or to Ready or Home, the walk also ends where they are |
+
+While the arms walk to the start pose or to Ready or Home, only Stop is enabled and the other buttons are disabled. They are enabled again once the walk ends, and pressing Stop or Drive also ends the wait that Ask had on the walk, so the policy is not asked after the walk is over.
 
 The start pose is the average of the first poses of the demonstrations, so the two arms start as far apart as the two hands were in the demonstrations, facing each other. Pressing Drive after stopping Ask starts the arms from this start pose, and pressing the Ready button first starts them from the Ready pose. For a checkpoint you run for the first time, it is safer to **look at the answer with Ask first** and then move on to Drive.
 
 **The run stops** if the policy answers with a non-number (NaN), or if a joint keeps moving away from its target while at its limit. Commands sent to the arms still pass the safety gate's joint range, collision, and speed checks during a run.
+
+## Stop when the connection is lost
+
+While a policy drives the real arms (a correction included), studio watches its connection to the Policy page. studio pings the Policy page's WebSocket every 0.5 seconds, and if no page answers for more than 2 seconds, whether the browser was closed, the network dropped or the laptop went to sleep, it stops the run the way Stop does. The gate goes idle so the arms hold where they are, the correction in progress and the run record are saved, and the cameras and the bridge stay up. The browser answers a ping for the page, so a tab behind another tab does not stop the run. The time is `policy_page_lost_s` in the `pinkrab_core` config.
+
+If the rollout node exits while driving, the run ends the same way, and a correction in progress is saved. The reason is left in the alert in the corner of the screen, and when the page is reopened or the connection returns, the status line shows stopped and the reason.
 
 ## Inference settings
 

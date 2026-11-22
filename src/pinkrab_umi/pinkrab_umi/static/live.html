@@ -229,6 +229,15 @@
       elem.textContent = text;
       elem.className = ok ? "good" : "bad";
     };
+    if (v.error) {
+      for (const id of ["vclosure", "vrot", "vcover"]) {
+        el(id).textContent = "-";
+        el(id).className = "dim";
+      }
+      gate(el("vpass"), "NOT RECORDED", false);
+      el("vname").textContent = v.name + " - " + v.error;
+      return;
+    }
     gate(el("vclosure"),
          fixed(v.closure.translation_mm, 2, "mm  (gate " + t.translation_mm + ")"),
          v.closure.translation_mm !== null && v.closure.translation_mm <= t.translation_mm);

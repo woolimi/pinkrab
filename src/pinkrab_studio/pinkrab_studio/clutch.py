@@ -3,19 +3,18 @@ pedal 1 cancels it - stopped and deleted.
 
 Which page is in front decides what the pedals mean. The collect page says so
 over its socket once a second while it is visible; for as long as that is recent, the
-"follow the handheld" pedal means record, the stop pedal stops the
-recording rather than the arms, and the jog pedal throws the recording away -
-a press each, hands free in between. On the
+"follow the handheld" pedal means record, the stop pedal also stops the
+recording (and the arms, as on every page), and the jog pedal throws the
+recording away - a press each, hands free in between. On the
 teleop page the pedals are the arms' again. The studio relays the two calls
 and keeps nothing else; what was recorded is the live view's to say.
 """
 from __future__ import annotations
 
-import json
 import threading
 import time
-import urllib.error
-import urllib.request
+
+from .rig import live_request
 
 START_PEDAL = "handheld"
 STOP_PEDAL = "stop"
@@ -36,7 +35,6 @@ class Clutch:
         self.recording: str | None = None
         self.last: dict | None = None      # the last episode's status, for the page
         self.note = ""
-        self.live_url = "http://127.0.0.1:8731"
 
     def seen(self) -> None:
         """The collect page, visible, once a second."""
@@ -65,35 +63,24 @@ class Clutch:
 
     def _recording_now(self) -> bool | None:
         """Whether the live view has an episode open, or None when it does not answer."""
-        try:
-            with urllib.request.urlopen(self.live_url + "/stats", timeout=2.0) as answer:
-                episode = (json.loads(answer.read().decode()).get("episode") or {})
-        except (urllib.error.URLError, TimeoutError, ValueError, OSError):
+        answer, code = live_request("/stats", None, timeout=2.0)
+        if code != 200:
             return None
-        with self._lock:
-            self.recording = episode.get("name") if episode.get("active") else None
+        episode = answer.get("episode") or {}
+        self.sync(episode.get("name") if episode.get("active") else None)
         return bool(episode.get("active"))
 
-    def _post(self, path: str, body: dict) -> tuple[dict, int]:
-        request = urllib.request.Request(self.live_url + path, data=json.dumps(body).encode(),
-                                         headers={"Content-Type": "application/json"})
-        try:
-            with urllib.request.urlopen(request, timeout=10.0) as answer:
-                return json.loads(answer.read().decode()), 200
-        except urllib.error.HTTPError as exc:
-            try:
-                return json.loads(exc.read().decode()), exc.code
-            except ValueError:
-                return {"error": f"{exc.code}"}, exc.code
-        except (urllib.error.URLError, TimeoutError, ValueError, OSError) as exc:
-            return {"error": f"the live view did not answer: {exc}"}, 502
+    def sync(self, name: str | None) -> None:
+        """What the live view says is recording: its episode's name, or None."""
+        with self._lock:
+            self.recording = name
 
     def _start(self) -> None:
         with self._start_lock:
             # A second press while recording changes nothing.
             if self._recording_now():
                 return
-            answer, code = self._post("/episode/start", {})
+            answer, code = live_request("/episode/start", {}, timeout=10.0)
         with self._lock:
             if code == 200:
                 self.recording = answer.get("name")
@@ -105,7 +92,7 @@ class Clutch:
         # The stop or cancel pedal with nothing recording changes nothing.
         if self._recording_now() is False:
             return
-        answer, code = self._post("/episode/cancel" if cancel else "/episode/stop", {})
+        answer, code = live_request("/episode/cancel" if cancel else "/episode/stop", {}, timeout=10.0)
         with self._lock:
             self.recording = None
             if code == 200:

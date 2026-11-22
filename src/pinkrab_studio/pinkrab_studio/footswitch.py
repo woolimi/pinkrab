@@ -34,9 +34,7 @@ import urllib.request
 
 from pinkrab_core.config import SETTINGS
 
-MODE_IDLE = 0
-MODE_HANDHELD = 1
-MODE_STUDIO = 2
+from .real import MODE_HANDHELD, MODE_IDLE, MODE_STUDIO
 
 # Retries, in seconds: quick for a cable, slower for a studio not yet up.
 RETRY_S = 2.0

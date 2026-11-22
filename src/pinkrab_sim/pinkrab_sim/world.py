@@ -64,9 +64,18 @@ def hands_of(scene: str) -> tuple[str, ...]:
 def mirrored(span: tuple[float, float], hand: str) -> tuple[float, float]:
     """A range across the desk written for the left hand, for `hand`."""
     return span if hand == "left" else (-span[1], -span[0])
+
+
 # Behind the board, where nothing on the desk side sees: the blocks and bowls
 # a layout leaves out stand in a row here.
 PARK_X = -0.25
+
+
+def physics_steps(k: int, rate: float, timestep: float) -> int:
+    """How many physics steps tick `k` of a clock at `rate` runs: the ticks
+    together span exactly 1/rate seconds each, whatever `rate` is, however
+    many steps of the model's timestep a tick comes to."""
+    return round((k + 1) / (rate * timestep)) - round(k / (rate * timestep))
 
 
 def quat_of(R: np.ndarray) -> np.ndarray:
@@ -160,14 +169,13 @@ class Layout:
 @dataclass
 class Thing:
     """What a plan and a judgement need of something moved: its height, half
-    its width across the jaw, how high its frame stands over the desk when it
-    rests, and its collision geoms (filled once compiled)."""
+    its width across the jaw, and its collision geoms (filled once compiled).
+    Its frame is its bottom."""
 
     name: str
     kind: str
     height: float
     half_width: float
-    rest_z: float = 0.0
     geoms: list[int] = field(default_factory=list)
 
 
@@ -498,7 +506,7 @@ class World:
             T = np.eye(4)
             c, s = math.cos(yaw), math.sin(yaw)
             T[:3, :3] = [[c, -s, 0.0], [s, c, 0.0], [0.0, 0.0, 1.0]]
-            T[:3, 3] = [x, y, self.things[name].rest_z]
+            T[:3, 3] = [x, y, 0.0]
             self.place_block(name, T)
 
     # --- the arms -----------------------------------------------------------------------
@@ -509,13 +517,6 @@ class World:
             a = self.model.actuator(name).id
             self.data.ctrl[a] = value
         mujoco.mj_forward(self.model, self.data)
-
-    def command(self, pose: dict[str, float]) -> None:
-        for name, value in pose.items():
-            self.data.ctrl[self.model.actuator(name).id] = value
-
-    def joints(self, names) -> np.ndarray:
-        return np.array([self.data.qpos[self.model.jnt_qposadr[self.model.joint(n).id]] for n in names])
 
     def forward(self) -> None:
         mujoco.mj_forward(self.model, self.data)

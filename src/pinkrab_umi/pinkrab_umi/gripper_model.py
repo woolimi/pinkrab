@@ -34,6 +34,22 @@ def stl_triangles(path: Path) -> np.ndarray:
     return tris["v"].reshape(-1, 3, 3).astype(float)
 
 
+def merged(tris: np.ndarray, cell: float) -> tuple[np.ndarray, np.ndarray]:
+    """Triangles (n,3,3) with corners within `cell` of each other made one:
+    the corners (m,3) and the faces (k,3) indexing them, in the triangles'
+    own winding, the faces that leaves flat or repeated dropped."""
+    corners = tris.reshape(-1, 3)
+    keys, which = np.unique(np.floor(corners / cell).astype(np.int64), axis=0, return_inverse=True)
+    which = which.ravel()
+    verts = np.zeros((len(keys), 3))
+    np.add.at(verts, which, corners)
+    verts /= np.bincount(which)[:, None]
+    faces = which.reshape(-1, 3)
+    faces = faces[(faces[:, 0] != faces[:, 1]) & (faces[:, 1] != faces[:, 2]) & (faces[:, 0] != faces[:, 2])]
+    _, first = np.unique(np.sort(faces, axis=1), axis=0, return_index=True)
+    return verts, faces[np.sort(first)]
+
+
 @dataclass
 class Gripper:
     """One side's gripper: each fixed part's triangles in the gripper link's

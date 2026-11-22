@@ -312,6 +312,16 @@ def two_hands() -> None:
         take = SETTINGS.episodes_dir / name
         meta = json.loads((take / "meta.json").read_text())
         outcome = meta["sim"]["outcome"]
+        from pinkrab_umi.config import SETTINGS as UMI_CFG
+
+        check("the take is marked as a demonstration, every video it names written",
+              meta["kind"] == "demo" and meta["cameras"] == "handheld"
+              and all(v["file"] is None or (take / v["file"]).is_file() for v in meta["streams"].values()))
+        frames = [json.loads(line) for line in (take / "frames.jsonl").read_text().splitlines()]
+        heads = [f for f in frames if f["stream"] == "head"]
+        check("a head frame is stamped its exposure plus the camera's latency",
+              all(abs(f["host_ts"] - f["sensor_ts"] - UMI_CFG.top_camera_latency_s) < 1e-5 for f in heads))
+        check("the physics clock keeps the frame clock", abs(meta["seconds"] * SETTINGS.fps - (len(heads) - 1)) < 1.0)
         check("the working hand's block went into its bowl",
               set(outcome["hands"]) == set(SETTINGS.two_hand_working) and all(o["placed"] for o in outcome["hands"].values()),
               json.dumps(outcome["hands"]))

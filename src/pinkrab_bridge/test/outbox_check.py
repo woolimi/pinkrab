@@ -75,6 +75,7 @@ def node() -> bridge.Bridge:
     b._goal, b._walk, b._legs, b._walk_sent, b._landed = {}, None, [], {}, set()
     b._settle_since = b._blind_since = None
     b._wanted = {}
+    b._goal_live = {}
     b._torque = None
     b._angles, b._read_at = {}, {}
     b._jaws_wide, b._jaws_opened, b._walk_span = {}, set(), None
@@ -116,6 +117,16 @@ def main() -> int:
     b.estop.calls[0][1].answer = SimpleNamespace(success=True, message="")
     b._flush()
     check("and is sent once the stop is answered", len(b.mode.calls) == 1 and not b._outbox)
+
+    print("\na stop nobody is there for does not hold back another service's stop")
+    b = node()
+    b.estop.ready = False
+    b._ask({"kind": "estop"})
+    b._ask({"kind": "torque", "arm": "left", "enable": False})
+    b._ask({"kind": "mode", "mode": TeleopState.MODE_STUDIO})
+    b._flush()
+    check("the torque off is sent", len(b.torque.calls) == 1)
+    check("the mode behind the unanswered estop is not", not b.mode.calls)
 
     print("\nidle and torque off are stops, torque on and the other modes are not")
     b = node()
@@ -166,6 +177,19 @@ def main() -> int:
     check("is not driven toward", len(published) == 1 and list(published[0].name) == ["right_elbow_flex"],
           str([list(m.name) for m in published]))
     check("and is dropped from the goal", list(b._goal) == ["right_elbow_flex"])
+
+    print("\na page target the gate passes none of")
+    b = node()
+    b.commands = SimpleNamespace(publish=lambda m: None)
+    b.get_clock = lambda: SimpleNamespace(now=lambda: rclpy.time.Time())
+    b._goal = {"right_elbow_flex": 0.5}
+    b._goal_live = {"right_elbow_flex": time.monotonic() - bridge.GOAL_REFUSED_S - 1.0}
+    b._drive()
+    check("is let go after a while", not b._goal)
+    b._goal = {"right_elbow_flex": 0.5}
+    b._goal_live = {"right_elbow_flex": time.monotonic()}
+    b._drive()
+    check("but not while it is new", bool(b._goal))
 
     print("\na walk to ready that opens the jaws on the way")
     clock = [100.0]

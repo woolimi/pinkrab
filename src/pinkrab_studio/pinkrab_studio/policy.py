@@ -145,7 +145,6 @@ class PolicyRun:
         self._lock = threading.Lock()
         self._thread: threading.Thread | None = None
         self._stop = threading.Event()
-        self._brain = None
         self._history: collections.deque = collections.deque(maxlen=HISTORY)
         self._checkpoint = ""
         self._task = ""
@@ -165,6 +164,9 @@ class PolicyRun:
         self._driving = False
         self._phase = ""
         self._refused = ""
+        # Why the last driving run was stopped by the studio rather than by
+        # the page; empty for a stop the page asked for.
+        self._stopped = ""
         self._beat = 0.0
 
     # --- what the page sees ----------------------------------------------
@@ -178,6 +180,7 @@ class PolicyRun:
                 "driving": self._driving,
                 "phase": self._phase,
                 "refused": self._refused,
+                "stopped": self._stopped,
                 "loading": self._loading,
                 "checkpoint": self._checkpoint,
                 "task": self._task,
@@ -231,6 +234,7 @@ class PolicyRun:
             self._wild = 0
             self._note = ""
             self._settings = None
+            self._stopped = ""
             self._loading = True
             self._hz = 0.0
             self._thread = threading.Thread(target=self._run, args=(joints_now,), name="policy", daemon=True)
@@ -276,14 +280,18 @@ class PolicyRun:
             self._settings = None
             self._phase = "starting"
             self._refused = ""
+            self._stopped = ""
             self._beat = 0.0
         return hands
 
-    def end_driven(self) -> None:
+    def end_driven(self, reason: str = "") -> None:
+        """The run is over. `reason` is why the studio ended it, where the
+        page did not ask for the stop."""
         with self._lock:
             self._driving = False
             self._phase = ""
             self._refused = ""
+            self._stopped = reason
 
     def record(self, report: dict) -> None:
         """One step as the node reported it, into the same history the page draws.
@@ -386,7 +394,6 @@ class PolicyRun:
             return
 
         with self._lock:
-            self._brain = brain
             self._task = brain.task or ""
             self._settings = brain.settings
             self._loading = False
@@ -459,9 +466,6 @@ class PolicyRun:
             rest = period - (time.monotonic() - began)
             if rest > 0 and self._stop.wait(rest):
                 break
-
-        with self._lock:
-            self._brain = None
 
     def _trouble(self, note: str) -> None:
         with self._lock:

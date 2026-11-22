@@ -50,13 +50,11 @@ of it:
 - **the desk solid's frame** (not drawn, so no camera sees a stand-in for it)
   and **the top camera**, where every recorded pose is measured from and seen
   from;
-- **servos as the bench has them**: scene.xml's gain of 15 N m/rad lets an arm
-  reaching over the desk sag 15 mm under its own weight, so the task scene uses
-  80 (an STS3215 stalls near 3 N m and gives all of it within a couple of
-  degrees), the rotor felt through the 1:345 gearbox as 0.006 kg m^2 of
-  armature - without it the 12 g jaw rings faster than the 2 ms step - and the
-  gripper's squeeze capped at the quarter of stall torque `Torque_Limit` 250
-  leaves. Contact is an elliptic cone with `impratio` 10.
+- **servos as the bench has them**: the description's own fit, a gain of 52.35
+  N m/rad, a damping of 3.891 N m s/rad and 0.0711 kg m^2 of armature, with the
+  force limited to an STS3215's 2.94 N m. Only the gripper's squeeze is changed,
+  capped at the quarter of stall torque `Torque_Limit` 250 leaves. Contact is an
+  elliptic cone with `impratio` 10.
 
 ## Both hands
 
@@ -108,13 +106,13 @@ jaw meets its sides at 0.27 to 0.30 of its travel. A plan is kept only if
 - the arm's claw, standing where the Hermit stands, stays out of the desk;
 - the cap, let go a few millimetres above the green piece, ends up on it.
 
-`--viewpoint opposite` plans the takes a person sitting across the table would
-make, facing the robot. No arm on this board can make them, and the first check
-rejects every one.
-
 What is written is what `pinkrab-umi live` writes, plus `truth.jsonl`: the TCP as
 it was, beside what the tracker saw of it (the tracker's noise is
-`pose_noise_m`, `pose_noise_rad` in `config.py`).
+`pose_noise_m`, `pose_noise_rad` in `config.py`). A frame's `host_ts` is its
+exposure plus its camera's latency, as the recorder stamps it. `meta.json` has
+the recorder's fields but for `markers`, `camera_profiles` and the
+`gripper_cameras` mapping, which nothing reads from a simulated take; the hand
+not used has no gripper video, its stream's `file` null.
 
 ## The checks
 
@@ -138,7 +136,7 @@ recorded, with another frame's picture, and with another frame's state - and
 prints the cosine between the directions of the answers and against the
 recorded step. A policy that answers the same with another picture is not
 looking at it. A policy that reads a command, trained on a
-dataset of several, is asked a fifth way, with another of the dataset's
+dataset of several, is asked a fourth way, with another of the dataset's
 commands: one that answers the same is not listening to what it is told.
 
 `evaluate` lays the things out as a take could have been made on them - a layout

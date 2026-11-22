@@ -20,7 +20,7 @@ ros2 launch pinkrab_bringup robot.launch.py
 
 <Output out={bringup} />
 
-이 launch 가 서보 버스를 여는 driver 와 safety gate 를 띄웁니다. 팔에 가는 명령은 **모두 safety gate 를 거치며**, gate 는 관절 범위와 책상·보드와의 충돌, 관절 속도(초당 300° 이하)를 검사해 통과한 명령만 driver 로 보냅니다. 서보 버스를 여는 프로세스는 driver 하나뿐이라 gate 를 거치지 않고 서보에 닿는 길은 없습니다.
+이 launch 가 서보 버스를 여는 driver 와 safety gate 를 띄웁니다. 팔에 가는 명령은 **모두 safety gate 를 거치며**, gate 는 관절 범위와 책상·보드와의 충돌, 관절 속도(초당 300° 이하)를 검사해 통과한 명령만 driver 로 보냅니다. 서보 버스를 여는 프로세스는 driver 하나뿐이고 정상 경로는 gate 뿐이지만, 같은 ROS domain 에 있는 다른 발행자가 driver 의 입력 topic 에 직접 쓰는 것까지 막지는 못하므로 로봇 네트워크는 domain 을 분리해 둡니다.
 
 ## Pinkrab Studio 실행
 

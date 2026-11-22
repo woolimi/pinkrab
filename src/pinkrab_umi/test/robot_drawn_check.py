@@ -14,7 +14,7 @@ import cv2
 import numpy as np
 
 from pinkrab_core.config import ARMS
-from pinkrab_umi import gripper_scene, robot_drawn
+from pinkrab_umi import convert, gripper_scene, robot_drawn
 
 FAILURES: list[str] = []
 
@@ -55,6 +55,33 @@ def main() -> int:
         lower = own[labels.shape[0] // 2:].sum() / max(1, own.sum())
         check(f"{side}: the claw fills part of the picture, mostly its lower half",
               0.02 < share < 0.6 and lower > 0.7, f"{share:.0%} of the picture, {lower:.0%} of it below the middle")
+
+    print("a take recorded before the lens was measured")
+    for bare in ({}, {"lens": LENS}, {"centre": [960.0, 600.0]}):
+        try:
+            gripper_scene.Lens(bare)
+            refused = False
+        except ValueError:
+            refused = True
+        check(f"a lens that is not recorded is refused, not a KeyError - {sorted(bare)}", refused)
+
+    print("the tools as convert smooths them")
+    times = np.arange(30) / 30.0
+    rng = np.random.default_rng(0)
+    track = []
+    for i in range(30):
+        T = np.eye(4)
+        T[0, 3] = 0.01 * i + rng.normal(0.0, 0.002)
+        track.append(T)
+    track[12] = None
+    smooth = convert.smoothed(track, times)
+    runs = [r for r in (smooth[:12], smooth[13:]) if len(r)]
+
+    def rough(xs):
+        return float(np.std(np.diff(np.diff([T[0, 3] for T in xs]))))
+
+    check("a hole stays a hole and each run is smoother than its solves",
+          smooth[12] is None and all(rough(r) < rough(track[a:b]) for r, (a, b) in zip(runs, [(0, 12), (13, 30)])))
 
     print("the lens past the plane of its glass")
     stream = {"lens": LENS, "centre": [960.0, 600.0]}

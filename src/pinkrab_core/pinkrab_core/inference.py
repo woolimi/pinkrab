@@ -1,12 +1,12 @@
 """How a trained policy is run: the settings that change inference without
-retraining, kept in the workspace's inference.yaml - one section per kind of
-policy, and one every kind shares.
+retraining, kept in the workspace's inference.yaml - one section for ACT, and
+one every policy shares.
 
 A checkpoint carries the configuration it was trained with. Some of it is the
 model - the length of its chunks, its layers - and the weights fix it. Some is
 only how the weights are asked: how many steps of a chunk run before the
 camera is looked at again, whether ACT's temporal ensembling blends the chunks
-that cover a step. Those are listed here per policy type (KINDS). Around any policy is how Pinkrab drives with it - the device,
+that cover a step. Those are listed here (ACT_KNOBS). Around any policy is how Pinkrab drives with it - the device,
 how fast the gate lets a joint turn, when a step is a bad answer and when the
 run ends - listed once (COMMON), its defaults the core settings' policy_*.
 
@@ -15,10 +15,9 @@ rig has chosen. The studio's policy page shows the file and writes it;
 whatever loads a checkpoint (`pinkrab_policy.rollout.Brain`), and the gate
 (`policy_dps`), read it when they start.
 
-A policy type not listed runs as it was trained, but for a chunk: one with
-n_action_steps has it cut to the core settings' policy_action_s like the
-others, never run whole with the camera ignored. Another type is one more
-entry in KINDS.
+A policy type other than ACT runs as it was trained, but for a chunk: one with
+n_action_steps has it cut to the core settings' policy_action_s like ACT's,
+never run whole with the camera ignored.
 
 A step is one of the checkpoint's dataset's frames, so how many steps a
 chunk runs is said in seconds and counted at that dataset's rate (`fps`);
@@ -39,7 +38,7 @@ import yaml
 from .config import SETTINGS
 from .dataset import steps_in
 
-# The file's section every kind of policy shares.
+# The file's section every policy shares.
 COMMON = "common"
 
 
@@ -63,57 +62,34 @@ class Knob:
     maximum: float | Callable[[object], float] | None = None
 
 
-@dataclass(frozen=True)
-class Kind:
-    label: str
-    knobs: tuple[Knob, ...]
-    # Trained fields shown beside the knobs, unchangeable: what bounds them.
-    shown: tuple[str, ...] = ()
-    # What is wrong between knobs, a sentence each.
-    check: Callable[[dict], list[str]] = lambda values: []
+# The policy type the file's own section is for.
+ACT = "act"
 
 
 def _act_check(values: dict) -> list[str]:
+    """What is wrong between ACT's knobs, a sentence each."""
     if values.get("temporal_ensemble_coeff") is not None and values.get("n_action_steps") != 1:
         return ["temporal ensembling blends a fresh chunk into every step, so n_action_steps must be 1 with it"]
     return []
 
 
-KINDS: dict[str, Kind] = {
-    "act": Kind(
-        "ACT",
-        (
-            Knob("n_action_steps", "int",
-                 "steps of each predicted chunk run before the camera is looked at again: "
-                 "a tenth of a second's worth is a new look ten times a second, the chunk's length runs it whole",
-                 default=lambda fps: steps_in(SETTINGS.policy_action_s, fps), minimum=1,
-                 maximum=lambda cfg: cfg.chunk_size),
-            Knob("temporal_ensemble_coeff", "float",
-                 "blends every chunk that covers the step, weighted exp(-coeff x i) counting from the "
-                 "oldest: positive leans on older chunks (0.01 is the ACT paper's), 0 weighs them alike, "
-                 "negative favours the newest. Off runs one chunk at a time. Needs n_action_steps 1",
-                 # No more negative than keeps exp(-coeff x i) within float32 over the
-                 # whole chunk: past it the weights are infinite and the action NaN.
-                 optional=True, minimum=lambda cfg: -80.0 / max(1, cfg.chunk_size - 1)),
-        ),
-        shown=("chunk_size", "n_obs_steps", "vision_backbone"),
-        check=_act_check,
-    ),
-    "flowva": Kind(
-        "FlowVA",
-        (
-            Knob("n_action_steps", "int",
-                 "steps of each predicted chunk run before the camera is looked at again: "
-                 "a tenth of a second's worth is a new look ten times a second, the chunk's length runs it whole",
-                 default=lambda fps: steps_in(SETTINGS.policy_action_s, fps), minimum=1,
-                 maximum=lambda cfg: cfg.chunk_size),
-            Knob("num_flow_steps", "int",
-                 "Euler steps the flow is integrated over for each chunk: fewer is a faster, rougher answer",
-                 minimum=1, maximum=100),
-        ),
-        shown=("chunk_size", "n_obs_steps"),
-    ),
-}
+ACT_KNOBS: tuple[Knob, ...] = (
+    Knob("n_action_steps", "int",
+         "steps of each predicted chunk run before the camera is looked at again: "
+         "a tenth of a second's worth is a new look ten times a second, the chunk's length runs it whole",
+         default=lambda fps: steps_in(SETTINGS.policy_action_s, fps), minimum=1,
+         maximum=lambda cfg: cfg.chunk_size),
+    Knob("temporal_ensemble_coeff", "float",
+         "blends every chunk that covers the step, weighted exp(-coeff x i) counting from the "
+         "oldest: positive leans on older chunks (0.01 is the ACT paper's), 0 weighs them alike, "
+         "negative favours the newest. Off runs one chunk at a time. Needs n_action_steps 1",
+         # No more negative than keeps exp(-coeff x i) within float32 over the
+         # whole chunk: past it the weights are infinite and the action NaN.
+         optional=True, minimum=lambda cfg: -80.0 / max(1, cfg.chunk_size - 1)),
+)
+
+# Trained fields shown beside the knobs, unchangeable: what bounds them.
+ACT_SHOWN = ("chunk_size", "n_obs_steps", "vision_backbone")
 
 COMMON_KNOBS: tuple[Knob, ...] = (
     Knob("device", "choice",
@@ -251,15 +227,14 @@ def chosen(cfg, saved: dict | None = None, fps: float | None = None) -> dict:
     else Pinkrab's own (no more than the checkpoint allows), else as trained.
     Pinkrab's own are counted in steps at `fps`."""
     fps = _fps(cfg, fps)
-    kind = KINDS.get(cfg.type)
-    if kind is None:
+    if cfg.type != ACT:
         steps = getattr(cfg, "n_action_steps", None)
         if isinstance(steps, int) and not isinstance(steps, bool):
             return {"n_action_steps": min(steps_in(SETTINGS.policy_action_s, fps), steps)}
         return {}
     saved = (load() if saved is None else saved).get(cfg.type, {})
     values, defaulted = {}, []
-    for knob in kind.knobs:
+    for knob in ACT_KNOBS:
         if knob.name in saved:
             values[knob.name] = saved[knob.name]
         elif knob.default is not None:
@@ -271,7 +246,7 @@ def chosen(cfg, saved: dict | None = None, fps: float | None = None) -> dict:
             values[knob.name] = getattr(cfg, knob.name, None)
     # Pinkrab's own values give way to the checkpoint's where they do not go
     # with the rest - three action steps beside an ensembler it was trained with.
-    if defaulted and kind.check(values):
+    if defaulted and _act_check(values):
         for name in defaulted:
             values[name] = getattr(cfg, name, values[name])
     return values
@@ -279,11 +254,10 @@ def chosen(cfg, saved: dict | None = None, fps: float | None = None) -> dict:
 
 def problems(cfg, values: dict) -> list[str]:
     """Why `values` cannot run a checkpoint of `cfg`, a sentence each."""
-    kind = KINDS.get(cfg.type)
-    if kind is None:
+    if cfg.type != ACT:
         return []
-    wrong = [w for k in kind.knobs if (w := _wrong(k, values.get(k.name), cfg))]
-    return wrong + kind.check(values)
+    wrong = [w for k in ACT_KNOBS if (w := _wrong(k, values.get(k.name), cfg))]
+    return wrong + _act_check(values)
 
 
 def apply(cfg, fps: float) -> dict:
@@ -333,21 +307,20 @@ def _view(knob: Knob, cfg, section: dict, using, fps: float) -> dict:
 
 def describe(cfg) -> dict:
     """Everything the studio's page shows for a checkpoint of `cfg`: its
-    kind's settings beside what it was trained with, and the common ones -
+    ACT's settings beside what it was trained with, and the common ones -
     and the rate it is asked at (`fps`, None when its dataset is not here)."""
     saved = load()
     used = _common_chosen(saved)
     fps = _fps(cfg, None)
-    out = {"type": cfg.type, "known": cfg.type in KINDS, "knobs": [], "shown": {}, "file": str(SETTINGS.inference_file),
+    out = {"type": cfg.type, "known": cfg.type == ACT, "knobs": [], "shown": {}, "file": str(SETTINGS.inference_file),
            "fps": getattr(cfg, "fps", None), "using": chosen(cfg, saved),
            "common": [_view(k, None, saved.get(COMMON, {}), used[k.name], fps) for k in COMMON_KNOBS],
            "problems": [w for k in COMMON_KNOBS if (w := _wrong(k, used[k.name]))]}
-    kind = KINDS.get(cfg.type)
-    if kind is not None:
+    if cfg.type == ACT:
         using = chosen(cfg, saved)
-        out |= {"label": kind.label,
-                "knobs": [_view(k, cfg, saved.get(cfg.type, {}), using[k.name], fps) for k in kind.knobs],
-                "shown": {name: getattr(cfg, name, None) for name in kind.shown}}
+        out |= {"label": "ACT",
+                "knobs": [_view(k, cfg, saved.get(ACT, {}), using[k.name], fps) for k in ACT_KNOBS],
+                "shown": {name: getattr(cfg, name, None) for name in ACT_SHOWN}}
         out["problems"] += problems(cfg, using)
     return out
 
@@ -357,11 +330,10 @@ def save(cfg, values: dict, common_values: dict | None = None) -> None:
     `common_values` (when given) its common section: the knobs named are set,
     the others left to Pinkrab's own or the checkpoint's. Checked against this
     checkpoint first; other types' sections are kept."""
-    kind = KINDS.get(cfg.type)
-    if kind is None and values:
+    if cfg.type != ACT and values:
         raise InferenceError(f"no inference settings are known for {cfg.type!r}: it runs as trained")
     data = load()
-    for section, given, knobs in ((cfg.type, values, kind.knobs if kind else ()),
+    for section, given, knobs in ((cfg.type, values, ACT_KNOBS if cfg.type == ACT else ()),
                                   (COMMON, common_values, COMMON_KNOBS)):
         if given is None:
             continue

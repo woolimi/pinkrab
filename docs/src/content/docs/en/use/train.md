@@ -36,16 +36,18 @@ If the computer running studio has no GPU, you can train on another GPU computer
 |---|---|
 | name | Any name, e.g. `gpu-box` |
 | ssh line | A connection command such as `ssh -i ~/.ssh/id_ed25519 -p 22 user@gpu.example.com` |
-| key | The private key file. Copy it to `~/pinkrab/keys/` and make it readable by this user only. Password login is not used |
+| key | The private key file. It is copied to `~/pinkrab/keys/` as a file of the source's own and made readable by this user only, and it is deleted with the source. Password login is not used |
 | runs are under | The folder on that computer for the dataset, the Python environment, and training results; default `~/pinkrab-train` |
 
 After saving, press **test** to check that computer's GPU, memory, driver, CPU, and free disk, and it tells you what is missing for training, if anything.
+
+On the first connection to a computer, ssh takes its host key and writes it to the source's own `known_hosts` file in `~/pinkrab/keys/`, and after that connects only when the key is the same. A cloud session can bring a new computer to the same address and port, and a changed host key makes the connection refused with an error line that says so. Saving that source again in Sources clears the kept key and takes the new one.
 
 Training on a remote computer is handled the same way as training on this computer.
 
 - **Sending**: When you start training, studio sends the dataset to that computer, installs the needed Python environment, and launches the training.
 - **Metrics**: Studio reads that computer's training log every 30 seconds and accumulates it on this computer, so metrics such as loss are drawn on the Train page just like runs on this computer. If the connection drops and comes back, the records from the gap are fetched as well.
-- **checkpoint**: Each checkpoint is copied to this computer when saved. Ones saved while studio was off are brought over when it comes back. A copied checkpoint can be [run](../run/) right away on the Policy page.
+- **checkpoint**: Each checkpoint is copied to this computer when saved. Ones saved while studio was off are brought over when it comes back. A copied checkpoint is placed in a folder of its own for the source, `~/pinkrab/train/<run>@<source>/checkpoints/`, so runs of the same name from different sources never overwrite each other. It can be [run](../run/) right away on the Policy page.
 
 ## New run
 
@@ -78,7 +80,7 @@ The yellow line at the top of the screen shows the steps in turn. A remote compu
 
 Manage training from a run's **details**.
 
-- **Stop**: **Press twice** to stop the training.
+- **Stop**: **Press twice** to stop the training. It runs at once, apart from a start that is still sending the dataset or installing the environment.
 - **Resume**: Continues training on the same computer **from the last checkpoint**. Use it on a run that became quiet because the computer shut down.
 - **delete**: Deletes one checkpoint on the training computer and on this one. It takes two presses, and a checkpoint running on the Policy page is not deleted. After the newest checkpoint is deleted, Resume continues from the newest one left.
 

@@ -29,7 +29,7 @@ from lerobot.robots.so_follower import SOFollower
 from lerobot.utils.decorators import check_if_already_connected
 from lerobot.utils.utils import enter_pressed, move_cursor_up
 
-from ..angles import joint_bands, record_zero_pose, sweep_direction_disagreements, unjudged
+from ..angles import joint_bands, offsets_problem, record_zero_pose, sweep_direction_disagreements, unjudged
 from .. import ports, servos
 from ..config import ARMS, SETTINGS
 from .config_pinkrab_follower import GRIPPER, BiPinkrabFollowerConfig, PinkrabArmConfig, PinkrabFollowerConfig
@@ -125,7 +125,17 @@ class PinkrabFollower(SOFollower):
         EEPROM - which, on the write path, is the only thing between a command and
         the wall.
         """
-        if self.calibration:
+        arm = str(self.id).rsplit("_", 1)[-1]
+        if arm not in ARMS:
+            raise ValueError(f"cannot tell which arm {self.id!r} is, expected a name ending in {ARMS}")
+
+        # The servos' own calibration may be reused only while the offsets file
+        # still places this arm's ticks at the description's angles; without that,
+        # writing it back would leave the zero pose unrecorded.
+        problem = offsets_problem(arm)
+        if self.calibration and problem:
+            print(f"{problem}\n  The existing calibration cannot be reused; measuring it again.")
+        if self.calibration and not problem:
             answer = input(
                 f"Press ENTER to write the existing calibration for id {self.id} to the "
                 "motors, or type 'c' and press ENTER to measure it again: "
@@ -139,10 +149,6 @@ class PinkrabFollower(SOFollower):
         self.bus.disable_torque()
         for motor in self.bus.motors:
             self.bus.write("Operating_Mode", motor, OperatingMode.POSITION.value)
-
-        arm = str(self.id).rsplit("_", 1)[-1]
-        if arm not in ARMS:
-            raise ValueError(f"cannot tell which arm {self.id!r} is, expected a name ending in {ARMS}")
 
         motors = list(self.bus.motors)
         # What the servos held before, put back if this attempt does not finish: the

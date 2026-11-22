@@ -49,13 +49,6 @@ class JawReader:
         """Open the jaw's bus again, now - the Refresh on the page."""
         self._wake.set()
 
-    def aperture(self) -> float | None:
-        with self._lock:
-            latest = self._latest
-        if latest is None or time.monotonic() - latest[2] > self.stale_s:
-            return None
-        return latest[0]
-
     def reading(self) -> tuple[float, float] | None:
         """The latest aperture and when it was read, on this host's clock - or
         None once it is older than `stale_s`. A recording keeps the time with
@@ -144,9 +137,6 @@ class JawReaders:
     def stop(self) -> None:
         for reader in self.sides.values():
             reader.stop()
-
-    def apertures(self) -> dict[str, float | None]:
-        return {side: reader.aperture() for side, reader in self.sides.items()}
 
     def readings(self) -> dict[str, tuple[float, float] | None]:
         """Each side's latest aperture with the time it was read."""

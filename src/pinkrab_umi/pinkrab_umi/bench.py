@@ -8,6 +8,10 @@ fixture: whatever pose difference comes out is the whole error budget, measured
 end to end, with no ground truth needed beyond a lump of printed plastic that does
 not move.
 
+A take is judged by one solid, the handheld whose pose is being tested: the one
+that stood in view when the take began, kept in the session's calibration.json
+(`solid`), so judging a session again solves the same solid the live verdict did.
+
 Beside it, coverage - how much of the take actually solved. A closure of two
 millimetres over a take where the solid was visible in a third of the frames is not
 a good take, it is a short one.
@@ -82,11 +86,16 @@ def closure_error(poses: list[np.ndarray]) -> Closure:
     )
 
 
-def solve_session(root: Path) -> tuple[list[float], list[np.ndarray], Coverage]:
-    """Run every frame of a recorded session through detection, the desk solid, and composition."""
+def solve_session(root: Path, solid: str | None = None) -> tuple[list[float], list[np.ndarray], Coverage]:
+    """Run every frame of a recorded session through detection, the desk solid, and composition.
+
+    The solid is `solid`, else the one the session was recorded for, else the
+    settings' own.
+    """
     root = Path(root)
     frames = record.load_frames(root)
     calibration = json.loads(record.SessionPaths(root).calibration_file.read_text())
+    hand_cfg = SETTINGS.for_solid(solid or calibration.get("solid") or SETTINGS.solid)
     intrinsics = record.camera_of(calibration)
 
     def picture(entry: dict, key: str, flag: int) -> np.ndarray:
@@ -111,7 +120,7 @@ def solve_session(root: Path) -> tuple[list[float], list[np.ndarray], Coverage]:
         image = picture(entry, "picture" if "picture" in entry else "color", cv2.IMREAD_UNCHANGED)
         grey = image if image.ndim == 2 else cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
         seen = pnp.read_markers(grey)
-        raw = pnp.solve_frame(grey, intrinsics, detections=seen)
+        raw = pnp.solve_frame(grey, intrinsics, hand_cfg, seen)
         desk = deskfilter.apply(pnp.solve_frame(grey, intrinsics, desk_cfg, seen), stamp)
         result = posefilter.apply(raw, stamp)
         results.append(result)
@@ -182,6 +191,6 @@ def report(closure: Closure, cover: Coverage, root: Path) -> int:
     return 0 if passed else 1
 
 
-def evaluate(root: Path) -> int:
-    _, poses, cover = solve_session(Path(root))
+def evaluate(root: Path, solid: str | None = None) -> int:
+    _, poses, cover = solve_session(Path(root), solid)
     return report(closure_error(poses), cover, Path(root))

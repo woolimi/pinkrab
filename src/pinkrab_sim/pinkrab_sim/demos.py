@@ -44,13 +44,8 @@ from pinkrab_umi.config import SETTINGS as UMI
 from pinkrab_umi.episode import Encoder
 
 from .config import SETTINGS
-from .world import TWO_HANDS, Layout, World, hands_of, hermit, mirrored
+from .world import TWO_HANDS, Layout, World, hands_of, hermit, mirrored, physics_steps
 
-# Where the hand comes from: the heading it takes to a block is roughly the
-# line from there to it. From the robot's side it is the arm's shoulder, read
-# off the scene; from across the table, a person sitting this far out from the
-# board's back, facing the robot - a take no arm on this board can make.
-OPPOSITE_X = 0.95
 # The rollout's own limits on a tick, and what the gate refuses.
 ORIENTATION_WEIGHT = 0.1
 REACH_M = 0.005
@@ -182,8 +177,7 @@ class Trajectory:
 class Planner:
     """Takes the arm could have made, and what its claw would have touched."""
 
-    def __init__(self, world: World, viewpoint: str = "robot", two_faces: bool = False,
-                 arm: str | None = None) -> None:
+    def __init__(self, world: World, two_faces: bool = False, arm: str | None = None) -> None:
         self.world = world
         self.arm = arm or SETTINGS.arm
         # The opening the hand waits at before it shuts.
@@ -203,7 +197,9 @@ class Planner:
         at_zero = mujoco.MjData(m)
         mujoco.mj_kinematics(m, at_zero)
         sx, sy = (float(v) for v in at_zero.xanchor[m.joint(f"{self.arm}_shoulder_pan").id][:2])
-        self.origin = {"robot": (sx, sy), "opposite": (OPPOSITE_X, sy)}[viewpoint]
+        # Where the hand comes from: the heading it takes to a block is roughly
+        # the line from there to it.
+        self.origin = (sx, sy)
         # Blocks taken by either of the two faces nearest the hand, half the
         # takes each: two right ways from one picture.
         self.two_faces = two_faces
@@ -370,7 +366,6 @@ class Planner:
         by either half the time if the planner takes two faces."""
         s = SETTINGS
         layout = layout or self.layout(rng)
-        thing = self.world.things[layout.carried]
         target = self.world.things[layout.target]
         cx, cy, cyaw = layout.things[layout.carried]
         bx, by, byaw = layout.things[layout.target]
@@ -383,7 +378,7 @@ class Planner:
         # block bound for a bowl further, so an arm a few millimetres off the
         # hand's pose still squeezes it against the claw.
         hold = max(0.0, contact - s.thing_squeeze) if self.side_hold else min(s.grasp_aperture, contact - 0.03)
-        T_thing = yaw_pose(cx, cy, thing.rest_z, cyaw)
+        T_thing = yaw_pose(cx, cy, 0.0, cyaw)
         tcp_T_thing = np.linalg.inv(T_grasp) @ T_thing
 
         # Onto the green piece, a few millimetres over it; into a bowl, its
@@ -392,7 +387,7 @@ class Planner:
         R_place = tool_rotation(place_heading, pitch)
         thing_target = np.eye(4)
         thing_target[:3, :3] = R_place @ tcp_T_thing[:3, :3]
-        thing_target[:3, 3] = [bx, by, (target.height + s.bowl_drop + thing.rest_z) if self.into
+        thing_target[:3, 3] = [bx, by, (target.height + s.bowl_drop) if self.into
                                else target.height + s.drop]
         T_place = thing_target @ np.linalg.inv(tcp_T_thing)
         q_place = self.reach(T_place)
@@ -609,8 +604,8 @@ def record(world: World, plans: dict[str, Plan], trajectories: dict[str, Traject
     t0 = started_wall
     lines["events"].write(json.dumps({"host_ts": t0, "monotonic": 0.0, "event": "start"}) + "\n")
     n = int(math.floor(seconds * fps)) + 1
-    substeps = max(1, int(round(1.0 / (fps * world.model.opt.timestep))))
-    dt = 1.0 / (fps * substeps)
+    timestep = world.model.opt.timestep
+    ticks = 0
     sizes = {}
     try:
         for k in range(n):
@@ -620,12 +615,15 @@ def record(world: World, plans: dict[str, Plan], trajectories: dict[str, Traject
                 world.hold_hermit(h, T, aperture)
             world.forward()
             stamp = t0 + t
+            # The recorder stamps a frame with the clock it arrived on, which is
+            # its exposure and the module's latency later.
+            arrived = stamp + UMI.top_camera_latency_s
             head = cv2.cvtColor(world.head_image(), cv2.COLOR_RGB2BGR)
             if head_video is None:
                 head_video = Encoder(root / "head.mp4", fps, head.shape[1], head.shape[0])
                 sizes["head"] = [head.shape[1], head.shape[0]]
             head_video.write(head)
-            lines["frames"].write(json.dumps({"stream": "head", "index": k, "host_ts": stamp + 0.03,
+            lines["frames"].write(json.dumps({"stream": "head", "index": k, "host_ts": arrived,
                                               "sensor_ts": stamp, "frame_number": k}) + "\n")
             for h in hands:
                 gripper = cv2.cvtColor(world.gripper_image(hermit(h)), cv2.COLOR_RGB2BGR)
@@ -651,14 +649,15 @@ def record(world: World, plans: dict[str, Plan], trajectories: dict[str, Traject
                                                "world_pose": None}
                     jaws[h] = None
             lines["poses"].write(json.dumps({
-                "host_ts": stamp + UMI.jaw_latency_s, "stamp": stamp, "primary": f"handheld_{hands[0]}",
+                "host_ts": arrived, "stamp": stamp, "primary": f"handheld_{hands[0]}",
                 "solids": solids, "desk": {"tracking": True, "faces": 3, "reproj_px": 0.0, "reason": ""},
                 "jaw": jaws,
                 # Each opening is read as the frame is taken, and reaches the host's clock a latency later.
                 "jaw_ts": {h: None if v is None else stamp + UMI.jaw_latency_s for h, v in jaws.items()}}) + "\n")
             # Physics until the next frame, the Hermits moving on between.
-            for j in range(substeps):
-                tj = t + (j + 1) * dt
+            steps = physics_steps(k, fps, timestep)
+            for j in range(steps):
+                tj = (ticks + j + 1) * timestep
                 for h in hands:
                     Tj, aj = trajectories[h].at(tj)
                     world.hold_hermit(h, Tj, aj)
@@ -666,6 +665,7 @@ def record(world: World, plans: dict[str, Plan], trajectories: dict[str, Traject
                     if plan.grasp_t <= tj < plan.release_t:
                         world.place_block(plan.layout.carried, Tj @ plan.tcp_T_thing)
                 mujoco.mj_step(world.model, world.data)
+            ticks += steps
         # Let what was put down come to rest.
         world.step(0.5)
     finally:
@@ -687,6 +687,7 @@ def record(world: World, plans: dict[str, Plan], trajectories: dict[str, Traject
     layout = plans[hands[0]].layout
     meta = {
         "name": root.name, "started_wall": started_wall, "started_monotonic": 0.0,
+        "kind": "demo", "cameras": "handheld",
         "calibration": head_intrinsics(world.scene),
         "desk": {"solid": UMI.desk_solid, "yaw_deg": s.desk_yaw_deg,
                  "origin_above_table_mm": (desk.cut_mm if world.scene == "bowls" else s.desk_origin[2] * 1000),
@@ -705,7 +706,7 @@ def record(world: World, plans: dict[str, Plan], trajectories: dict[str, Traject
                                  "lens": {"camera": h, "model": "kannala_brandt", "size": [lens.width, lens.height],
                                           "fx": lens.f, "fy": lens.f, "cx": lens.cx, "cy": lens.cy, "k": list(lens.k)}}
                                 if h in hands else
-                                {"file": f"gripper_{h}.mp4", "fps": fps, "codec": "", "size": None, "frames": 0,
+                                {"file": None, "fps": fps, "codec": "", "size": None, "frames": 0,
                                  "dropped": 0})
                for h in TWO_HANDS},
         },
@@ -725,8 +726,8 @@ def in_bowl(world: World, thing: str, bowl: str) -> bool:
     T, B = world.block_pose(thing), world.block_pose(bowl)
     b = world.things[bowl]
     off = float(np.linalg.norm(T[:2, 3] - B[:2, 3]))
-    bottom = T[2, 3] - world.things[thing].rest_z
-    return bool(off < IN_BOWL * b.half_width and bottom < B[2, 3] - b.rest_z + b.height - IN_BOWL_DEPTH)
+    bottom = T[2, 3]
+    return bool(off < IN_BOWL * b.half_width and bottom < B[2, 3] + b.height - IN_BOWL_DEPTH)
 
 
 def placed(world: World, layout: Layout) -> dict:
@@ -772,7 +773,7 @@ def _quiet(*_args) -> None:
 
 
 def generate(count: int, batch: str, seed: int = 0, say=print, noise: float = 1.0,
-             viewpoint: str = "robot", tries: int | None = None, scene: str = "blocks",
+             tries: int | None = None, scene: str = "blocks",
              per_layout: int = 1, two_faces: bool = False) -> dict:
     """`count` kept takes under the sim episodes directory, named `<batch>-NNN`.
 
@@ -785,14 +786,15 @@ def generate(count: int, batch: str, seed: int = 0, say=print, noise: float = 1.
         raise DemoError(f"--per-layout is {per_layout}: at least one take a layout")
     if per_layout > 1 and (scene != "blocks" or not two_faces):
         raise DemoError("several takes a layout are the blocks' two faces")
-    if scene == "bowls" and (two_faces or viewpoint != "robot"):
-        raise DemoError("both hands' takes are made from the robot's side, each block by its nearest face")
+    if scene == "bowls" and two_faces:
+        raise DemoError("both hands' takes are made with each block taken by its nearest face")
     rng = np.random.default_rng(seed)
     hands = hands_of(scene)
     world = World(arms=hands, hermits=hands, scene=scene)
     world.hide_arms()
-    planner = Planner(world, viewpoint, two_faces)
-    planners = {h: Planner(world, viewpoint, two_faces, arm=h) for h in hands}
+    # One hand's takes are planned by one planner, both hands' by one a hand.
+    planners = {h: Planner(world, two_faces, arm=h) for h in hands} if len(hands) > 1 else {}
+    planner = None if planners else Planner(world, two_faces)
     out_dir = SETTINGS.episodes_dir
     tries = tries or 20 * count
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -826,8 +828,7 @@ def generate(count: int, batch: str, seed: int = 0, say=print, noise: float = 1.
         root = out_dir / name
         if root.exists():
             raise DemoError(f"{root} exists - pick another batch name")
-        info = {"seed": seed, "try": tried, "walk": walked, "noise": noise, "viewpoint": viewpoint,
-                "two_faces": two_faces}
+        info = {"seed": seed, "try": tried, "walk": walked, "noise": noise, "two_faces": two_faces}
         if group is not None:
             info["layout_group"] = group
         outcome = record(world, plans, trajectories, root, rng, info, noise)

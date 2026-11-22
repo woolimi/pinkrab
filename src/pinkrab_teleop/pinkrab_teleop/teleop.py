@@ -52,7 +52,7 @@ pick them up held another way. A correction begins held: each hand is set
 the way its arm holds its tool before anything follows it.
 
     ros2 run pinkrab_teleop teleop
-    ros2 run pinkrab_teleop teleop --ros-args -p live:=http://192.168.1.20:8802
+    ros2 run pinkrab_teleop teleop --ros-args -p live:=http://192.168.1.20:8731
 """
 
 from __future__ import annotations
@@ -82,10 +82,12 @@ from pinkrab_core.kinematics import ArmKinematics
 from pinkrab_core.parent import watch_parent
 from pinkrab_umi.config import SETTINGS as UMI
 
-# How long a poll of the live view may take. The node answers its services and
-# its topics between ticks, so a view that has stopped answering must not hold
-# it for longer than a few ticks.
-STATS_TIMEOUT_S = 0.25
+# How long a poll of the live view may take. It runs on a thread of its own, so
+# a view that has stopped answering holds back no tick, service or topic.
+STATS_TIMEOUT_S = 1.0
+# How old the last poll may be and still be followed. A view that answers more
+# slowly than this is treated as not answering.
+STATS_STALE_S = 0.25
 
 # Which arm a solid belongs to. The solid's name says it, and the ids under that
 # name are what the live server told apart to name it.
@@ -157,9 +159,13 @@ class TeleopNode(Node):
         self.bands: dict[str, tuple[float, float] | None] = {}
         self._jaw_openings: dict[str, float | None] = {}
         self._quiet = 0
+        # The live view's last answer: its stats, what went wrong if they did
+        # not come, and when (monotonic). Written whole by the polling thread.
+        self._polled: tuple[dict | None, str, float] = (None, "", -math.inf)
 
         rate = max(1.0, float(self.get_parameter("rate").value))
         self.create_timer(1.0 / rate, self._tick)
+        threading.Thread(target=self._poll, args=(1.0 / rate,), name="teleop-stats", daemon=True).start()
         self.get_logger().info(
             f"following the handheld at {self.live}, {rate:.0f} Hz - "
             "the solid in frame picks the arm, its motion read against the desk solid"
@@ -373,12 +379,24 @@ class TeleopNode(Node):
                                throttle_duration_sec=2.0)
         return False
 
+    def _poll(self, period: float) -> None:
+        """Ask the live view for its stats, while the arms are being followed."""
+        while True:
+            if not (self.driving and self.following):
+                time.sleep(period)
+                continue
+            started = time.monotonic()
+            try:
+                with urllib.request.urlopen(f"{self.live}/stats", timeout=STATS_TIMEOUT_S) as answer:
+                    self._polled = (json.load(answer), "", time.monotonic())
+            except (urllib.error.URLError, OSError, json.JSONDecodeError) as exc:
+                self._polled = (None, f"{self.live} is not answering ({type(exc).__name__})", time.monotonic())
+            time.sleep(max(0.0, period - (time.monotonic() - started)))
+
     def _stats(self) -> dict | None:
-        try:
-            with urllib.request.urlopen(f"{self.live}/stats", timeout=STATS_TIMEOUT_S) as answer:
-                stats = json.load(answer)
-        except (urllib.error.URLError, OSError, json.JSONDecodeError) as exc:
-            self._say_quietly(f"{self.live} is not answering ({type(exc).__name__})")
+        stats, error, at = self._polled
+        if stats is None or time.monotonic() - at > STATS_STALE_S:
+            self._say_quietly(error or f"{self.live} has not answered lately")
             return None
         # The jaws ride along: the same poll, the same instant.
         self._jaw_openings = {arm: (stats.get("jaw") or {}).get(arm, {}).get("aperture")
@@ -390,9 +408,6 @@ class TeleopNode(Node):
         # a time and that is normal, not news.
         self._quiet += 1
         self.get_logger().info(line, throttle_duration_sec=1.0)
-
-    def destroy_node(self) -> bool:
-        return super().destroy_node()
 
 
 def main(argv: list[str] | None = None) -> None:

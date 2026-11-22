@@ -31,6 +31,7 @@ from pathlib import Path
 
 import numpy as np
 
+from .chunks import mean_pose
 from .config import SETTINGS as CORE
 from .dataset import POSE_NAMES, pose_key
 from .follow import tool_absolute_target
@@ -44,18 +45,6 @@ REACH_MM, REACH_DEG = 5.0, 5.0
 
 class DemoStartError(RuntimeError):
     pass
-
-
-def mean_rotation(Rs) -> np.ndarray:
-    """The mean of rotations: the orthogonal matrix nearest their sum (SVD).
-    The one a policy run's start is taken from, and so the one a take's start
-    is set beside."""
-    u, _, vt = np.linalg.svd(np.sum(Rs, axis=0))
-    R = u @ vt
-    if np.linalg.det(R) < 0:
-        u[:, -1] *= -1
-        R = u @ vt
-    return R
 
 
 def _turn_z(angle: float) -> np.ndarray:
@@ -146,10 +135,7 @@ def demo_start(dataset_root: Path, hands, carry: Callable[[dict], np.ndarray | N
         raise DemoStartError(f"none of the {len(firsts)} demonstrations in {root} has a place in the robot's world")
     targets = {}
     for hand in hands:
-        T = np.eye(4)
-        T[:3, :3] = mean_rotation([T[:3, :3] for T in tools[hand]])
-        T[:3, 3] = np.mean([T[:3, 3] for T in tools[hand]], axis=0)
-        targets[hand] = T
+        targets[hand] = mean_pose(tools[hand], np.ones(len(tools[hand])))
     return {"targets": targets, "episodes": len(tools[hands[0]]), "unplaced": unplaced}
 
 

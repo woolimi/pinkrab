@@ -32,6 +32,7 @@ what a policy is loaded from - where the policy page lists them.
 from __future__ import annotations
 
 import hashlib
+import inspect
 import io
 import json
 import os
@@ -61,7 +62,17 @@ from pinkrab_core.dataset import (
 )
 
 from .alerts import ALERTS
-from .training import TrainError, TrainStore, check_key, keep_key, ssh_base
+from .converting import DATASET_NAME
+from .training import (
+    RUN_NAME,
+    TrainError,
+    TrainStore,
+    check_key,
+    keep_key,
+    output_dir_of,
+    ssh_base,
+    ssh_said,
+)
 
 # What each policy is trained with, beyond what the launch form asks. ACT
 # trains in an 8 GB GPU: on two 780x570 gripper cameras of a 30 fps dataset a
@@ -80,6 +91,8 @@ MIN_DRIVER = 580
 MIN_COMPUTE = 7.5
 MIN_GPU_MEMORY_GB = 8
 LOCK_STAMP = ".lock.sha256"
+# In a run's directory here, whose copy of whose checkpoints it holds.
+ORIGIN_FILE = ".origin"
 # A checkpoint that could not be copied home is not tried again by itself for
 # this long; the Fetch button asks at once.
 FETCH_RETRY_S = 300.0
@@ -103,7 +116,7 @@ sha256sum "$ROOT/requirements.lock.txt" | cut -d' ' -f1 > "$ROOT/.lock.sha256"
 """
 
 # What a machine is asked before anything is sent: run there with python3.
-PROBE = r"""
+PROBE = inspect.getsource(output_dir_of).replace("%", "%%") + r"""
 import json, os, shutil, subprocess, socket
 root = os.path.expanduser(%r)
 out = {"host": socket.gethostname(), "root": root, "cores": os.cpu_count()}
@@ -128,7 +141,8 @@ stamp = os.path.join(root, ".lock.sha256")
 out["lock"] = open(stamp).read().strip() if os.path.exists(stamp) else None
 out["datasets"] = sorted(os.listdir(os.path.join(root, "datasets"))) if os.path.isdir(os.path.join(root, "datasets")) else []
 running = []
-for pid in os.listdir("/proc"):
+# Where there is no /proc (macOS) no training is found going.
+for pid in os.listdir("/proc") if os.path.isdir("/proc") else []:
     if pid.isdigit():
         try:
             cmd = open("/proc/%%s/cmdline" %% pid, "rb").read().split(b"\0")
@@ -137,15 +151,9 @@ for pid in os.listdir("/proc"):
         line = " ".join(c.decode("utf-8", "replace") for c in cmd if c)
         if not ("run_log.py" in line or "lerobot-train" in line or "pinkrab_policy.run_log" in line):
             continue
-        # A run started names its output directory; a resumed one only the
-        # config inside it, <output_dir>/checkpoints/last/....
-        for w in line.split():
-            if w.startswith("--output_dir="):
-                running.append(w.split("=", 1)[1])
-                break
-            if w.startswith("--config_path=") and "/checkpoints/" in w:
-                running.append(w.split("=", 1)[1].split("/checkpoints/", 1)[0])
-                break
+        found = output_dir_of(line.split())
+        if found:
+            running.append(found)
 out["running"] = sorted(set(running))
 print(json.dumps(out))
 """
@@ -183,7 +191,7 @@ def _run(source: dict, command: str, *, stdin: bytes | None = None, timeout: flo
         raise LaunchError(f"{source['name']}: no answer in {timeout:.0f} s") from exc
     if done.returncode != 0:
         said = (done.stderr or done.stdout).decode("utf-8", "replace").strip().splitlines()
-        raise LaunchError(f"{source['name']}: {said[-1] if said else f'exit {done.returncode}'}")
+        raise LaunchError(f"{source['name']}: {ssh_said(source, said[-1]) if said else f'exit {done.returncode}'}")
     return done.stdout.decode("utf-8", "replace")
 
 
@@ -217,7 +225,7 @@ def _stream(source: dict, command: str, say, timeout: float) -> None:
         if overdue.is_set():
             raise LaunchError(f"{source['name']}: still going after {timeout / 60:.0f} min - stopped")
         if code != 0:
-            raise LaunchError(f"{source['name']}: {last or f'exit {code}'}")
+            raise LaunchError(f"{source['name']}: {ssh_said(source, last) if last else f'exit {code}'}")
 
 
 def _send_tar(source: dict, remote_dir: str, add, total: int, say) -> None:
@@ -246,7 +254,8 @@ def _send_tar(source: dict, remote_dir: str, add, total: int, say) -> None:
             pass
         err = proc.stderr.read().decode("utf-8", "replace").strip()
         if proc.wait() != 0:
-            raise LaunchError(f"{source['name']}: sending failed - {err.splitlines()[-1] if err else proc.returncode}")
+            raise LaunchError(f"{source['name']}: sending failed - "
+                              f"{ssh_said(source, err.splitlines()[-1]) if err else proc.returncode}")
 
 
 def probe(store: TrainStore, name: str) -> dict:
@@ -257,6 +266,9 @@ def probe(store: TrainStore, name: str) -> dict:
     script = PROBE % root
     if source["kind"] == "local":
         done = subprocess.run([sys.executable, "-"], input=script, capture_output=True, text=True, timeout=60)
+        if done.returncode != 0:
+            said = done.stderr.strip().splitlines()
+            raise LaunchError(f"{name}: the probe failed - {said[-1] if said else f'exit {done.returncode}'}")
         text = done.stdout
     else:
         text = _run(source, "python3 -", stdin=script.encode(), timeout=60)
@@ -304,16 +316,17 @@ def shortfalls(gpus: list[dict]) -> list[str]:
 
 # --- the jobs ------------------------------------------------------------------------------
 class Jobs:
-    """Launches (and stops, and resumes) on one thread, checkpoint copies on
-    another: a 300 MB copy home should not hold up starting the next run."""
+    """Launches (and resumes) on one thread, checkpoint copies on another, stops
+    on a third: a 300 MB copy home should not hold up starting the next run,
+    nor an upload and a setup that takes minutes the stopping of one going."""
 
     def __init__(self, store: TrainStore, on_change=None) -> None:
         self.store = store
         self.on_change = on_change or (lambda: None)
         self._lock = threading.Lock()
         self.probes: dict[str, dict] = {}
-        self._state = {"launch": self._idle(), "fetch": self._idle()}
-        self._queues = {"launch": queue.Queue(), "fetch": queue.Queue()}
+        self._state = {"launch": self._idle(), "fetch": self._idle(), "stop": self._idle()}
+        self._queues = {"launch": queue.Queue(), "fetch": queue.Queue(), "stop": queue.Queue()}
         self._queued_fetches: set[tuple[int, int]] = set()
         # Checkpoints whose copy failed: when the automatic fetch may try again.
         self._fetch_retry: dict[tuple[int, int], float] = {}
@@ -409,7 +422,7 @@ class Jobs:
 
     def stop(self, run_id: int) -> None:
         run = self.store.run(run_id)
-        self._submit("launch", f"stop {run['name']}", lambda say: self._stop(run, say))
+        self._submit("stop", f"stop {run['name']}", lambda say: self._stop(run, say))
 
     def resume(self, run_id: int) -> None:
         run = self.store.run(run_id)
@@ -439,10 +452,13 @@ class Jobs:
         here = Path(c["path"]) if source["kind"] == "local" else Path(c["local"]).parent if c.get("local") else None
         if in_use and here and Path(in_use).is_relative_to(here):
             raise LaunchError(f"{run['name']} step {step} is loaded on the Policy page - stop it first")
-        # rm -rf only on what is a run's checkpoints/<step>.
+        # rm -rf only on what is a run's checkpoints/<step>; the copy here only
+        # under this run's directory in the train directory.
         for path in (Path(c["path"]) if c.get("path") else None, here):
             if path and path.parent.name != "checkpoints":
                 raise LaunchError(f"{path} is not a checkpoint directory")
+        if source["kind"] != "local" and here and here.resolve().parent != self.store.checkpoints_here(run).resolve():
+            raise LaunchError(f"{here} is not under {run['name']}'s checkpoints here")
         if c.get("path"):
             ckpt, parent = shlex.quote(c["path"]), shlex.quote(str(Path(c["path"]).parent))
             # `last` is what Resume starts from: it moves to the newest checkpoint
@@ -471,8 +487,10 @@ class Jobs:
         if policy not in RECIPES:
             raise LaunchError(f"policy is one of {', '.join(RECIPES)}")
         dataset = str(payload.get("dataset") or "")
+        if not DATASET_NAME.match(dataset):
+            raise LaunchError(f"{dataset!r} is not a dataset name")
         local_data = dataset_dir(dataset)
-        if not dataset or not (local_data / "meta" / "info.json").is_file():
+        if not (local_data / "meta" / "info.json").is_file():
             raise LaunchError(f"no dataset {dataset!r} under {local_data.parent}")
         try:
             require_cut(local_data)
@@ -481,8 +499,8 @@ class Jobs:
         recipe = RECIPES[policy]
         steps = int(payload.get("steps") or DEFAULTS["steps"])
         run = str(payload.get("name") or "").strip() or f"{policy}-{dataset}-{time.strftime('%m%d-%H%M')}"
-        if not all(c.isalnum() or c in "-_." for c in run):
-            raise LaunchError("a run name is letters, digits and -_.")
+        if not RUN_NAME.match(run):
+            raise LaunchError("a run name starts with a letter or digit, then letters, digits and -_.")
         args = list(recipe["args"]) + [
             "--policy.device=cuda", "--policy.push_to_hub=false", "--dataset.image_transforms.enable=true",
             f"--steps={steps}",
@@ -657,16 +675,25 @@ class Jobs:
         c = next((c for c in run["checkpoints"] if c["step"] == step), None)
         if c is None or not c.get("path"):
             raise LaunchError(f"{run['name']} has no checkpoint at step {step}")
-        where = Path(c["path"]).name
-        dest = CORE.train_dir / run["name"] / "checkpoints" / where
         if source["kind"] == "local":
             self.store.mark_fetched(run["id"], step, c["path"])
             return {"local": c["path"]}
+        where = Path(c["path"]).name
+        if not RUN_NAME.match(where):
+            raise LaunchError(f"{where!r} is not a checkpoint's directory name")
+        checkpoints = self.store.checkpoints_here(run)
+        dest = checkpoints / where
+        # The directory is this run's alone: one holding another's checkpoints
+        # is not written over.
+        origin, mine = checkpoints.parent / ORIGIN_FILE, f"{run['source']}\n{run['output_dir']}\n"
+        if origin.is_file() and origin.read_text() != mine:
+            raise LaunchError(f"{checkpoints.parent} holds the checkpoints of another run than {run['name']}")
         size = int(_run(source, f"du -sb {shlex.quote(c['path'])}/pretrained_model | cut -f1").strip() or 0)
         say(f"copying {run['name']} step {step} ({size / 1e6:.0f} MB)")
         part = dest.parent / f".{where}.part"
         shutil.rmtree(part, ignore_errors=True)
         part.mkdir(parents=True)
+        origin.write_text(mine)
         argv = ssh_base(source) + [f"tar -C {shlex.quote(c['path'])} -cf - pretrained_model"]
         with subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE) as proc, \
                 subprocess.Popen(["tar", "-C", str(part), "-xf", "-"], stdin=subprocess.PIPE) as untar:
@@ -679,7 +706,8 @@ class Jobs:
                     say(f"copying {got / 1e6:.0f} / {size / 1e6:.0f} MB")
             untar.stdin.close()
             if proc.wait() != 0 or untar.wait() != 0:
-                raise LaunchError(f"copy failed: {proc.stderr.read().decode('utf-8', 'replace').strip()[-200:]}")
+                raise LaunchError("copy failed: "
+                                  + ssh_said(source, proc.stderr.read().decode('utf-8', 'replace').strip()[-200:]))
         shutil.rmtree(dest, ignore_errors=True)
         part.rename(dest)
         local = str(dest / "pretrained_model")

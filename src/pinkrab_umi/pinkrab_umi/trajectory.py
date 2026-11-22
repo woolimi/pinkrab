@@ -63,13 +63,6 @@ def slerp(q0: np.ndarray, q1: np.ndarray, t: float) -> np.ndarray:
     return (np.sin((1 - t) * theta) / sin_theta) * q0 + (np.sin(t * theta) / sin_theta) * q1
 
 
-def pose_matrix(position: np.ndarray, quat: np.ndarray) -> np.ndarray:
-    pose = np.eye(4)
-    pose[:3, :3] = quat_to_matrix(np.asarray(quat, float))
-    pose[:3, 3] = np.asarray(position, float)
-    return pose
-
-
 def rotation_angle_deg(rot: np.ndarray) -> float:
     """The angle of a rotation matrix, in degrees - how far apart two frames point."""
     cos = (np.trace(rot[:3, :3]) - 1.0) / 2.0

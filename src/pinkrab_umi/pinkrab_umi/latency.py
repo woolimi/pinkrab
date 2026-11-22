@@ -50,6 +50,10 @@ from .config import SETTINGS
 from .convert import ConvertError, cameras_on_desk, exposures, placed, rate_of, segments, smooth
 from .episode import _lines
 
+# What a take that cannot be measured raises: files that do not read, a
+# stream the meta lacks, a video that does not decode.
+MEASURE_ERRORS = (OSError, ValueError, KeyError, ConvertError, cv2.error)
+
 # The slides tried, seconds: the pictures from 0.1 s ahead of their stamps to
 # 0.3 s behind them, a millisecond apart.
 LAGS_S = np.arange(-0.1, 0.3001, 0.001)
@@ -270,7 +274,7 @@ def demo_latency(source: Path, names: list[str], fps: int | None = None, say=pri
                 say(f"  {name}: a {meta.get('kind')} - laid by camera.yaml's latency")
                 continue
             found = measure(root)
-        except (OSError, ValueError, KeyError, ConvertError, cv2.error) as exc:
+        except MEASURE_ERRORS as exc:
             say(f"  {name}: latency not measured - {exc}")
             continue
         said = ", ".join(f"{hand} {h['lag_s'] * 1000:+.0f} ms" for hand, h in found.items())
@@ -332,7 +336,7 @@ def main(names: list[str] | None = None) -> int:
         try:
             answer = measure(root / name)
             lags = command_lags(root / name) if (root / name / "robot.jsonl").is_file() else None
-        except (OSError, ValueError) as exc:
+        except MEASURE_ERRORS as exc:
             print(f"  {name}: skipped - {exc}")
             continue
         if lags:

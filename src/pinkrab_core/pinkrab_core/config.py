@@ -336,7 +336,7 @@ class Settings:
     #
     # How long each predicted chunk runs before the policy looks again, in
     # seconds - n_action_steps is this at the checkpoint's dataset's rate - for
-    # every kind of policy with a chunk, listed in inference.KINDS or not. A chunk is trained long
+    # every policy type with a chunk, ACT or another. A chunk is trained long
     # (ACT's is 2 s), and run whole it is 2 s with the camera ignored; a
     # tenth of a second is a new look ten times a second, the rate UMI runs its
     # policies at - three steps at 30 fps.
@@ -421,6 +421,10 @@ class Settings:
     # The start Ask walks to is a place, not a joint vector: the arm is there
     # when every joint it names is this close to it.
     policy_ready_tol_deg: float = 3.0
+    # The studio stops a policy that drives the arms once no policy page has had
+    # a socket open for this long: the page is the one that can stop it. A tab
+    # in the background keeps its socket and keeps the run going.
+    policy_page_lost_s: float = 2.0
     # A checkpoint looks at its pictures (pinkrab-picture-swap) when, on every
     # hand, its answer with another frame's pictures points no closer than
     # this to its answer with its own. Simulated checkpoints that went for the

@@ -122,9 +122,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_bench = sub.add_parser("bench", help="closure error and coverage for a session")
     p_bench.add_argument("session", help="session name, or a path to one")
-    p_bench.add_argument("--solid", default=SETTINGS.solid,
+    p_bench.add_argument("--solid", default=None,
                          choices=[c.name for c in SETTINGS.solids],
-                         help="which solid the take was made with (default: %(default)s)")
+                         help="which solid the take was made with (default: the one it recorded)")
     _detector_args(p_bench)
 
     return parser
@@ -279,13 +279,14 @@ def main(argv: list[str] | None = None) -> int:
         return latency.main(args.episodes or None)
 
     if args.command == "bench":
-        _choose_solid(args.solid)
+        if args.solid is not None:
+            _choose_solid(args.solid)
         _choose_reader(args)
         from . import bench, record  # noqa: PLC0415
 
         root = _session_root(args.session)
         try:
-            return bench.evaluate(root)
+            return bench.evaluate(root, args.solid)
         except (record.RecorderError, OSError) as exc:
             print(f"error: {exc}", file=sys.stderr)
             return 1

@@ -27,38 +27,74 @@ def configure(bus, p: int | None = None, i: int | None = None, d: int | None = N
     `torque_after` None leaves each motor's torque as it was; True switches
     every motor on, False leaves them all off.
     """
-    from lerobot.motors.feetech import OperatingMode
-
     p = settings.servo_p_coefficient if p is None else p
     d = settings.servo_d_coefficient if d is None else d
+    wanted = {m: _wanted(m, p, i, d, settings) for m in bus.motors}
     was_on = [m for m in bus.motors
               if int(bus.read("Torque_Enable", m, normalize=False, num_retry=2))]
+    if all(_holds(bus, m, regs) for m, regs in wanted.items()):
+        # Already as wanted: the torque is not touched except to reach `torque_after`.
+        if torque_after is False:
+            bus.disable_torque(was_on)
+        elif torque_after:
+            _enable(bus, [m for m in bus.motors if m not in was_on])
+        return
 
-    bus.disable_torque()
-    # LeRobot's own part: no response delay, full acceleration, and the angle
-    # feedback that keeps readings inside one turn.
-    bus.configure_motors()
-    for motor in bus.motors:
-        bus.write("Operating_Mode", motor, OperatingMode.POSITION.value)
-        bus.write("P_Coefficient", motor, p)
-        bus.write("I_Coefficient", motor, i if i is not None
-                  else 0 if motor in settings.servo_i_unloaded else settings.servo_i_coefficient)
-        bus.write("D_Coefficient", motor, d)
-        if motor == "gripper":
-            bus.write("Max_Torque_Limit", motor, settings.gripper_max_torque_limit)
-            bus.write("Protection_Current", motor, settings.gripper_protection_current)
-            bus.write("Overload_Torque", motor, settings.gripper_overload_torque)
-            bus.write("Torque_Limit", motor, settings.gripper_torque_limit)
-        else:
-            bus.write("Max_Torque_Limit", motor, settings.joint_max_torque_limit)
-            bus.write("Protection_Current", motor, settings.joint_protection_current)
-            bus.write("Overload_Torque", motor, settings.joint_overload_torque)
+    # A write that fails half way must not leave a motor that was holding limp.
+    try:
+        bus.disable_torque()
+        # LeRobot's own part: no response delay, full acceleration, and the angle
+        # feedback that keeps readings inside one turn.
+        bus.configure_motors()
+        for motor, regs in wanted.items():
+            for name, value in regs.items():
+                bus.write(name, motor, value)
+    except BaseException:
+        _enable(bus, was_on)
+        raise
+    _enable(bus, was_on if torque_after is None else list(bus.motors) if torque_after else [])
+
+
+def _wanted(motor: str, p: int, i: int | None, d: int, settings) -> dict[str, int]:
+    """The registers `configure` writes on one motor, beyond LeRobot's own part."""
+    from lerobot.motors.feetech import OperatingMode
+
+    if motor == "gripper":
+        limits = {
+            "Max_Torque_Limit": settings.gripper_max_torque_limit,
+            "Protection_Current": settings.gripper_protection_current,
+            "Overload_Torque": settings.gripper_overload_torque,
+            "Torque_Limit": settings.gripper_torque_limit,
+        }
+    else:
+        limits = {
+            "Max_Torque_Limit": settings.joint_max_torque_limit,
+            "Protection_Current": settings.joint_protection_current,
+            "Overload_Torque": settings.joint_overload_torque,
             # Torque_Limit is RAM, copied from Max_Torque_Limit at power-up; a
             # servo that booted with the gripper's 500 keeps it until told.
-            bus.write("Torque_Limit", motor, settings.joint_max_torque_limit)
+            "Torque_Limit": settings.joint_max_torque_limit,
+        }
+    if i is None:
+        i = 0 if motor in settings.servo_i_unloaded else settings.servo_i_coefficient
+    return {"Operating_Mode": OperatingMode.POSITION.value, "P_Coefficient": p,
+            "I_Coefficient": i, "D_Coefficient": d, **limits}
 
-    on = was_on if torque_after is None else (list(bus.motors) if torque_after else [])
-    if on:
-        here = bus.sync_read("Present_Position", on, normalize=False, num_retry=2)
-        bus.sync_write("Goal_Position", {m: int(v) for m, v in here.items()}, normalize=False)
-        bus.enable_torque(on)
+
+def _holds(bus, motor: str, regs: dict[str, int]) -> bool:
+    """Whether `motor` already has every register `configure` would write."""
+    held = {"Return_Delay_Time": 0, "Maximum_Acceleration": 254, "Acceleration": 254, **regs}
+    if any(int(bus.read(name, motor, normalize=False, num_retry=2)) != value
+           for name, value in held.items()):
+        return False
+    return not (bus.motors[motor].model == "sts3215"
+                and int(bus.read("Phase", motor, normalize=False, num_retry=2)) & 0x10)
+
+
+def _enable(bus, motors: list[str]) -> None:
+    """Torque on at the present position, so a motor holding an old goal stays put."""
+    if not motors:
+        return
+    here = bus.sync_read("Present_Position", motors, normalize=False, num_retry=2)
+    bus.sync_write("Goal_Position", {m: int(v) for m, v in here.items()}, normalize=False)
+    bus.enable_torque(motors)

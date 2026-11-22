@@ -25,7 +25,7 @@ The segments in which the policy moved are **not put in the dataset**. The actio
 
 ## Recording method
 
-When Drive is pressed on the [Policy page](../../use/run/#policy-page), recording starts before the policy starts, and the whole run is saved as one raw episode with `kind` set to `rollout`. If recording cannot start, **it does not run**, and the recording ends and is saved by Stop, by pedal 3 when no correction is in progress, or by Disconnect. Taking over, following, stopping, and handing back do not split or stop the recording; they only change the marks attached to the readings.
+When Drive is pressed on the [Policy page](../../use/run/#policy-page), recording starts before the policy starts, and the whole run is saved as one raw episode with `kind` set to `rollout`. If recording cannot start, **it does not run**, and the recording ends and is saved by Stop, by pedal 3 when no correction is in progress, or by Disconnect. It is saved the same way when studio stops the run because the connection to the Policy page was lost or the rollout node exited. Taking over, following, stopping, and handing back do not split or stop the recording; they only change the marks attached to the readings.
 
 | File | Contents |
 |---|---|

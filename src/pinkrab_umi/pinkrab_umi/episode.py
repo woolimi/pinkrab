@@ -49,14 +49,20 @@ thrown away and made again or deleted from the shelf. The shelf lists those
 Every line carries `host_ts`, this machine's clock at the moment the frame
 or reading arrived - the master clock the three cameras and the jaws are
 lined up on later. The top camera's lines also carry `sensor_ts`, their
-arrival less the module's latency, on the same clock.
+arrival less the module's latency, on the same clock; a head frame's
+poses.jsonl line and frames.jsonl line are written together, so every frame
+has both or neither.
 
 Encoding runs on a thread per video so the camera threads never wait on the
-disk; a frame that finds its queue full is dropped and counted.
+disk; a frame that finds its queue full is dropped and counted. A write that
+fails - a full disk, an encoder that stops - does not stop the recording, but
+the episode is marked failed (`failure` in its status and, closed, in
+meta.json) so nobody keeps it believing it whole.
 """
 from __future__ import annotations
 
 import json
+import math
 import queue
 import re
 import shutil
@@ -152,7 +158,7 @@ class _Video:
     stream: str
     path: Path | None    # None: clocked, its pictures not kept
     fps: float
-    queue: queue.Queue
+    queue: queue.Queue | None    # None with the path: nothing to encode
     thread: threading.Thread | None = None
     writer: Encoder | None = None
     written: int = 0
@@ -191,28 +197,11 @@ class EpisodeWriter:
         # and the reading they are summed from.
         self._controlled = {name: 0.0 for name in CONTROLLERS}
         self._last_reading: tuple[float, str] | None = None
-        self.root.mkdir(parents=True, exist_ok=False)
-        self._frames = open(self.root / "frames.jsonl", "w")
-        self._poses = open(self.root / "poses.jsonl", "w")
-        self._events = open(self.root / "events.jsonl", "w")
-        self._robot = open(self.root / "robot.jsonl", "w") if kind == "rollout" else None
-        # The top camera's pictures are not kept: they are of the room and the
-        # person, never shown to a policy, and the poses are solved again from
-        # the corners each frame's line keeps. Its frames are still counted
-        # and clocked.
-        self._videos = {
-            "head": _Video("head", None, head_fps, queue.Queue(1)),
-            "gripper_left": _Video("gripper_left", self.root / "gripper_left.mp4", gripper_fps,
-                                   queue.Queue(SETTINGS.episode_queue_frames)),
-            "gripper_right": _Video("gripper_right", self.root / "gripper_right.mp4", gripper_fps,
-                                    queue.Queue(SETTINGS.episode_queue_frames)),
-        }
-        for video in self._videos.values():
-            if video.path is None:
-                continue
-            video.thread = threading.Thread(target=self._encode, args=(video,),
-                                            name=f"episode-{video.stream}", daemon=True)
-            video.thread.start()
+        # The first write that failed, as the file and the error: the episode
+        # is not whole after it.
+        self._write_failure: str | None = None
+        # The meta first: what can fail without a disk is found before anything
+        # is made on it.
         self.meta = {
             "name": name,
             "started_wall": self.started_wall,
@@ -240,31 +229,74 @@ class EpisodeWriter:
             self.meta["arms"] = arms
             self.meta["policy"] = policy
             self.meta["description"] = description
+        self._frames = self._poses = self._events = self._robot = None
+        made = False
+        try:
+            self.root.mkdir(parents=True, exist_ok=False)
+            made = True
+            self._frames = open(self.root / "frames.jsonl", "w")
+            self._poses = open(self.root / "poses.jsonl", "w")
+            self._events = open(self.root / "events.jsonl", "w")
+            self._robot = open(self.root / "robot.jsonl", "w") if kind == "rollout" else None
+        except OSError as exc:
+            for handle in (self._frames, self._poses, self._events, self._robot):
+                if handle is not None:
+                    handle.close()
+            if made:
+                shutil.rmtree(self.root, ignore_errors=True)
+            raise EpisodeError(f"cannot start episode {name!r}: {exc}") from exc
+        # The top camera's pictures are not kept: they are of the room and the
+        # person, never shown to a policy, and the poses are solved again from
+        # the corners each frame's line keeps. Its frames are still counted
+        # and clocked.
+        self._videos = {
+            "head": _Video("head", None, head_fps, None),
+            "gripper_left": _Video("gripper_left", self.root / "gripper_left.mp4", gripper_fps,
+                                   queue.Queue(SETTINGS.episode_queue_frames)),
+            "gripper_right": _Video("gripper_right", self.root / "gripper_right.mp4", gripper_fps,
+                                    queue.Queue(SETTINGS.episode_queue_frames)),
+        }
+        for video in self._videos.values():
+            if video.path is None:
+                continue
+            video.thread = threading.Thread(target=self._encode, args=(video,),
+                                            name=f"episode-{video.stream}", daemon=True)
+            video.thread.start()
         self.event("start")
 
     # --- feeding ------------------------------------------------------------------
-    def add_frame(self, stream: str, picture: np.ndarray, host_ts: float,
-                  sensor_ts: float | None = None, frame_number: int | None = None) -> None:
-        video = self._videos[stream]
-        if video.path is None:
-            # Kept as read, not as a picture: its line now, its size once.
-            with self._lock:
-                if video.size is None:
-                    video.size = (picture.shape[1], picture.shape[0])
-                if not self._closed:
-                    self._frames.write(json.dumps(self._frame_line(video, host_ts, sensor_ts, frame_number)) + "\n")
-                video.written += 1
-            return
+    def _put(self, handle, line: dict) -> None:
+        """One line into one of the jsonl files, with the lock held. A write
+        that fails marks the episode failed and costs only that line."""
         try:
-            video.queue.put_nowait((picture, host_ts, sensor_ts, frame_number))
+            handle.write(json.dumps(line) + "\n")
+        except OSError as exc:
+            self._write_failure = self._write_failure or f"{Path(handle.name).name}: {exc}"
+
+    def add_head(self, poses_line: dict, picture: np.ndarray, host_ts: float,
+                 sensor_ts: float | None = None, frame_number: int | None = None) -> None:
+        """One head frame: its poses line and its frames line, together. The
+        picture is kept as read, not as a picture: its size once, and a line
+        each."""
+        video = self._videos["head"]
+        with self._lock:
+            if self._closed:
+                return
+            if video.size is None:
+                video.size = (picture.shape[1], picture.shape[0])
+            self._put(self._poses, poses_line)
+            self._put(self._frames, self._frame_line(video, host_ts, sensor_ts, frame_number))
+            video.written += 1
+
+    def add_frame(self, stream: str, picture: np.ndarray, host_ts: float) -> None:
+        """One gripper frame, to be encoded: a frame that finds the queue full
+        is dropped and counted."""
+        video = self._videos[stream]
+        try:
+            video.queue.put_nowait((picture, host_ts, None, None))
         except queue.Full:
             with self._lock:
                 video.dropped += 1
-
-    def add_poses(self, line: dict) -> None:
-        with self._lock:
-            if not self._closed:
-                self._poses.write(json.dumps(line) + "\n")
 
     def add_robot(self, samples: list[dict]) -> int:
         """Readings of the robot, for a rollout: each `{host_ts, joints, mode,
@@ -273,28 +305,38 @@ class EpisodeWriter:
         the reading is in, None outside one, and `asked` and `sent` the joint
         command and the gate's setpoint at that moment, by joint (empty when
         none was fresh). Returns how many were kept - none for
-        a demonstration."""
+        a demonstration. A reading without a host_ts as a number refuses the
+        batch (ValueError) before any of it is kept."""
+        # A batch that cannot be read is refused whole: ValueError before a
+        # line is written, not the readings before the bad one kept.
+        readings = []
+        for sample in samples:
+            if not isinstance(sample, dict) or not isinstance(sample.get("joints"), dict):
+                continue
+            controller = sample.get("controller")
+            if controller not in CONTROLLERS:
+                continue
+            try:
+                host_ts = float(sample["host_ts"])
+            except (KeyError, TypeError, ValueError) as exc:
+                raise ValueError("a reading has no host_ts as a number") from exc
+            if not math.isfinite(host_ts):
+                raise ValueError("a reading has no host_ts as a number")
+            readings.append((sample, controller, host_ts))
         kept = 0
         with self._lock:
             if self._closed or self._robot is None:
                 return 0
-            for sample in samples:
-                if not isinstance(sample, dict) or not isinstance(sample.get("joints"), dict):
-                    continue
-                controller = sample.get("controller")
-                if controller not in CONTROLLERS:
-                    continue
-                host_ts = float(sample["host_ts"])
+            for sample, controller, host_ts in readings:
                 correction = sample.get("correction")
-                self._robot.write(json.dumps({"host_ts": host_ts,
-                                              "joints": sample["joints"],
-                                              "mode": sample.get("mode"),
-                                              "following": bool(sample.get("following")),
-                                              "controller": controller,
-                                              "correction": correction if isinstance(correction, int) else None,
-                                              **{key: sample[key] for key in ("asked", "sent")
-                                                 if isinstance(sample.get(key), dict)}})
-                                  + "\n")
+                self._put(self._robot, {"host_ts": host_ts,
+                                        "joints": sample["joints"],
+                                        "mode": sample.get("mode"),
+                                        "following": bool(sample.get("following")),
+                                        "controller": controller,
+                                        "correction": correction if isinstance(correction, int) else None,
+                                        **{key: sample[key] for key in ("asked", "sent")
+                                           if isinstance(sample.get(key), dict)}})
                 # The time to this reading is the previous one's controller's.
                 if self._last_reading is not None:
                     gap = host_ts - self._last_reading[0]
@@ -307,8 +349,8 @@ class EpisodeWriter:
     def event(self, what: str, **fields) -> None:
         with self._lock:
             if not self._closed:
-                self._events.write(json.dumps({"host_ts": time.time(), "monotonic": time.monotonic(),
-                                               "event": what, **fields}) + "\n")
+                self._put(self._events, {"host_ts": time.time(), "monotonic": time.monotonic(),
+                                         "event": what, **fields})
 
     # --- the encoder threads ---------------------------------------------------------
     def _encode(self, video: _Video) -> None:
@@ -341,7 +383,9 @@ class EpisodeWriter:
             video.size = (w, h)
             encoder = Encoder(video.path, video.fps, w, h)
             if not encoder.ok:
+                # Every frame after this one is dropped by the loop above.
                 with self._lock:
+                    video.failure = "no video encoder could be opened"
                     video.dropped += 1
                 return
             video.writer, video.codec = encoder, encoder.codec
@@ -352,7 +396,7 @@ class EpisodeWriter:
         with self._lock:
             video.written += 1
             if not self._closed:
-                self._frames.write(json.dumps(line) + "\n")
+                self._put(self._frames, line)
 
     @staticmethod
     def _frame_line(video: _Video, host_ts: float, sensor_ts: float | None, frame_number: int | None) -> dict:
@@ -364,20 +408,34 @@ class EpisodeWriter:
         return line
 
     # --- status and closing -----------------------------------------------------------
+    def _failures(self) -> list[str]:
+        """What went wrong in the recording, one line each, the lock held: the
+        videos that stopped and the files that would not take a line."""
+        out = [f"{v.stream}: {v.failure}" for v in self._videos.values() if v.failure]
+        if self._write_failure:
+            out.append(self._write_failure)
+        return out
+
     def status(self) -> dict:
         with self._lock:
             end = self.ended or time.monotonic()
+            failures = self._failures()
             out = {
                 "name": self.name,
                 "seconds": round(end - self.started, 1),
                 "frames": {name: v.written for name, v in self._videos.items()},
                 "dropped": {name: v.dropped for name, v in self._videos.items()},
+                "failed": bool(failures),
+                "failure": "; ".join(failures) or None,
             }
             if self.kind == "rollout":
                 out["controlled"] = {k: round(v, 1) for k, v in self._controlled.items()}
             return out
 
     def close(self) -> dict:
+        """Every file closed and meta.json written, whatever fails on the way:
+        a file that will not close, or a meta.json that will not write, is a
+        failure of the episode (its status) and not the end of the closing."""
         self.event("stop")
         self.ended = time.monotonic()
         for video in self._videos.values():
@@ -401,11 +459,13 @@ class EpisodeWriter:
                     video.failure = video.failure or f"{type(exc).__name__}: {exc}"
         with self._lock:
             self._closed = True
-            self._frames.close()
-            self._poses.close()
-            self._events.close()
-            if self._robot is not None:
-                self._robot.close()
+            for handle in (self._frames, self._poses, self._events, self._robot):
+                if handle is None:
+                    continue
+                try:
+                    handle.close()
+                except OSError as exc:
+                    self._write_failure = self._write_failure or f"{Path(handle.name).name}: {exc}"
         self.meta["ended_wall"] = time.time()
         self.meta["seconds"] = round(self.ended - self.started, 3)
         if self.kind == "rollout":
@@ -435,7 +495,18 @@ class EpisodeWriter:
         # latency known when it runs.
         if "head" in self.meta["streams"]:
             self.meta["streams"]["head"]["latency_s"] = SETTINGS.top_camera_latency_s
-        (self.root / "meta.json").write_text(json.dumps(self.meta, indent=2))
+        # Written beside and moved over, so a reader never meets half a file.
+        try:
+            with self._lock:
+                failures = self._failures()
+            if failures:
+                self.meta["failure"] = "; ".join(failures)
+            partial = self.root / "meta.json.partial"
+            partial.write_text(json.dumps(self.meta, indent=2))
+            partial.replace(self.root / "meta.json")
+        except OSError as exc:
+            with self._lock:
+                self._write_failure = self._write_failure or f"meta.json: {exc}"
         return self.status()
 
 
@@ -550,6 +621,7 @@ def list_episodes(root: Path | None = None) -> list[dict]:
                 entry["frames"] = {k: v.get("frames") for k, v in (meta.get("streams") or {}).items()}
                 entry["dropped"] = sum(v.get("dropped", 0) for v in (meta.get("streams") or {}).values())
                 entry["started_wall"] = meta.get("started_wall")
+                entry["failure"] = meta.get("failure")
                 entry["kind"] = meta.get("kind", "demo")
                 if entry["kind"] == "rollout":
                     entry["arms"] = meta.get("arms")

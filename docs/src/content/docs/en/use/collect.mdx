@@ -30,9 +30,9 @@ pinkrab-studio
 
 Open http://localhost:8730/ in a browser and go to the Collect page. Pressing **Connect** opens the top camera, the two Hermit cameras, and the two jaw servos, and starts marker tracking. Each card shows the tracking status and jaw opening per hand, and the markers found are drawn on the top camera view.
 
-On macOS the foot switch can be opened only with root privileges, so studio runs it with `sudo -n`. At first it fails for lack of permission and the screen shows a line to add to sudoers, so add that line with `sudo visudo`. The foot switch is read only if the terminal app that ran studio also has **Input Monitoring permission** (System Settings > Privacy & Security).
+On macOS the foot switch can be opened only with root privileges, so studio runs it with `sudo -n`. At first it fails for lack of permission and the screen shows a line to add to sudoers, so add that line with `sudo visudo`. The rule allows the `pinkrab-footswitch` file of that environment to run as root, so anyone who can write to that environment gets root. Where that matters, such as a shared computer, install a separate environment in a path only root can write, run studio from it, and allow that environment's `pinkrab-footswitch`. The foot switch is read only if the terminal app that ran studio also has **Input Monitoring permission** (System Settings > Privacy & Security).
 
-If the top camera does not open, **replug the USB** and press **Retry top camera**.
+If the top camera does not open, **replug the USB** and press **Retry top camera**. Without the top camera a demonstration cannot be recorded. A Hermit camera that sends no frame for 3 seconds is let go and found and opened again.
 
 ## Start pose
 
@@ -44,13 +44,13 @@ Ready is the pose in which the demonstrator holds the arms comfortably extended 
 
 ## Robot arm preview
 
-The top camera view also overlays the two robot arms as translucent silhouettes. The robot's board is taken to stand at the demonstrator's chest, and each arm follows that hand's Hermit the way the replay in the [demonstration verdict](#demonstration-verdict) does: solved by IK from ready the first time, then followed on from the frame before. Until the hand is found the arm stands at the ready pose, and while the marker is lost it stays where it was. The gripper is not drawn: the Hermit being held stands where it would be.
+The top camera view also overlays the two robot arms as translucent silhouettes. The robot's board is taken to stand at the demonstrator's chest, and each arm follows that hand's Hermit the way the replay in the [demonstration verdict](#demonstration-verdict) does: solved by IK from ready the first time, then followed on from the frame before. Until the hand is found the arm stands at the ready pose, and while the marker is lost it stays where it was. When recording starts, and when the table marker is lost, the arms go back to the ready pose and follow the next hand found from ready again. The gripper is not drawn: the Hermit being held stands where it would be.
 
 | Colour | Meaning |
 |---|---|
 | Grey | The arm is following the hand |
 | Green | That hand is within the ready pose (the same bounds as the Hermit drawing above) |
-| Red | The arm falls more than 15 mm or 20° short of the hand; the shortfall is shown beside it |
+| Red | The arm falls more than 15 mm or 20° short of a hand in view; the shortfall is shown beside it. An arm whose hand is not in view is not drawn red |
 
 A stretch drawn red is flagged `short` by the replay and cut from the dataset. If an arm turns red while recording, move that hand to where the arm reaches.
 
@@ -60,13 +60,13 @@ A stretch drawn red is flagged `short` by the replay and cut from the dataset. I
 |---|---|
 | 1 | Stop recording and delete it |
 | 2 | Start recording |
-| 3 | Stop recording and save |
+| 3 | Stop recording and save. The arms stop too, as on every other page |
 
 Each step is announced aloud: "Recording" when recording starts, "Saving" and then "Saved" when it stops, and "Recording cancelled" when it is deleted. The video is encoded while recording, so after stopping only a short time is needed to finish the last frames.
 
 <Clip src="https://woolimi.cdn.prismic.io/woolimi/iSM6DLar1b9XcnMK_pinkrab-studio-collect.mp4" label="On the Collect page, once both Hermits are laid over the ready drawings in the top camera view their lines turn green, recording starts with the pedal, and after the demonstration it stops and saves. Left are the two Hermit cameras, right the top camera view" caption="Recording a demonstration — the Collect page" />
 
-Because pedals are used, you never need to take your hands off Hermit while recording. During recording, the status line shows the demonstration name, elapsed time, and frame count per camera. The demonstration is saved in `~/pinkrab/episodes/<name>/`, together with the top camera and Hermit camera video and the marker pose and jaw opening for each frame.
+Because pedals are used, you never need to take your hands off Hermit while recording. During recording, the status line shows the demonstration name, elapsed time, and frame count per camera. The demonstration is saved in `~/pinkrab/episodes/<name>/`, together with the top camera and Hermit camera video and the marker pose and jaw opening for each frame. If the video or a file cannot be written during recording (a full disk, for one), the demonstration is marked failed and the reason is kept in `failure` in `meta.json`.
 
 ## Good demonstrations
 

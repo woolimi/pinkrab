@@ -32,8 +32,20 @@ const summaryEl = document.getElementById('replay-summary');
 let renderer = null, scene = null, camera = null, controls = null, world = null, robot = null;
 let raf = 0;
 
-async function ensureScene() {
-  if (renderer) return;
+// The scene is ready only once the robot is in it; calls made while it is
+// being built wait for the same build.
+let sceneBuild = null;
+function ensureScene() {
+  sceneBuild ??= buildScene().catch((err) => {
+    if (renderer) renderer.dispose();
+    renderer = scene = camera = controls = world = robot = null;
+    sceneBuild = null;
+    throw err;
+  });
+  return sceneBuild;
+}
+
+async function buildScene() {
   renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
   renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
   renderer.shadowMap.enabled = true;
@@ -232,7 +244,11 @@ function countFlags(trajectory) {
 }
 
 // `correction`, when given, a rollout's: {correction, from_ts, to_ts}.
+// Each call is a generation: an answer that comes after the dialog was closed
+// or another take opened belongs to a generation gone, and is dropped.
+let generation = 0;
 export async function openReplay(name, correction = null) {
+  const mine = ++generation;
   dialog.showModal();
   titleEl.textContent = correction ? `${name} · correction ${correction.correction ?? ''}`.trim() : name;
   noteEl.textContent = 'solving the arms ...';
@@ -247,7 +263,9 @@ export async function openReplay(name, correction = null) {
   }
   try {
     await ensureScene();
+    if (mine !== generation) return;
     const answer = await (await fetch(`/episodes/${name}/replay.json`, { cache: 'no-store' })).json();
+    if (mine !== generation) return;
     if (answer.error) { noteEl.textContent = answer.error; return; }
     if (correction) {
       const kept = answer.trajectory.filter((f) => f.host_ts >= correction.from_ts && f.host_ts <= correction.to_ts);
@@ -283,11 +301,12 @@ export async function openReplay(name, correction = null) {
     showFrame(0);
     if (!raf) tick();
   } catch (err) {
-    noteEl.textContent = `could not load the replay: ${err}`;
+    if (mine === generation) noteEl.textContent = `could not load the replay: ${err}`;
   }
 }
 
 function closeReplay() {
+  generation++;
   for (const v of Object.values(videos)) { v.pause(); v.removeAttribute('src'); v.load(); }
   if (raf) { cancelAnimationFrame(raf); raf = 0; }
   replay = null; playing = null;

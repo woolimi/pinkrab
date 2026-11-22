@@ -148,6 +148,9 @@ if __name__ == "__main__":
             check(f"{arm}: a hand on the ready pose's tool leaves the arm at ready", off < 1.0,
                   f"{off:.2f} deg at most")
             check(f"{arm}: the start is reached", answer["start"][arm]["reached"], str(answer["start"][arm]))
+        check("the answer carries where each arm's tool stands at ready",
+              all(np.allclose(answer["ready_tool"][arm], chain_at_ready(arm)[0].forward(chain_at_ready(arm)[1]))
+                  for arm in ("left", "right")))
         times = np.array([f["t"] for f in answer["trajectory"]])
         seconds = (n - 1) / FPS
         check("the take is played on the dataset's clock", answer["fps"] == CORE.dataset_fps
@@ -296,6 +299,19 @@ if __name__ == "__main__":
     check("a rollout and an unjudged take have none",
           verdict.unfollowed({**answer, "kind": "rollout"}) == []
           and verdict.unfollowed({**answer, "unjudged": "before the chest"}) == [])
+
+    # Each take's start set beside the others': from the shelf's verdicts, one
+    # pool for the warnings and for the replay page.
+    flat = np.eye(3)
+    kept = {name: ((0.0, 0.0, 0.0), {}, {"left": (flat, height), "right": None})
+            for name, height in (("a", 0.100), ("b", 0.101), ("c", 0.099), ("d", 0.250))}
+    pool = verdict.Verdicts._starts_by_hand({k: kept[k] for k in "ab"})
+    check("a hand with too few takes to compare is said so",
+          verdict.Verdicts._compare(kept["a"][2], pool) == {"left": {"takes": 2, "note": "too few takes to compare with"}})
+    pool = verdict.Verdicts._starts_by_hand(kept)
+    near, far = (verdict.Verdicts._compare(kept[k][2], pool)["left"] for k in "ad")
+    check("a start well above the others is far, one among them is not", far["far"] and not near["far"]
+          and far["takes"] == 4 and "right" not in verdict.Verdicts._compare(kept["a"][2], pool), f"{near} {far}")
 
     print("\n" + ("all checks passed" if not FAILURES else f"{len(FAILURES)} failed: {', '.join(FAILURES)}"))
     sys.exit(1 if FAILURES else 0)

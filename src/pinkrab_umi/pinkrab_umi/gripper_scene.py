@@ -33,9 +33,9 @@ from pinkrab_core.gripper_camera import camera_spec, mirrored, tcp_T_camera
 from pinkrab_core.jaw import gripper_band, shut_wide
 
 from .config import SETTINGS
-from .convert import cameras_on_desk, exposures, fill_holes, jaw_readings, placed
+from .convert import cameras_on_desk, exposures, fill_holes, jaw_readings, placed, smoothed
 from .episode import _lines
-from .gripper_model import Gripper, gripper
+from .gripper_model import Gripper, gripper, merged
 
 OWN, OTHER = 1, 2
 # A triangle with a corner nearer the lens than this, or behind it, is not
@@ -53,15 +53,7 @@ EDGE_S = 0.04
 def decimated(tris: np.ndarray, cell: float = CELL_M) -> np.ndarray:
     """Triangles (n,3,3) with corners within `cell` of each other made one,
     the triangles that leaves flat dropped."""
-    corners = tris.reshape(-1, 3)
-    keys, which = np.unique(np.floor(corners / cell).astype(np.int64), axis=0, return_inverse=True)
-    which = which.ravel()
-    verts = np.zeros((len(keys), 3))
-    np.add.at(verts, which, corners)
-    verts /= np.bincount(which)[:, None]
-    faces = which.reshape(-1, 3)
-    faces = faces[(faces[:, 0] != faces[:, 1]) & (faces[:, 1] != faces[:, 2]) & (faces[:, 0] != faces[:, 2])]
-    faces = np.unique(np.sort(faces, axis=1), axis=0)
+    verts, faces = merged(tris, cell)
     return verts[faces]
 
 
@@ -70,13 +62,15 @@ class Lens:
     of its pictures: points in the camera's frame to the window's pixels."""
 
     def __init__(self, stream: dict) -> None:
-        lens = stream["lens"]
+        lens, centre = stream.get("lens"), stream.get("centre")
+        if lens is None or centre is None:
+            raise ValueError("the take did not record its lens")
         if lens.get("model") != "kannala_brandt":
             raise ValueError(f"a {lens.get('model')} lens is not drawn here")
         self.K = np.array([[lens["fx"], 0.0, lens["cx"]], [0.0, lens["fy"], lens["cy"]], [0.0, 0.0, 1.0]])
         self.D = np.array(lens["k"], dtype=float).reshape(4, 1)
         cols, rows = lens["size"]
-        self.x, self.y, w, h = gripper_window(cols, rows, tuple(stream["centre"]))
+        self.x, self.y, w, h = gripper_window(cols, rows, tuple(centre))
         self.scale = GRIPPER_WIDTH / w
         self.size = (round(h * self.scale), GRIPPER_WIDTH)   # (height, width), as gripper_view
 
@@ -147,8 +141,9 @@ def _at(tools: list[np.ndarray | None], times: np.ndarray, t: float) -> np.ndarr
 class Scene:
     """A demonstration's grippers, ready to be drawn into any frame of its
     gripper videos: each hand's tool, the robot's tool frame, where the top
-    camera placed it in the desk's frame, as convert places it, at each
-    moment it was placed, and each jaw's angle at any moment."""
+    camera placed it in the desk's frame, as convert places it,
+    smoothed as convert smooths a segment, at each moment it was placed, and
+    each jaw's angle at any moment."""
 
     def __init__(self, root: Path, gripper_latency_s: float | None = None) -> None:
         """`gripper_latency_s` is the latency the gripper frames are laid by,
@@ -184,7 +179,7 @@ class Scene:
             turn = np.eye(4)
             turn[:3, :3] = TOOL_TURN[side]
             self.tools[side] = [None if T is None else T @ turn
-                                for T in fill_holes(hand, self.times, SETTINGS.convert_max_hole_s)]
+                                for T in smoothed(fill_holes(hand, self.times, SETTINGS.convert_max_hole_s), self.times)]
             t, opening = jaw_readings(poses, side)
             self.jaws[side] = (t, np.array([jaw_angle(side, o) for o in opening])) if len(t) else None
 

@@ -118,6 +118,8 @@ sudo chmod 440 /etc/sudoers.d/pinkrab-footswitch
 sudo visudo -c
 ```
 
+The rule runs that file as root, so any program that can write the conda environment can get root. On a computer where that matters, make the environment where only root can write, run the studio from it, and name that environment's `pinkrab-footswitch` in the rule.
+
 Running the pedal as root is not enough: the app that launched studio also needs the **Input Monitoring** permission before macOS lets it read pedal input. In System Settings → Privacy & Security → Input Monitoring, turn on the terminal app you use and restart the terminal.
 
 </TabItem>

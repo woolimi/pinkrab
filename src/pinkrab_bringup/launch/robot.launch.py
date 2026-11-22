@@ -10,7 +10,9 @@ Two nodes. The gate takes `/joint_commands`, holds each pose against the joint
 bands, the scene and a ramp, and puts what survives on
 `/joint_commands_checked`. The driver holds the serial ports, reads both arms
 onto `/joint_states`, and writes only what arrives on that checked topic - so
-there is no route from a command to a servo that misses the gate.
+the normal route from a command to a servo crosses the gate. A publisher of
+its own on the same ROS domain is not stopped by that, which is what domain
+isolation is for.
 
 Torque is left as the arms had it, which on a rig that was just powered up is
 off, and a limp arm stays limp until somebody calls `/set_torque`. The arms hang
@@ -33,6 +35,7 @@ from launch.actions import DeclareLaunchArgument
 from launch.conditions import IfCondition
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import Node
+from launch_ros.parameter_descriptions import ParameterValue
 from launch_ros.substitutions import FindPackageShare
 from pinkrab_core.config import SETTINGS
 
@@ -70,7 +73,12 @@ def generate_launch_description() -> LaunchDescription:
             package="pinkrab_safety",
             executable="gate",
             output="screen",
-            parameters=[{"scene": scene, "max_speed_dps": max_speed_dps}],
+            # The gate declares the speed as a double; a bare `120` on the command
+            # line would reach it as an integer and be refused.
+            parameters=[{
+                "scene": scene,
+                "max_speed_dps": ParameterValue(max_speed_dps, value_type=float),
+            }],
         ),
         Node(
             package="pinkrab_driver",

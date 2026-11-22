@@ -16,9 +16,9 @@ Hermit 시연에는 **팔의 관절각이 없습니다**. 기록되는 것은 �
 | `poses.jsonl` | 탑 카메라 프레임마다 찾은 마커 다면체의 pose(카메라 frame 과 테이블 마커 frame), 그 순간 두 jaw 의 열림, 그 프레임에서 읽은 모든 마커의 네 모서리 픽셀 좌표(`markers`) |
 | `robot.jsonl` | 실행 기록에만 있습니다. 팔의 관절각, gate 의 mode, 그 순간 누가 팔을 움직였는지(`controller`), 몇 번째 교정인지 |
 | `events.jsonl` | 시작과 끝, 실행 기록에서는 다시 한 교정 |
-| `meta.json` | 시계, 탑 카메라 calibration, 테이블 마커의 크기와 방향, 에피소드 종류, 마커 다면체마다 모든 마커의 네 모서리(다면체 frame, m)와 ArUco dictionary, 그리퍼 카메라마다 렌즈 fit 전체(모델, 계수, 프레임 크기, image circle), 실행 기록이면 판정(`outcome`) |
+| `meta.json` | 시계, 탑 카메라 calibration, 테이블 마커의 크기와 방향, 에피소드 종류, 마커 다면체마다 모든 마커의 네 모서리(다면체 frame, m)와 ArUco dictionary, 그리퍼 카메라마다 렌즈 fit 전체(모델, 계수, 프레임 크기, image circle), 실행 기록이면 판정(`outcome`), 녹화 중 쓰기에 실패했으면 사유(`failure`) |
 
-모든 줄에는 그 데이터가 이 컴퓨터에 도착한 시각(`host_ts`)이 있고, 세 카메라와 jaw 는 나중에 이 시계로 맞춥니다.
+모든 줄에는 그 데이터가 이 컴퓨터에 도착한 시각(`host_ts`)이 있고, 세 카메라와 jaw 는 나중에 이 시계로 맞춥니다. 탑 카메라 프레임의 줄은 `frames.jsonl` 과 `poses.jsonl` 에 한 쌍으로 쓰여서 한쪽에만 있는 프레임이 없습니다.
 
 `meta.json` 에 마커 모서리와 렌즈 fit 이 함께 들어 있어서, 에피소드 폴더 하나만 있으면 이 코드 없이도 `poses.jsonl` 의 마커 모서리 좌표로 마커 pose 를 다시 풀고 그리퍼 영상의 왜곡을 펼 수 있습니다. 탑 카메라 렌즈를 다시 측정하면 `pinkrab-umi resolve` 가 이 좌표로 지난 시연의 pose 를 새 렌즈로 다시 풉니다. 탑 카메라 영상은 방과 시연자를 찍을 뿐 policy 가 보지 않아서 저장하지 않고, 그 대신 남기는 모서리 좌표는 영상을 압축하며 생기는 오차도 없습니다. 다른 pose 추정 방법을 쓰려면 그 결과를 `poses.jsonl` 과 같은 형식으로 쓰면 Convert 가 그대로 받습니다.
 

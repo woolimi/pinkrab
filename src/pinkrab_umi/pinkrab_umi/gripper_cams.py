@@ -5,7 +5,9 @@ arms' (`follower`), what a policy is shown. The same model, camera.yaml's
 `gripper` profile, named in a file of their own - see `camera_file`.
 
 Each is a UVC camera opened with OpenCV and read on a thread of its own, in
-the mode its profile names.
+the mode its profile names. A read waits for a frame with no limit, so the
+reading is watched from a second thread: a camera silent for `gripper_stall_s`
+is let go and found again.
 What the page gets is a smaller JPEG of every other frame, cut as a dataset
 cuts it (`gripper_view`, about this unit's measured lens axis) so the page
 shows what a policy is shown - or the whole frame while the lens is not
@@ -379,8 +381,7 @@ class GripperCamera(threading.Thread):
                 self._rest()
                 continue
             self._device = device
-            self._read(cap)
-            cap.release()
+            self._watch(cap)
             if not self.stopping.is_set():
                 self._say("opening it again" if self._wake.is_set() else "the camera stopped answering")
             self._rest()
@@ -389,13 +390,46 @@ class GripperCamera(threading.Thread):
         with self._lock:
             self._note = note
 
-    def _read(self, cap: cv2.VideoCapture) -> None:
+    def _watch(self, cap: cv2.VideoCapture) -> None:
+        """Read `cap` on a thread of its own until it is let go: asked to stop
+        or retry, ended by a run of empty reads, or silent for `gripper_stall_s`.
+        The reader releases the capture itself once its read returns - releasing
+        under a read that is stuck would hang here too - so a stuck one lets it
+        go whenever its read comes back, or with the process."""
+        abandon = threading.Event()
+        ended = threading.Event()
+        reader = threading.Thread(target=self._read, args=(cap, abandon, ended),
+                                  name=f"gripper-{self.side}-read", daemon=True)
+        opened = time.monotonic()
+        reader.start()
+        while not (self.stopping.is_set() or self._wake.is_set() or ended.wait(0.25)):
+            with self._lock:
+                last = max(opened, self._stamp or 0.0)
+            if time.monotonic() - last > SETTINGS.gripper_stall_s:
+                break
+        abandon.set()
+        reader.join(timeout=1.0)
+
+    def _read(self, cap: cv2.VideoCapture, abandon: threading.Event, ended: threading.Event) -> None:
+        try:
+            self._pump(cap, abandon)
+        finally:
+            try:
+                cap.release()
+            finally:
+                ended.set()
+
+    def _pump(self, cap: cv2.VideoCapture, abandon: threading.Event) -> None:
         count = 0
         window_started = time.monotonic()
         window_frames = 0
         misses = 0
-        while not self.stopping.is_set() and not self._wake.is_set():
+        while not (self.stopping.is_set() or self._wake.is_set() or abandon.is_set()):
             ok, picture = cap.read()
+            # A read that returns after the watch gave this reader up holds a
+            # picture from before the stall: it is not this moment's.
+            if abandon.is_set():
+                return
             now = time.monotonic()
             if not ok:
                 misses += 1

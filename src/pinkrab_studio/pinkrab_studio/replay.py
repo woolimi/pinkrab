@@ -24,14 +24,14 @@ desk solid, never solved with its jaw read, or where the take does not
 record it on the handheld.
 
 Each hand's start is also set beside the mean start of that hand over the
-takes in the same place, this one among them - near the mean a
+takes on the shelf (verdict.Verdicts), this one among them - near the mean a
 policy run begins from - so a take that began far from the rest - looking
 down more steeply, rolled, higher - is pointed out (not removed: varied
 starts are wanted, a few far ones are worth a look). The
 answer is cached beside the episode as replay.json and remade when the
 episode, the arm's description or MuJoCo model, or where the solid carries the
 hand is no longer what it was solved from - the dates of the first two and the
-third itself are kept in it; the comparison with the others is made fresh.
+third itself are kept in it; the comparison with the others is not part of it.
 
 A rollout is not solved: the arm did it, under the policy or under teleop,
 which carried the hand's motion relative to where following began - where
@@ -55,7 +55,8 @@ import numpy as np
 
 from pinkrab_core.config import ARMS
 from pinkrab_core.config import SETTINGS as CORE
-from pinkrab_core.demo_start import level, mean_rotation
+from pinkrab_core.chunks import mean_pose
+from pinkrab_core.demo_start import level
 from pinkrab_core.follow import Following, tool_absolute_target
 from pinkrab_core.jaw import shut_wide
 from pinkrab_core.kinematics import ArmKinematics, arm_fingerprint
@@ -90,7 +91,7 @@ FAR_START_DEG = 20.0
 FAR_START_MM = 50.0
 # Bumped when what this writes changes, so a cached answer from an older
 # solver is remade rather than trusted.
-VERSION = 17
+VERSION = 18
 
 
 def _rules() -> list[float]:
@@ -160,15 +161,6 @@ def _the_scene() -> Scene:
 
 def replay_file(root: Path) -> Path:
     return root / "replay.json"
-
-
-def load_or_solve(root: Path) -> dict:
-    """The cached answer, or a fresh one when the episode or the arm is no longer
-    what it was solved from, with its starts set beside the mean start of that hand over the takes that
-    worked it."""
-    answer = solved(root)
-    answer["start_vs_others"] = start_vs_others(root)
-    return answer
 
 
 def model_mtime() -> float:
@@ -265,30 +257,12 @@ def _hand_start(root: Path, arm: str) -> tuple[np.ndarray, float] | None:
     return None
 
 
-def start_vs_others(root: Path) -> dict:
-    """Per hand in this take: how far its start lies from the mean start of
-    that hand over every take in its folder that convert would take it from,
-    this one included - near the mean a policy run begins from, which is
-    taken over the converted episodes' first frames (attitude in degrees,
-    height in mm) - and whether that is far enough to point out."""
-    out = {}
-    takes = [p for p in root.parent.iterdir() if (p / "meta.json").is_file()]
-    for arm in ARMS:
-        mine = _hand_start(root, arm)
-        if mine is None:
-            continue
-        starts = [s for s in (_hand_start(p, arm) for p in takes) if s is not None]
-        if len(starts) < 3:
-            out[arm] = {"takes": len(starts), "note": "too few takes to compare with"}
-            continue
-        out[arm] = {"takes": len(starts), **start_apart(mine, starts)}
-    return out
-
-
 def start_apart(mine: tuple[np.ndarray, float], starts: list[tuple[np.ndarray, float]]) -> dict:
     """How far one start (attitude, height) lies from the mean of `starts`:
     degrees, millimetres, and whether that is far enough to point out."""
-    mean_R = mean_rotation([R for R, _ in starts])
+    attitudes = np.tile(np.eye(4), (len(starts), 1, 1))
+    attitudes[:, :3, :3] = [R for R, _ in starts]
+    mean_R = mean_pose(list(attitudes), np.ones(len(starts)))[:3, :3]
     mean_h = float(np.mean([h for _, h in starts]))
     cos = (np.trace(mean_R.T @ mine[0]) - 1.0) / 2.0
     deg = math.degrees(math.acos(max(-1.0, min(1.0, cos))))
@@ -561,6 +535,9 @@ def solve(root: Path) -> dict:
         "name": root.name, "fps": fps, "frames": len(out_frames), "videos": _video_fps(meta),
         "solved_in_s": round(time.monotonic() - started, 2),
         "attitude": "as held against the desk solid",
+        # Where each arm's tool stands at the ready pose in the robot's world:
+        # what a hand that ended at ready is measured against (verdict.end_from_ready).
+        "ready_tool": {arm: arms[arm]["chain"].forward(arms[arm]["ready"]).tolist() for arm in ARMS},
         "hands": hands,
         "start": starts,
         "unplaced": unplaced,

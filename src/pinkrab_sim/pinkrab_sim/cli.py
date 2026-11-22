@@ -42,8 +42,6 @@ def build_parser() -> argparse.ArgumentParser:
     p_demos.add_argument("--count", type=int, required=True, help="how many takes to keep")
     p_demos.add_argument("--batch", required=True, help="name prefix: takes are <batch>-000, <batch>-001, ...")
     p_demos.add_argument("--seed", type=int, default=0)
-    p_demos.add_argument("--viewpoint", default="robot", choices=("robot", "opposite"),
-                         help="where the hand comes from: the robot's side, or across the table facing it")
     p_demos.add_argument("--tries", type=int, default=None, help="give up after this many plans")
     p_demos.add_argument("--two-faces", action="store_true",
                          help="blocks: each take grasps the cap by the nearest face or the next one, half each")
@@ -103,10 +101,10 @@ def main(argv: list[str] | None = None) -> int:
         try:
             if args.workers > 1:
                 report = generate_parallel(args.count, args.batch, args.seed, args.workers,
-                                           viewpoint=args.viewpoint, tries=args.tries, scene=args.scene,
+                                           tries=args.tries, scene=args.scene,
                                            per_layout=args.per_layout, two_faces=args.two_faces)
             else:
-                report = generate(args.count, args.batch, args.seed, viewpoint=args.viewpoint, tries=args.tries,
+                report = generate(args.count, args.batch, args.seed, tries=args.tries,
                                   scene=args.scene, per_layout=args.per_layout, two_faces=args.two_faces)
         except DemoError as exc:
             print(f"error: {exc}", file=sys.stderr)
@@ -184,12 +182,17 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "oracle":
         from .config import SETTINGS
-        from .evaluate import oracle
+        from .demos import DemoError
+        from .evaluate import EvaluateError, oracle
 
         out = SETTINGS.root / "evals" / (f"oracle{'-physics' if args.physics else ''}-"
                                          f"{time.strftime('%Y%m%d-%H%M%S')}")
-        summary = oracle(args.episodes, args.seed, out if args.videos else None, physics=args.physics,
-                         scene=args.scene)
+        try:
+            summary = oracle(args.episodes, args.seed, out if args.videos else None, physics=args.physics,
+                             scene=args.scene)
+        except (EvaluateError, DemoError) as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
         out.mkdir(parents=True, exist_ok=True)
         (out / "report.json").write_text(json.dumps(summary, indent=2))
         print(f"\n  held {summary['held']:.0%}  lifted {summary['lifted']:.0%}  placed {summary['placed']:.0%}"

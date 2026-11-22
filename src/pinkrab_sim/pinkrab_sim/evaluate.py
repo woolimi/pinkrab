@@ -44,7 +44,7 @@ from pinkrab_core.demo_start import DemoStartError, dataset_of_checkpoint, start
 from .config import SETTINGS
 from .demos import DemoError, Planner, Trajectory, placed, two_hand_take
 from .demos import faces as block_faces
-from .world import CARRIED_BIT, Layout, World, desk_pose, hands_of
+from .world import CARRIED_BIT, Layout, World, desk_pose, hands_of, physics_steps
 
 LIFTED_M = 0.02
 # The cap is taken as held when its grasp point is this near where the takes
@@ -61,11 +61,8 @@ LET_GO = 0.06
 SETTLED_MPS = 0.01
 
 
-def physics_steps(k: int, rate: float, timestep: float) -> int:
-    """How many physics steps tick `k` of a clock at `rate` runs: the ticks
-    together span exactly 1/rate seconds each, whatever `rate` is, however
-    many steps of the model's timestep a tick comes to."""
-    return round((k + 1) / (rate * timestep)) - round(k / (rate * timestep))
+# Every joint of both arms, by name.
+JOINTS = [f"{a}_{j}" for a in ("left", "right") for j in CORE.joint_names]
 
 
 class Carry:
@@ -183,6 +180,124 @@ class EvaluateError(RuntimeError):
     pass
 
 
+class Video:
+    """An episode's frames into one mp4, opened by the first of them."""
+
+    def __init__(self, path: Path | None, fps: float) -> None:
+        self.path = path
+        self.fps = fps
+        self._writer = None
+
+    def write(self, frame: np.ndarray) -> None:
+        if self.path is None:
+            return
+        if self._writer is None:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            self._writer = cv2.VideoWriter(str(self.path), cv2.VideoWriter_fourcc(*"mp4v"), self.fps,
+                                           (frame.shape[1], frame.shape[0]))
+        self._writer.write(frame)
+
+    def close(self) -> None:
+        if self._writer is not None:
+            self._writer.release()
+            self._writer = None
+
+
+class Judge:
+    """What an episode counts for each working arm, `things` giving the thing
+    each carries: whether it was held (claw and jaw both on it, or carried),
+    lifted clear of the desk, and at the end put down - in place, let go and
+    at rest. The same for `evaluate` and `oracle`, so the ceiling is counted
+    as the policy is."""
+
+    def __init__(self, world: World, things: dict[str, str], physics: bool) -> None:
+        self.world = world
+        self.things = things
+        m = world.model
+        self.claw = {h: {i for i in range(m.ngeom) if m.geom_bodyid[i] == m.body(f"{h}_gripper_link").id}
+                     for h in things}
+        self.jaw = {h: {i for i in range(m.ngeom) if m.geom_bodyid[i] == m.body(f"{h}_jaw_link").id}
+                    for h in things}
+        self.carries = {h: (None if physics else Carry(world, h)) for h in things}
+        self.start = {h: world.block_pose(t)[2, 3] for h, t in things.items()}
+        self.held = {h: False for h in things}
+        self.lifted = {h: False for h in things}
+        self.first_held: dict[str, float | None] = {h: None for h in things}
+        self.highest = {h: 0.0 for h in things}
+        self.held_steps = {h: 0 for h in things}
+        self.outcomes: dict[str, dict] = {}
+
+    def pinched(self, hand: str) -> bool:
+        """Whether the claw and the jaw both touch what `hand` carries."""
+        d = self.world.data
+        mine = set(self.world.things[self.things[hand]].geoms)
+        claw = jaw = False
+        for i in range(d.ncon):
+            c = d.contact[i]
+            if c.dist >= 0 or not ({c.geom1, c.geom2} & mine):
+                continue
+            other = c.geom2 if c.geom1 in mine else c.geom1
+            claw |= other in self.claw[hand]
+            jaw |= other in self.jaw[hand]
+        return claw and jaw
+
+    def advance(self, ids: list[int], goal: np.ndarray, ceiling: float, steps: int) -> None:
+        """Physics for `steps` steps with the servos' targets walked toward
+        `goal` at most `ceiling` radians a step, the carries judged on each."""
+        w = self.world
+        for _ in range(steps):
+            now = w.data.ctrl[ids]
+            w.data.ctrl[ids] = now + np.clip(goal - now, -ceiling, ceiling)
+            for carry in self.carries.values():
+                if carry is not None:
+                    carry.update()
+            mujoco.mj_step(w.model, w.data)
+
+    def observe(self, t: float) -> list[str]:
+        """Count this moment: the arms that are first holding something now."""
+        w = self.world
+        first = []
+        for h, thing in self.things.items():
+            carry = self.carries[h]
+            if self.pinched(h) or (carry is not None and carry.held == thing):
+                self.held_steps[h] += 1
+                if self.first_held[h] is None:
+                    self.first_held[h] = t
+                    first.append(h)
+                self.held[h] = True
+            rise = w.block_pose(thing)[2, 3] - self.start[h]
+            self.highest[h] = max(self.highest[h], rise)
+            self.lifted[h] |= bool(rise > LIFTED_M)
+        return first
+
+    def finish(self, layouts: dict[str, Layout]) -> None:
+        """Let the desk come to rest, and judge where each thing ended."""
+        w = self.world
+        w.step(0.5)
+        for h, thing in self.things.items():
+            outcome = placed(w, layouts[h])
+            # Put down is let go and at rest, not held in the air over the target.
+            carry = self.carries[h]
+            let_go = (not self.pinched(h)) if carry is None else carry.held is None
+            outcome["released"] = let_go
+            outcome["placed"] = bool(outcome["placed"] and let_go and w.speed(thing) < SETTLED_MPS)
+            self.outcomes[h] = outcome
+        for carry in self.carries.values():
+            if carry is not None:
+                # A thing still welded at the end would stay out of the claw's
+                # collisions, and the next episode's layout would be planned
+                # around a thing the jaw cannot meet.
+                carry.reset()
+
+    def report(self, hand: str) -> dict:
+        """One arm's episode."""
+        outcome = self.outcomes[hand]
+        return {"held": bool(self.held[hand]), "lifted": bool(self.lifted[hand]), "placed": bool(outcome["placed"]),
+                "held_s": self.first_held[hand], "highest_mm": round(float(self.highest[hand]) * 1000, 1),
+                "held_frames": self.held_steps[hand],
+                **{k: v for k, v in outcome.items() if k != "placed"}}
+
+
 def recorded_starts(dataset_root: Path) -> list[np.ndarray]:
     """The first tool pose of every demonstration in the dataset, in the
     robot's frame. Corrections are left out: they begin wherever a policy went
@@ -237,20 +352,33 @@ def face_taken(heading: float, block_yaw: float, nearest: int, second: int) -> t
     return face, off
 
 
+def all_of(per: dict[str, dict], working: tuple[str, ...] | list[str]) -> dict:
+    """An episode held, lifted and placed when every working arm's did."""
+    return {k: all(per[h][k] for h in working) for k in ("held", "lifted", "placed")}
+
+
 class Evaluation:
     def __init__(self, checkpoint: Path, device: str | None = None, start: str = "demo",
                  rate: float | None = None, seconds: float = 12.0, physics: bool = False,
                  scene: str = "blocks") -> None:
-        from pinkrab_policy.rollout import Driver
-        from pinkrab_policy.rollout import carry as rig_carry
-
         self.hands = hands_of(scene)
         self.checkpoint = Path(checkpoint)
         self.scene = scene
         self.world = World(arms=self.hands, hermits=(), scene=scene)
+        try:
+            self._open(device, start, rate, seconds, physics, scene)
+        except BaseException:
+            self.world.close()
+            raise
+
+    def _open(self, device: str | None, start: str, rate: float | None, seconds: float, physics: bool,
+              scene: str) -> None:
+        from pinkrab_policy.rollout import Driver
+        from pinkrab_policy.rollout import carry as rig_carry
+
         self.planners = {h: Planner(self.world, arm=h) for h in self.hands}
         self.planner = self.planners[self.hands[0]]
-        self.driver = Driver(str(checkpoint), device)
+        self.driver = Driver(str(self.checkpoint), device)
         if self.driver.hands != self.hands:
             raise EvaluateError(f"the checkpoint drives the {' and '.join(self.driver.hands)} arm(s); "
                                 f"the {scene} scene runs the {' and '.join(self.hands)}")
@@ -271,7 +399,7 @@ class Evaluation:
                 # reckons one at the chest, and start where the rig starts
                 # them; one hand's against the simulation's own desk solid.
                 carry = rig_carry if scene == "bowls" else (lambda desk: desk_pose())
-                self._demo_joints, self._demo_info = start_joints(self.dataset, self.chains, carry)
+                self._demo_joints, _ = start_joints(self.dataset, self.chains, carry)
             except DemoStartError as exc:
                 raise EvaluateError(str(exc)) from exc
         elif start == "episode":
@@ -280,12 +408,6 @@ class Evaluation:
             self._starts = recorded_starts(self.dataset)
         else:
             raise EvaluateError(f"start is demo or episode, not {start!r}")
-        m = self.world.model
-        self._claw = {h: {i for i in range(m.ngeom) if m.geom_bodyid[i] == m.body(f"{h}_gripper_link").id}
-                      for h in self.hands}
-        self._jaw = {h: {i for i in range(m.ngeom) if m.geom_bodyid[i] == m.body(f"{h}_jaw_link").id}
-                     for h in self.hands}
-        self._all = [f"{a}_{j}" for a in ("left", "right") for j in CORE.joint_names]
 
     def close(self) -> None:
         self.world.close()
@@ -301,19 +423,6 @@ class Evaluation:
             if q is not None:
                 return {self.planner.arm: q}
         raise EvaluateError("no recorded start the arm can reach")
-
-    def _held(self, hand: str, thing: str) -> bool:
-        d = self.world.data
-        mine = set(self.world.things[thing].geoms)
-        claw = jaw = False
-        for i in range(d.ncon):
-            c = d.contact[i]
-            if c.dist >= 0 or not ({c.geom1, c.geom2} & mine):
-                continue
-            other = c.geom2 if c.geom1 in mine else c.geom1
-            claw |= other in self._claw[hand]
-            jaw |= other in self._jaw[hand]
-        return claw and jaw
 
     def layout(self, rng: np.random.Generator) -> Layout:
         """A layout the takes could have been made on: one a demonstration was
@@ -344,7 +453,7 @@ class Evaluation:
         w.lay_out(layout)
         joints = self._start_joints(rng)
         opening = self.planner.open
-        pose = {n: 0.0 for n in self._all}
+        pose = {n: 0.0 for n in JOINTS}
         for h in self.hands:
             pose.update({n: math.radians(v) for n, v in zip(self.chains[h].joint_names, joints[h])})
             band = w.bands[h]
@@ -353,18 +462,13 @@ class Evaluation:
         w.step(0.3)
         self.driver.start(joints)
         target = dict(pose)
-        thing0 = {h: w.block_pose(mine[h].carried)[2, 3] for h in working}
+        judge = Judge(w, {h: mine[h].carried for h in working}, self.physics)
         rest0 = {h: w.tcp(h)[:3, 3].copy() for h in resting}
         wander = {h: 0.0 for h in resting}
         # The gate's speed under a policy.
         ceiling = math.radians(inference.policy_dps(CORE.max_joint_speed_dps)) * w.model.opt.timestep
         from pinkrab_policy.rollout import DriveStopped
 
-        held = {h: False for h in working}
-        lifted = {h: False for h in working}
-        first_held: dict[str, float | None] = {h: None for h in working}
-        highest = {h: 0.0 for h in working}
-        held_steps = {h: 0 for h in working}
         # Which face the cap is taken by, for one hand on the blocks: the
         # faces a take would have used, from where the hand comes; the heading
         # read at the grasp, or where the tool came nearest the cap when there
@@ -376,8 +480,7 @@ class Evaluation:
             faces = block_faces(cyaw, cx, cy, self.planner.origin)
         nearest_mm, approach = float("inf"), None
         stopped = None
-        writer = None
-        carries = {h: (None if self.physics else Carry(w, h)) for h in working}
+        recording = Video(video, self.rate)
         lens = SETTINGS.lens_spec
         centre = (lens.cx / lens.width, lens.cy / lens.height)
         steps = int(self.seconds * self.rate)
@@ -395,78 +498,37 @@ class Evaluation:
                     break
                 target.update(wanted)
                 ids = [w.model.actuator(n).id for n in target]
-                goal = np.array([target[n] for n in target])
-                for _ in range(physics_steps(k, self.rate, w.model.opt.timestep)):
-                    now = w.data.ctrl[ids]
-                    w.data.ctrl[ids] = now + np.clip(goal - now, -ceiling, ceiling)
-                    for carry in carries.values():
-                        if carry is not None:
-                            carry.update()
-                    mujoco.mj_step(w.model, w.data)
-                if faces is not None and first_held[arm] is None:
+                judge.advance(ids, np.array([target[n] for n in target]), ceiling,
+                              physics_steps(k, self.rate, w.model.opt.timestep))
+                if faces is not None and judge.first_held[arm] is None:
                     tcp, cap = w.site_pose(f"{arm}_tcp"), w.block_pose(layout.carried)
                     gap = float(np.linalg.norm(tcp[:3, 3] - cap[:3, 3])) * 1000
                     if gap < nearest_mm:
                         nearest_mm, approach = gap, (heading_of(tcp), math.atan2(cap[1, 0], cap[0, 0]))
                 for h in resting:
                     wander[h] = max(wander[h], float(np.linalg.norm(w.tcp(h)[:3, 3] - rest0[h])))
-                for h in working:
-                    thing = mine[h].carried
-                    carry = carries[h]
-                    if self._held(h, thing) or (carry is not None and carry.held == thing):
-                        held_steps[h] += 1
-                        if first_held[h] is None:
-                            first_held[h] = k / self.rate
-                            if faces is not None and h == arm:
-                                tcp, cap = w.site_pose(f"{arm}_tcp"), w.block_pose(thing)
-                                approach = (heading_of(tcp), math.atan2(cap[1, 0], cap[0, 0]))
-                        held[h] = True
-                    rise = w.block_pose(thing)[2, 3] - thing0[h]
-                    highest[h] = max(highest[h], rise)
-                    lifted[h] |= bool(rise > LIFTED_M)
+                if arm in judge.observe(k / self.rate) and faces is not None:
+                    tcp, cap = w.site_pose(f"{arm}_tcp"), w.block_pose(layout.carried)
+                    approach = (heading_of(tcp), math.atan2(cap[1, 0], cap[0, 0]))
                 if video is not None:
-                    frame = self._frame([pictures[image_key(h)] for h in self.hands])
-                    if writer is None:
-                        video.parent.mkdir(parents=True, exist_ok=True)
-                        writer = cv2.VideoWriter(str(video), cv2.VideoWriter_fourcc(*"mp4v"), self.rate,
-                                                 (frame.shape[1], frame.shape[0]))
-                    writer.write(frame)
+                    recording.write(self._frame([pictures[image_key(h)] for h in self.hands]))
         finally:
-            if writer is not None:
-                writer.release()
-        w.step(0.5)
-        outcomes = {h: placed(w, mine[h]) for h in working}
-        # Put down is let go and at rest, not held in the air over the target.
-        for h in working:
-            carry = carries[h]
-            let_go = (not self._held(h, mine[h].carried)) if carry is None else carry.held is None
-            outcomes[h]["released"] = let_go
-            outcomes[h]["placed"] = bool(outcomes[h]["placed"] and let_go
-                                         and w.speed(mine[h].carried) < SETTLED_MPS)
-        for carry in carries.values():
-            if carry is not None:
-                # A thing still welded at the end would stay out of the claw's
-                # collisions, and the next episode's layout would be planned
-                # around a thing the jaw cannot meet.
-                carry.reset()
-        per = {h: {"held": bool(held[h]), "lifted": bool(lifted[h]), "placed": bool(outcomes[h]["placed"]),
-                   "held_s": first_held[h], "highest_mm": round(float(highest[h]) * 1000, 1),
-                   "held_frames": held_steps[h], "held_steps_refused": self.driver.arms[h].held,
-                   **{k: v for k, v in outcomes[h].items() if k != "placed"}}
-               for h in working}
+            recording.close()
+        judge.finish(mine)
+        per = {h: {**judge.report(h), "held_steps_refused": self.driver.arms[h].held} for h in working}
         per.update({h: {"resting": True, "wander_mm": round(wander[h] * 1000, 1)} for h in resting})
-        result = {"held": all(per[h]["held"] for h in working), "lifted": all(per[h]["lifted"] for h in working),
-                  "placed": all(per[h]["placed"] for h in working), "stopped": stopped,
+        result = {**all_of(per, working), "stopped": stopped,
                   "layout": {k: [round(x, 4) for x in v] for k, v in layout.things.items()}}
         if len(self.hands) > 1:
             return {**result, "hands": per, "off_mm": max(per[h]["off_mm"] for h in working),
                     "highest_mm": min(per[h]["highest_mm"] for h in working)}
         one = per[arm]
+        carry = judge.carries[arm]
         return {**result, **{k: v for k, v in one.items() if k not in ("held", "lifted", "placed")},
-                "carried": carries[arm] is not None and carries[arm].ever,
+                "carried": carry is not None and carry.ever,
                 **({"face": face_taken(*approach, *faces)[0],
                     "face_off_deg": round(face_taken(*approach, *faces)[1], 1),
-                    "face_at": "grasp" if first_held[arm] is not None else f"nearest {nearest_mm:.0f} mm"}
+                    "face_at": "grasp" if judge.first_held[arm] is not None else f"nearest {nearest_mm:.0f} mm"}
                    if faces is not None and approach is not None else {})}
 
     def _frame(self, grippers_rgb: list[np.ndarray]) -> np.ndarray:
@@ -537,10 +599,7 @@ def oracle(episodes: int = 20, seed: int = 2000, videos: Path | None = None, say
     hands = hands_of(scene)
     world = World(arms=hands, hermits=(), scene=scene)
     planners = {h: Planner(world, arm=h) for h in hands}
-    names = [f"{a}_{j}" for a in ("left", "right") for j in CORE.joint_names]
     m = world.model
-    claw = {h: {i for i in range(m.ngeom) if m.geom_bodyid[i] == m.body(f"{h}_gripper_link").id} for h in hands}
-    jaw = {h: {i for i in range(m.ngeom) if m.geom_bodyid[i] == m.body(f"{h}_jaw_link").id} for h in hands}
     rng = np.random.default_rng(seed)
     results = []
     # The speed a policy is walked at, so this stays the ceiling of one.
@@ -564,7 +623,7 @@ def oracle(episodes: int = 20, seed: int = 2000, videos: Path | None = None, say
                 raise EvaluateError("no take to follow")
             world.data.qvel[:] = 0
             world.lay_out(plans[hands[0]].layout)
-            pose = {n: 0.0 for n in names}
+            pose = {n: 0.0 for n in JOINTS}
             q = {}
             for h in hands:
                 T0, a0 = trajectories[h].at(0.0)
@@ -575,13 +634,8 @@ def oracle(episodes: int = 20, seed: int = 2000, videos: Path | None = None, say
             world.set_joints(pose)
             world.step(0.3)
             working = [h for h in hands if not plans[h].info.get("rest")]
-            carried = {h: plans[h].layout.carried for h in working}
-            thing_geoms = {h: set(world.things[carried[h]].geoms) for h in working}
-            thing0 = {h: world.block_pose(carried[h])[2, 3] for h in working}
-            held = {h: False for h in working}
-            lifted = {h: False for h in working}
-            writer = None
-            carries = {h: (None if physics else Carry(world, h)) for h in working}
+            judge = Judge(world, {h: plans[h].layout.carried for h in working}, physics)
+            recording = Video(None if videos is None else videos / f"oracle-{i:03d}.mp4", SETTINGS.fps)
             n = int(math.floor(seconds * SETTINGS.fps)) + 1
             ids = [m.actuator(nm).id for nm in pose]
             try:
@@ -592,62 +646,26 @@ def oracle(episodes: int = 20, seed: int = 2000, videos: Path | None = None, say
                         pose.update({nm: math.radians(v) for nm, v in zip(planners[h].chain.joint_names, q[h])})
                         band = world.bands[h]
                         pose[f"{h}_gripper"] = band[0] + aperture * (band[1] - band[0])
-                    goal = np.array([pose[nm] for nm in pose])
-                    for _ in range(physics_steps(k - 1, SETTINGS.fps, m.opt.timestep)):
-                        now = world.data.ctrl[ids]
-                        world.data.ctrl[ids] = now + np.clip(goal - now, -ceiling, ceiling)
-                        for carry in carries.values():
-                            if carry is not None:
-                                carry.update()
-                        mujoco.mj_step(m, world.data)
-                    d = world.data
-                    for h in working:
-                        touching = {int(c.geom2 if c.geom1 in thing_geoms[h] else c.geom1)
-                                    for c in (d.contact[j] for j in range(d.ncon))
-                                    if c.dist < 0 and {c.geom1, c.geom2} & thing_geoms[h]}
-                        held[h] |= ((bool(touching & claw[h]) and bool(touching & jaw[h]))
-                                    or (carries[h] is not None and carries[h].held == carried[h]))
-                        lifted[h] |= bool(world.block_pose(carried[h])[2, 3] - thing0[h] > LIFTED_M)
+                    judge.advance(ids, np.array([pose[nm] for nm in pose]), ceiling,
+                                  physics_steps(k - 1, SETTINGS.fps, m.opt.timestep))
+                    judge.observe((k - 1) / SETTINGS.fps)
                     if videos is not None:
-                        frame = cv2.cvtColor(np.concatenate(
+                        recording.write(cv2.cvtColor(np.concatenate(
                             [world.view("side", (480, 360)),
                              *(cv2.resize(world.gripper_image(h), (576, 360)) for h in hands)], axis=1),
-                            cv2.COLOR_RGB2BGR)
-                        if writer is None:
-                            videos.mkdir(parents=True, exist_ok=True)
-                            writer = cv2.VideoWriter(str(videos / f"oracle-{i:03d}.mp4"),
-                                                     cv2.VideoWriter_fourcc(*"mp4v"), SETTINGS.fps,
-                                                     (frame.shape[1], frame.shape[0]))
-                        writer.write(frame)
+                            cv2.COLOR_RGB2BGR))
             finally:
-                if writer is not None:
-                    writer.release()
-            world.step(0.5)
-            outcomes = {h: placed(world, plans[h].layout) for h in working}
-            for h in working:
-                carry = carries[h]
-                touching = {int(c.geom2 if c.geom1 in thing_geoms[h] else c.geom1)
-                            for c in (world.data.contact[j] for j in range(world.data.ncon))
-                            if c.dist < 0 and {c.geom1, c.geom2} & thing_geoms[h]}
-                let_go = (not (touching & claw[h] and touching & jaw[h])) if carry is None else carry.held is None
-                outcomes[h]["released"] = let_go
-                outcomes[h]["placed"] = bool(outcomes[h]["placed"] and let_go
-                                             and world.speed(carried[h]) < SETTLED_MPS)
-            for carry in carries.values():
-                if carry is not None:
-                    carry.reset()
-            per = {h: {"held": held[h], "lifted": lifted[h], "placed": bool(outcomes[h]["placed"]),
-                       **{k: v for k, v in outcomes[h].items() if k != "placed"}, "plan": plans[h].info}
-                   for h in working}
+                recording.close()
+            judge.finish({h: plans[h].layout for h in working})
+            per = {h: {**judge.report(h), "plan": plans[h].info} for h in working}
             if len(hands) == 1:
                 result = per[hands[0]]
             else:
-                result = {k: all(r[k] for r in per.values()) for k in ("held", "lifted", "placed")}
-                result.update({"hands": per, "off_mm": max(r["off_mm"] for r in per.values())})
+                result = {**all_of(per, working), "hands": per, "off_mm": max(r["off_mm"] for r in per.values())}
             results.append(result)
             say(f"  {i:3d}: held {'yes' if result['held'] else 'no '}  lifted {'yes' if result['lifted'] else 'no '}  "
                 f"placed {'yes' if result['placed'] else 'no '}  "
-                + ", ".join(f"{carried[h]} {per[h]['off_mm']:.0f} mm off" for h in working))
+                + ", ".join(f"{judge.things[h]} {per[h]['off_mm']:.0f} mm off" for h in working))
     finally:
         world.close()
     count = max(1, len(results))

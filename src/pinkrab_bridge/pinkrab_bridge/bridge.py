@@ -164,6 +164,14 @@ WALK_BLIND_S = 1.0
 ASKED_FRESH_S = 0.3
 # A stop whose call has not been answered this long is made again.
 RESEND_S = 0.5
+# A page target the gate has passed none of for this long is not being driven
+# anywhere: the gate refuses it (contact, a band) and publishes nothing. It is
+# let go rather than republished until the refusal lifts, when the arm would
+# jump to a pose the page asked for long before.
+GOAL_REFUSED_S = 2.0
+# The studio's stream says something at least once a second; one that has said
+# nothing for this long is half open, and is read again from the start.
+STREAM_TIMEOUT_S = 5.0
 # What waits behind a stop that is not answered is not worth doing when it is
 # finally heard, as for a request the studio holds for a bridge that is down.
 BEHIND_STOP_TTL_S = 5.0
@@ -216,6 +224,8 @@ class Bridge(Node):
         self._following: bool | None = None
         self._teleop: dict | None = None
         self._torque: dict[str, bool] | None = None
+        # When each goal joint was set or the gate last passed it (monotonic).
+        self._goal_live: dict[str, float] = {}
 
         push_hz = max(1.0, float(self.get_parameter("push_hz").value))
         drive_hz = max(1.0, float(self.get_parameter("drive_hz").value))
@@ -228,8 +238,8 @@ class Bridge(Node):
         # the goal and the walk.
         self._requests: collections.deque[dict] = collections.deque()
         self._seen: dict[str, None] = {}
-        # Calls to make, in the order they were asked: a stop stays at the head
-        # until answered yes, whatever was asked after it waits.
+        # Calls to make, in the order they were asked: a stop stays until
+        # answered yes, and whatever was asked after it waits for it.
         self._outbox: collections.deque[dict] = collections.deque()
         self.create_timer(1.0 / push_hz, self._push, callback_group=MutuallyExclusiveCallbackGroup())
         self.create_timer(1.0 / drive_hz, self._drive)
@@ -292,6 +302,10 @@ class Bridge(Node):
         with self._lock:
             self._sent.update({name: float(value) for name, value in zip(message.name, message.position)
                                if math.isfinite(value)})
+            now = time.monotonic()
+            for name in message.name:
+                if name in self._goal:
+                    self._goal_live[name] = now
 
     def _on_asked(self, message: JointState) -> None:
         if not message.name or len(message.name) != len(message.position):
@@ -411,44 +425,54 @@ class Bridge(Node):
                              "future": None, "sent": -math.inf, "at": time.monotonic()})
 
     def _flush(self) -> None:
-        """Make the outbox's calls: each once, a stop again until it is answered yes."""
-        while self._outbox:
-            entry = self._outbox[0]
+        """Make the outbox's calls: each once, a stop again until it is answered yes.
+
+        Stops do not wait for one another, so a stop whose service is silent
+        does not keep another service's stop from going out. What is asked
+        after a stop that is still unanswered waits for it.
+        """
+        stopping = False
+        for entry in list(self._outbox):
             now = time.monotonic()
-            if not entry["stop"] and now - entry["at"] > BEHIND_STOP_TTL_S:
-                self.get_logger().warn(f"{entry['kind']}: not heard in time - dropped")
-                self._outbox.popleft()
-                continue
-            pending = entry["future"]
-            if pending is not None:
-                if pending.done():
-                    answer = None if pending.exception() is not None else pending.result()
-                    if answer is not None and answer.success:
-                        self._outbox.popleft()
-                        continue
-                    entry["future"] = None
-                elif now - entry["sent"] >= RESEND_S:
-                    entry["client"].remove_pending_request(pending)
-                    entry["future"] = None
-                else:
-                    return
-            if now - entry["sent"] < RESEND_S:
-                return
-            if not entry["client"].service_is_ready():
-                if entry["stop"]:
-                    self.get_logger().warn(f"{entry['kind']}: nothing is offering that service yet - asked again",
-                                           throttle_duration_sec=2.0)
-                    return
-                self.get_logger().warn(f"{entry['kind']}: nothing is offering that service")
-                self._outbox.popleft()
-                continue
-            entry["future"] = entry["client"].call_async(entry["call"])
-            entry["sent"] = now
-            self.get_logger().info(f"asked for {entry['kind']}")
             if not entry["stop"]:
-                self._outbox.popleft()
-                continue
-            return
+                if now - entry["at"] > BEHIND_STOP_TTL_S:
+                    self.get_logger().warn(f"{entry['kind']}: not heard in time - dropped")
+                    self._outbox.remove(entry)
+                    continue
+                if stopping:
+                    continue
+            if self._make(entry, now):
+                self._outbox.remove(entry)
+            elif entry["stop"]:
+                stopping = True
+
+    def _make(self, entry: dict, now: float) -> bool:
+        """Advance one call; True once it needs no more attention."""
+        pending = entry["future"]
+        if pending is not None:
+            if pending.done():
+                answer = None if pending.exception() is not None else pending.result()
+                if answer is not None and answer.success:
+                    return True
+                entry["future"] = None
+            elif now - entry["sent"] >= RESEND_S:
+                entry["client"].remove_pending_request(pending)
+                entry["future"] = None
+            else:
+                return False
+        if now - entry["sent"] < RESEND_S:
+            return False
+        if not entry["client"].service_is_ready():
+            if entry["stop"]:
+                self.get_logger().warn(f"{entry['kind']}: nothing is offering that service yet - asked again",
+                                       throttle_duration_sec=2.0)
+                return False
+            self.get_logger().warn(f"{entry['kind']}: nothing is offering that service")
+            return True
+        entry["future"] = entry["client"].call_async(entry["call"])
+        entry["sent"] = now
+        self.get_logger().info(f"asked for {entry['kind']}")
+        return not entry["stop"]
 
     def _start_walk(self, request: dict) -> None:
         # A walk is a list of poses, the last of them where the arms end up and
@@ -495,14 +519,15 @@ class Bridge(Node):
                     f"studio at {self.studio} unreachable ({type(exc).__name__}); "
                     f"retrying in {RETRY_S:.0f}s"
                 )
-                self._wanted = {}
+                with self._lock:
+                    self._wanted = {}
                 self._stop.wait(RETRY_S)
 
     def _read_stream(self) -> None:
         request = urllib.request.Request(
             f"{self.studio}/physics/stream", headers={"Accept": "text/event-stream"}
         )
-        with urllib.request.urlopen(request) as response:
+        with urllib.request.urlopen(request, timeout=STREAM_TIMEOUT_S) as response:
             for line in response:
                 if self._stop.is_set():
                     return
@@ -520,17 +545,17 @@ class Bridge(Node):
         wanted = frame.get("ctrl") or {}
         if not wanted:
             return
-        if not self._wanted:
-            self._wanted = {k: float(v) for k, v in wanted.items()}
-            return
-        moved = {
-            name: float(value) for name, value in wanted.items()
-            if abs(float(value) - self._wanted.get(name, float(value))) > COMMAND_EPS
-        }
-        self._wanted.update({k: float(v) for k, v in wanted.items()})
-        if not moved:
-            return
         with self._lock:
+            if not self._wanted:
+                self._wanted = {k: float(v) for k, v in wanted.items()}
+                return
+            moved = {
+                name: float(value) for name, value in wanted.items()
+                if abs(float(value) - self._wanted.get(name, float(value))) > COMMAND_EPS
+            }
+            self._wanted.update({k: float(v) for k, v in wanted.items()})
+            if not moved:
+                return
             if self._walk is not None:
                 # A walk is not taken over by the page's target. Changed while
                 # a walk runs, the target would be driven straight there at the
@@ -543,6 +568,8 @@ class Bridge(Node):
                     throttle_duration_sec=2.0)
                 return
             self._goal.update(moved)
+            now = time.monotonic()
+            self._goal_live.update(dict.fromkeys(moved, now))
 
     def _drive(self) -> None:
         """Keep asking for the pose the page wants, until the arms are in it.
@@ -550,7 +577,7 @@ class Bridge(Node):
         The gate lets a command through as a step toward it rather than as the
         whole distance, so this repeats. A joint drops out of the goal when the
         reading says it has arrived, or when its arm holds no torque and could
-        not go there.
+        not go there, or when the gate has passed none of it for GOAL_REFUSED_S.
 
         During a walk the command published is not the goal but a step toward
         it, at the walk's speed, from where the arm was last read - and
@@ -573,6 +600,14 @@ class Bridge(Node):
             if limp and self._walk is None:
                 for name in [k for k in self._goal if k.split("_", 1)[0] in limp]:
                     del self._goal[name]
+            if self._walk is None:
+                refused = [k for k in self._goal if now - self._goal_live.get(k, now) > GOAL_REFUSED_S]
+                if refused:
+                    self.get_logger().warn(
+                        f"the gate has passed nothing of {', '.join(sorted(refused))} for "
+                        f"{GOAL_REFUSED_S:g} s - the page's target for them is let go")
+                    for name in refused:
+                        del self._goal[name]
             goal, angles = dict(self._goal), dict(self._angles)
             walking = self._walk is not None
             on_the_way = walking and bool(self._legs)

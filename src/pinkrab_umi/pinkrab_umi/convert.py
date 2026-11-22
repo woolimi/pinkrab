@@ -35,7 +35,12 @@ the rig; every frame has them all. So each episode goes through these steps:
      then smoothed without lag - Savitzky-Golay over `SMOOTH_S`, on the
      position and on the unit quaternion - because the tracker's noise from
      one frame to the next is about half of a step's motion;
-  4c. the dataset's clock: a frame every 1/fps s from the segment's first
+  4a. the still ends: frames before any hand first moves - `STILL_MM` from
+     where it began, or its jaw by `STILL_APERTURE` - and after the last one
+     last moves are left out. A take begins with the hands at rest while the
+     pedal goes down; a policy shown that rest at the start learns to rest
+     at the start, and at rollout never leaves it;
+  4b. the dataset's clock: a frame every 1/fps s from the segment's first
      exposure, whatever the cameras' own rates (`fps`, up to the gate's
      policy_shaping_hz). Each tool's place is read off a cubic spline through
      its smoothed poses and its turn off a rotation spline, each jaw is
@@ -43,11 +48,6 @@ the rig; every frame has them all. So each episode goes through these steps:
      as a policy at rollout sees the last picture there is. Faster than the
      cameras, a picture stands for more than one frame; the poses never do,
      so no step is a still one;
-  4b. the still ends: frames before any hand first moves - `STILL_MM` from
-     where it began, or its jaw by `STILL_APERTURE` - and after the last one
-     last moves are left out. A take begins with the hands at rest while the
-     pedal goes down; a policy shown that rest at the start learns to rest
-     at the start, and at rollout never leaves it;
   5. camera-local deltas, per hand: R_t^T (p_{t+1} - p_t) and R_t^T R_{t+1},
      the latter as the first two columns of the matrix (6D, continuous);
   6. glitches: a step faster than `GLITCH_MM_S` or `filter_max_rot_speed_dps`
@@ -315,6 +315,18 @@ def segments(usable: np.ndarray, times: np.ndarray, min_s: float) -> list[tuple[
             start = None
         if ok and start is None:
             start = i
+    return out
+
+
+def smoothed(tools: list[np.ndarray | None], times: np.ndarray) -> list[np.ndarray | None]:
+    """A hand's tool poses at the head frames' `times`, each run of frames it
+    was placed in smoothed (smooth) as a segment of a take is, None where it
+    was not."""
+    out: list[np.ndarray | None] = [None] * len(tools)
+    rate = rate_of(times)
+    for start, end in segments(np.array([T is not None for T in tools]), times, 0.0):
+        run = np.array(tools[start:end])
+        out[start:end] = list(smooth(run, rate) if end - start > 1 else run)
     return out
 
 

@@ -11,7 +11,7 @@ import shutil
 import sys
 from pathlib import Path
 
-from pinkrab_core import assign, bus, ports
+from pinkrab_core import angles, assign, bus, ports
 from pinkrab_core import mount as mount_cfg
 from pinkrab_core.config import ARMS, HANDHELDS, SETTINGS
 
@@ -222,20 +222,6 @@ def ports_swap() -> int:
     return 0
 
 
-def ports_env() -> int:
-    """Shell exports, for calling lerobot-* directly without retyping the ports."""
-    try:
-        assigned = ports.load()
-    except ports.PortError as exc:
-        print(f"{BAD} {exc}", file=sys.stderr)
-        return 1
-
-    print(f"export HF_LEROBOT_HOME={SETTINGS.workspace}")
-    for arm, device in assigned.items():
-        print(f"export PINKRAB_{arm.upper()}={device}")
-    return 0
-
-
 def ports_clear() -> int:
     removed = ports.clear()
     print(
@@ -349,7 +335,7 @@ def calibrate(arm: str) -> int:
     print(f"  Every joint is swept, {SETTINGS.joint_names[-2]} included: it has a printed")
     print("  hard stop rather than a free turn, and the servo's own limit is the only")
     print("  thing between a command and the wall.")
-    if path.is_file():
+    if path.is_file() and angles.offsets_problem(arm) is None:
         print(f"  {WARN} A calibration already exists. Press 'c' + ENTER to redo it;")
         print("      a bare ENTER reuses the existing file.")
 

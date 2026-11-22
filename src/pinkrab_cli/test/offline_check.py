@@ -164,6 +164,65 @@ def main() -> int:
         except ImportError as exc:
             print(f"  skip  LeRobot not importable ({exc})")
 
+        print("\nservo registers")
+        from types import SimpleNamespace
+
+        from pinkrab_core import servos
+
+        class FakeBus:
+            """A two-servo bus whose registers are a dict; one can fail a write."""
+
+            def __init__(self, fail=False, tuned=False):
+                self.motors = {m: SimpleNamespace(model="sts3215") for m in ("shoulder_pan", "gripper")}
+                self.fail, self.writes = fail, 0
+                self.reg = {m: {"Torque_Enable": int(m == "shoulder_pan"), "Phase": 0}
+                            for m in self.motors}
+                if tuned:
+                    for m in self.motors:
+                        self.reg[m] |= servos._wanted(m, SETTINGS.servo_p_coefficient, None,
+                                                      SETTINGS.servo_d_coefficient, SETTINGS)
+                        self.reg[m] |= {"Return_Delay_Time": 0, "Maximum_Acceleration": 254, "Acceleration": 254}
+
+            def read(self, name, motor, normalize=False, num_retry=0):
+                return self.reg[motor].get(name, 0)
+
+            def write(self, name, motor, value, num_retry=0):
+                if self.fail and name == "P_Coefficient":
+                    raise OSError("bus error")
+                self.reg[motor][name] = value
+                self.writes += 1
+
+            def disable_torque(self, motors=None, num_retry=0):
+                for m in motors or self.motors:
+                    self.reg[m]["Torque_Enable"] = 0
+
+            def enable_torque(self, motors):
+                for m in motors:
+                    self.reg[m]["Torque_Enable"] = 1
+
+            def configure_motors(self):
+                pass
+
+            def sync_read(self, name, motors, **kw):
+                return {m: 10 for m in motors}
+
+            def sync_write(self, name, values, **kw):
+                pass
+
+        bus = FakeBus(fail=True)
+        try:
+            servos.configure(bus)
+        except OSError:
+            pass
+        check("a write that fails leaves the motor that held torque holding",
+              bus.reg["shoulder_pan"]["Torque_Enable"] == 1 and bus.reg["gripper"]["Torque_Enable"] == 0)
+        bus = FakeBus(tuned=True)
+        servos.configure(bus)
+        check("registers already right are not written, nor torque touched",
+              bus.writes == 0 and bus.reg["shoulder_pan"]["Torque_Enable"] == 1)
+        servos.configure(bus, torque_after=False)
+        check("torque_after False still leaves them all off", bus.reg["shoulder_pan"]["Torque_Enable"] == 0)
+
         print("\nenvironment handed to lerobot")
         env = SETTINGS.subprocess_env()
         check(

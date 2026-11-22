@@ -6,8 +6,10 @@ back to the take-over pose in the studio mode and taken over again, held, as
 the next correction (no walk for arms already there). Pedal 3 with no
 correction, one thrown away, or during a redo is the stop. A stop during
 the walk back leaves the arms where they are, and a walk back that fails
-ends the correction. No robot, no live view: the gate, the bridge and the recording
-are stand-ins.
+ends the correction. The studio stops a run whose policy page has been gone
+for longer than the configured time, or whose rollout node has exited, by the
+same halt as the page's Stop, and tells the page why. No robot, no live view:
+the gate, the bridge and the recording are stand-ins.
 
     python src/pinkrab_studio/test/dagger_check.py
 """
@@ -16,10 +18,16 @@ from __future__ import annotations
 import sys
 import threading
 import time
+from types import SimpleNamespace
+from unittest.mock import MagicMock
 
+from pinkrab_core.config import SETTINGS
 from pinkrab_studio import dagger as dagger_module
 from pinkrab_studio.dagger import Dagger
+from pinkrab_studio.feeds import Feeds
+from pinkrab_studio.policy import PolicyRun
 from pinkrab_studio.real import MODE_CORRECT, MODE_IDLE, MODE_POLICY, MODE_STUDIO
+from pinkrab_studio.server import StudioState
 
 FAILURES: list[str] = []
 TAKEN = {"left_shoulder_pan": 0.10, "left_gripper": 0.30, "right_shoulder_pan": -0.10, "right_gripper": -0.30}
@@ -85,6 +93,88 @@ class Run:
 
     def state(self) -> dict:
         return {"driving": self.driving, "hands": ["left", "right"], "running": self.driving}
+
+
+def studio_over(run: PolicyRun, dagger, node_exit, page_gone):
+    """The parts of the studio the watch over a run reads, around the real
+    policy run: the rollout node's exit and how long no policy page has had a
+    socket open are set by the caller."""
+    halts: list[str] = []
+    studio = SimpleNamespace(
+        policy=run, dagger=dagger, feeds=SimpleNamespace(policy_page_gone_s=lambda: page_gone[0]),
+        rig=SimpleNamespace(state=lambda: {"policy": {"exit": node_exit[0]}}, stop_policy=lambda: {}),
+        real=SimpleNamespace(request=lambda kind, **fields: halts.append(f"{kind} {fields}") or 1),
+        _walk_lock=threading.Lock(), _walk_target=(7, {"left_shoulder_pan": 0.0}),
+        _after_halt=lambda halt: None)
+    studio.halted = halts
+    return studio
+
+
+def watch_over_a_policy_run() -> None:
+    print("\nthe page or the node of a driving policy gone")
+    lost = SETTINGS.policy_page_lost_s
+    run = PolicyRun()
+    dagger = SimpleNamespace(correcting=False, halt_begun=lambda: (1, None))
+    node_exit, page_gone = [None], [0.0]
+    studio = studio_over(run, dagger, node_exit, page_gone)
+
+    def reason() -> str | None:
+        return StudioState.policy_halt_reason(studio)
+
+    check("nothing is watched while no policy drives", reason() is None)
+    page_gone[0] = lost + 5
+    check("not even a page that is long gone", reason() is None)
+    run._driving = True
+    page_gone[0] = 0.0
+    check("a page that has its socket open keeps it driving, in front or not", reason() is None)
+    page_gone[0] = lost - 0.5
+    check("a page back within the time keeps it driving", reason() is None)
+    page_gone[0] = lost + 0.5
+    check("no page for longer than the time stops it", reason() is not None, str(reason()))
+    page_gone[0] = 0.0
+    node_exit[0] = 1
+    check("a rollout node that exited stops it", "exited" in (reason() or ""), str(reason()))
+    node_exit[0] = None
+    dagger.correcting, run._driving = True, False
+    page_gone[0] = lost + 0.5
+    check("and the page gone during a correction", reason() is not None, str(reason()))
+    node_exit[0] = 1
+    page_gone[0] = 0.0
+    check("while a node that exited is no news once the run is over", reason() is None, str(reason()))
+    dagger.correcting = False
+
+    print("\nthe stop the watch makes")
+    run._driving = True
+    why = "no policy page has been connected"
+    StudioState.halt_policy(studio, why)
+    check("idles the gate", studio.halted and studio.halted[0].startswith("mode") and "0" in studio.halted[0],
+          str(studio.halted))
+    check("ends the run", not run.state()["driving"])
+    check("tells the page why", run.state()["stopped"] == why, run.state()["stopped"])
+    check("and a walk waited for is let go", studio._walk_target is None)
+    StudioState.halt_policy(studio)
+    check("the page's own stop says no reason", run.state()["stopped"] == "")
+
+    print("\nthe policy pages' sockets")
+    feeds = Feeds(MagicMock())
+    now = time.monotonic()
+    feeds.policy_heard(now - 5.0)
+    check("counted from when the studio started, not moved back by an older answer", feeds.policy_page_gone_s() < 1.0)
+    feeds._policy_heard = now - 20.0     # a studio up for a while
+    feeds.policy_heard(now - 3.0)
+    feeds.policy_heard(now - 9.0)
+    gone = feeds.policy_page_gone_s()
+    check("gone is counted from the freshest answer", 2.9 < gone < 4.0, str(gone))
+    feeds.policy_heard(time.monotonic())
+    check("an answer brings it back", feeds.policy_page_gone_s() < 0.5)
+
+    print("\nwhat the clutch believes is recording")
+    from pinkrab_studio.clutch import Clutch
+    clutch = Clutch(threading.Lock())
+    clutch.sync("take-3")
+    check("is what the live view says", clutch.state()["recording"] == "take-3")
+    clutch.sync(None)
+    check("and nothing once it ended", clutch.state()["recording"] is None)
 
 
 def main() -> int:
@@ -229,6 +319,19 @@ def main() -> int:
     answer = d4.throw_away()
     check("says so", "error" in answer and "stays in the recording" in answer["error"], str(answer))
     check("and the arms hold all the same", gate4.mode == MODE_IDLE and d4._taken["thrown"], f"{gate4.mode} {d4._taken}")
+
+    print("\nthe hands have the arms")
+    gate5 = Gate()
+    d5 = Dagger(gate5, Run(), teleop_up=lambda: True, halt=lambda: None, walk=gate5.walk)
+    check("not before a take-over", not d5.hand_has())
+    d5._policy.driving = True
+    d5.take_over()
+    check("from the take-over", d5.hand_has())
+    d5._taken = None
+    gate5.mode = MODE_CORRECT
+    check("and for a studio started again mid-correction", d5.hand_has())
+
+    watch_over_a_policy_run()
 
     print()
     if FAILURES:

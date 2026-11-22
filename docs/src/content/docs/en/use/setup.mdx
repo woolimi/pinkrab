@@ -121,6 +121,8 @@ The home pose is as follows.
 
 You must move **every joint all the way**, including wrist roll. The wrist roll stops at ±175°, where the stops printed on the claw and the wrist meet, and the ends found in calibration become the servo's limit values as they are. The results are saved per arm in `~/pinkrab/calibration/robots/pinkrab_follower/`.
 
+If a calibration file already exists and `joint_offsets.yaml` still matches that arm's home pose, at the start you can press ENTER to write the existing calibration back to the servos, or type `c` and ENTER to measure it again. If `joint_offsets.yaml` is missing or was measured at another home pose, reuse is not offered and the measurement starts right away.
+
 ## Wrist cameras
 
 The wrist cameras of the two arms are also the same model, so plug them in one at a time following the prompts to assign which camera is which arm.

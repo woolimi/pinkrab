@@ -773,6 +773,14 @@ def node_main() -> None:
                 self.get_logger().info("not driving - the arms hold where they are")
 
         def _tick(self) -> None:
+            # Whatever a step raises ends the run the way a stop does: an exception
+            # out of a timer callback would end the node without saying so.
+            try:
+                self._drive()
+            except Exception as exc:  # noqa: BLE001 - reported to the studio, not swallowed
+                self._halt(exc)
+
+        def _drive(self) -> None:
             if not self.driving:
                 return
             if self.refused or self.halted:
@@ -798,11 +806,7 @@ def node_main() -> None:
                 self.tracking.start()
                 self.started = True
                 self._pace = (now, self.driver.steps)
-            try:
-                why = self.tracking.wait(self.at, now)
-            except DriveStopped as exc:
-                self._halt(exc)
-                return
+            why = self.tracking.wait(self.at, now)
             if why is not None:
                 # Nothing is published and no step is taken: the gate brakes the
                 # arm, and the next step is composed onto the pose last put.
@@ -815,11 +819,7 @@ def node_main() -> None:
                 self.get_logger().info(f"{exc} - holding", throttle_duration_sec=1.0)
                 return
             grippers = {hand: self.at.get(f"{hand}_gripper", arm.band[0]) for hand, arm in self.driver.arms.items()}
-            try:
-                wanted, info = self.driver.step(images, grippers, self.observer.exposed)
-            except DriveStopped as exc:
-                self._halt(exc)
-                return
+            wanted, info = self.driver.step(images, grippers, self.observer.exposed)
             self.tracking.put(wanted)
             self._publish(wanted)
             # Each tick applies one of the dataset's frame steps, so steps
@@ -845,13 +845,13 @@ def node_main() -> None:
                         f"{hand} dp {said['dp_mm']:.1f} mm opening {said['opening']:.2f}"
                         + (f" - {said['held']}" if "held" in said else "") for hand, said in info["arms"].items()))
 
-        def _halt(self, exc: DriveStopped) -> None:
+        def _halt(self, exc: Exception) -> None:
             # Nothing more is published: the gate holds the last pose it
             # passed - shaped, it starts braking once the commands have
             # stopped for a tenth of a second, and the arm stands short of
             # the last one passed. Said again every two seconds by the
             # branch above, until a correction hands the arm back.
-            self.halted = f"stopped - {exc}"
+            self.halted = f"stopped - {exc}" if isinstance(exc, DriveStopped) else f"{type(exc).__name__}: {exc}"
             self.get_logger().error(f"not driving: {self.halted}")
             self._report({"phase": "refused", "reason": self.halted})
 

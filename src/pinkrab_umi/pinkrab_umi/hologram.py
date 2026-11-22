@@ -11,8 +11,9 @@ Each arm is drawn as its silhouette - every link but the gripper's, the real
 Hermit being the gripper - outlined and faintly filled, so the picture stays
 readable through it. An arm is grey while it follows, the guide's green while
 its hand is at the ready pose, and red while it falls short of the hand
-(SHORT_MM, SHORT_DEG): a stretch the replay will flag and convert cut, seen
-while it is being recorded.
+(SHORT_MM, SHORT_DEG) in view: a stretch the replay will flag and convert cut,
+seen while it is being recorded. A recording or a lost desk solid starts the
+arms again from the ready pose (`reset`).
 """
 from __future__ import annotations
 
@@ -74,6 +75,15 @@ class Hologram:
                                 faces.reshape(-1, 3))
         self.seen_at: dict[str, float] = {}
 
+    def reset(self) -> None:
+        """Both arms back at the ready pose, to be solved from it again at the
+        next hand seen: what the last recording left them following is not
+        where the next one starts."""
+        if not self.seen_at and not any(f.started for f in self.follow.values()):
+            return
+        self.follow = {arm: Following(f.chain, f.ready) for arm, f in self.follow.items()}
+        self.seen_at = {}
+
     def follow_hands(self, cam_T_desk: np.ndarray, hands: dict[str, np.ndarray | None], now: float) -> None:
         """Step each arm after its hand: `hands` is each hand's solid as solved
         at `now` (cam_T_solid, seconds on any one clock), or None where it was
@@ -94,8 +104,9 @@ class Hologram:
     def draw(self, canvas: np.ndarray, intrinsics: Intrinsics, cam_T_desk: np.ndarray,
              ready: dict[str, bool]) -> None:
         """Both arms where they follow, drawn on `canvas`, the desk solid at
-        `cam_T_desk` in the picture; `ready` says which hands are at the
-        ready pose."""
+        `cam_T_desk` in the picture; `ready` holds each hand in view and says
+        whether it is at the ready pose. An arm whose hand is not in view is
+        drawn where it was held, never as short."""
         for arm, follow in self.follow.items():
             for name, value in zip(self.names[arm], follow.joints):
                 self.robot.set_joint(name, float(np.radians(value)))
@@ -118,12 +129,12 @@ class Hologram:
                 for triangle in px[shown]:
                     cv2.fillConvexPoly(masks[arm], triangle, 255)
         for arm, follow in self.follow.items():
-            colour = (SHORT_COLOUR if follow.started and follow.short
-                      else MATCHED_COLOUR if ready.get(arm) else ARM_COLOUR)
+            short = arm in ready and follow.started and follow.short
+            colour = SHORT_COLOUR if short else MATCHED_COLOUR if ready.get(arm) else ARM_COLOUR
             _silhouette(canvas, masks[arm], colour)
             # How far an arm falls short, beside its wrist.
             wrist = cam_T_world @ np.asarray(self.robot.get_T_world_frame(f"{arm}_wrist_link"))
-            if follow.started and follow.short and wrist[2, 3] > NEAREST_M:
+            if short and wrist[2, 3] > NEAREST_M:
                 mm, deg = follow.reach
                 at = _project(wrist, np.zeros((1, 3)), intrinsics)[0]
                 _label(canvas, f"{arm} arm short  {mm:.0f} mm  {deg:.0f} deg", at, SHORT_COLOUR)

@@ -1,11 +1,12 @@
-"""The operator's side: the robot in RViz, relayed from the studio.
+"""The operator's side: the robot in RViz, and the bridge and handheld loop on the desk.
 
 This is the half that runs where a person is sitting. Nothing here opens the
 servo bus - the bridge wants a network route to the studio, RViz wants a screen,
 and the handheld loop wants the top camera. `robot.launch.py` is the other
-half, on the machine the arms are bolted to.
+half, on the machine the arms are bolted to, and its driver is what publishes
+`/joint_states` for RViz.
 
-The handheld loop comes up with it and stays up. Which arm it drives is decided
+The handheld loop, once up (teleop:=true), stays up. Which arm it drives is decided
 by the solid in frame, and whether it drives at all is the teleop mode - so
 starting and stopping a session is a service call rather than a process being
 launched and killed. The top camera is still started from the studio's page:
@@ -13,26 +14,22 @@ on macOS it needs root, and launch cannot type a password.
 
 `display.launch.py` shows the description with a slider window - it poses a picture
 and nothing else knows about it. This one shows the robot the studio is actually
-running: the bridge republishes the simulation's joint positions, so RViz, rosbag
-and anything else on the graph see the same arms the page does.
-
-The studio is not started here. It owns the simulation and outlives any one ROS
-session:
-
-    pinkrab-studio                                     # in its own terminal
-    ros2 launch pinkrab_bringup desktop.launch.py
-
-    ros2 launch pinkrab_bringup desktop.launch.py studio:=http://192.168.1.20:8730
-    ros2 launch pinkrab_bringup desktop.launch.py rviz:=false
-    ros2 launch pinkrab_bringup desktop.launch.py bridge:=false   # the studio's own is up
+running, through the same `/joint_states` the driver publishes.
 
 The studio is not started here. It is a console script with no rclpy in it, it
-outlives any one ROS session, and it brings up its own bridge and handheld
-loop - so it is run from its own terminal, and this launch is then only wanted
-for RViz:
+owns the simulation, and it outlives any one ROS session, so it is run from its
+own terminal. Switched to the real rig it brings up its own bridge and handheld
+loop; this launch then is wanted only for RViz, with those two turned off, since
+a second copy of either is a second copy of every command. The bridge and the
+handheld loop are off by default for that reason, and each is turned on when
+the studio is not bringing its own:
 
     pinkrab-studio            # then switch the page to real
-    ros2 launch pinkrab_bringup desktop.launch.py bridge:=false teleop:=false
+    ros2 launch pinkrab_bringup desktop.launch.py
+
+    ros2 launch pinkrab_bringup desktop.launch.py bridge:=true teleop:=true
+    ros2 launch pinkrab_bringup desktop.launch.py studio:=http://192.168.1.20:8730 bridge:=true
+    ros2 launch pinkrab_bringup desktop.launch.py rviz:=false bridge:=true teleop:=true
 """
 
 from launch import LaunchDescription
@@ -75,19 +72,15 @@ def generate_launch_description() -> LaunchDescription:
             "rviz", default_value="true", description="Open RViz as well.",
         ),
         DeclareLaunchArgument(
-            "bridge", default_value="true",
-            description="Run the bridge. false when `pinkrab-studio --real` has "
-                        "already brought up its own - two bridges are two copies "
-                        "of every command. The studio also brings up the handheld "
-                        "loop; pass teleop:=false with this.",
+            "bridge", default_value="false",
+            description="Run the bridge. Off by default: `pinkrab-studio --real` "
+                        "brings up its own, and two bridges are two copies of "
+                        "every command.",
         ),
         DeclareLaunchArgument(
-            "teleop", default_value="true",
-            description="Run the handheld loop. It drives only in the handheld mode.",
-        ),
-        DeclareLaunchArgument(
-            "live", default_value="http://127.0.0.1:8802",
-            description="The pinkrab-umi live server the solid is solved on.",
+            "teleop", default_value="false",
+            description="Run the handheld loop. Off by default for the same reason "
+                        "as the bridge. It drives only in the handheld mode.",
         ),
         DeclareLaunchArgument(
             "rviz_config",
@@ -122,7 +115,6 @@ def generate_launch_description() -> LaunchDescription:
             executable="teleop",
             output="screen",
             condition=IfCondition(LaunchConfiguration("teleop")),
-            parameters=[{"live": LaunchConfiguration("live")}],
         ),
         Node(
             package="rviz2",

@@ -94,6 +94,15 @@ class Frame:
 
 FrameSource = Callable[[], "Frame | None"]
 
+
+def _arrival(frame: Frame) -> float:
+    """When the frame reached this host, on its clock: the exposure it is
+    stamped with and the camera's latency back again - the frame's own clock
+    when it carries no stamp."""
+    if frame.sensor_ts is None:
+        return time.time()
+    return frame.sensor_ts + SETTINGS.top_camera_latency_s
+
 # A session directory is named by this, straight off the network. Anything
 # outside it - a slash above all - would name a directory somewhere else.
 SESSION_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")
@@ -137,10 +146,13 @@ class _Take:
     The results list is what bench would recompute from the PNGs - the arrays go
     to disk lossless and the solver is the same one, so keeping the answers as
     they happen buys the verdict at the moment the take ends instead of a minute
-    of re-solving, and buys it identical.
+    of re-solving, and buys it identical. They are of one solid, `solid`, the hand
+    in view when the take began and the same for the whole take: a take that
+    changes hands has no closure to judge, and bench solves that same solid.
     """
 
     name: str
+    solid: str
     writer: record.SessionWriter
     started: float                                     # monotonic
     stamps: list[float] = field(default_factory=list)
@@ -258,6 +270,9 @@ class Live:
         # The arms, following the hands in the picture (hologram); None until
         # built, after the guide.
         self._hologram: hologram.Hologram | None = None
+        # Set when a recording begins: the next frame drawn starts the arms
+        # again from the ready pose, on the thread that draws them.
+        self._arms_fresh = threading.Event()
 
     # --- the capture side -------------------------------------------------
 
@@ -309,7 +324,10 @@ class Live:
         # frames.jsonl it is a directory of orphan PNGs nothing can read.
         with self._io:
             if self._take is not None:
-                self._take.writer.close()
+                try:
+                    self._take.writer.close()
+                except record.RecorderError as exc:
+                    print(f"  take {self._take.name} not closed: {exc}", file=sys.stderr, flush=True)
                 self._take = None
 
     def _run(self) -> None:
@@ -502,7 +520,7 @@ class Live:
         # verdict refilters from the first frame so it matches what bench
         # recomputes from the disk.
         if picture is not None:
-            self._feed_take(frame, raws[primary], stamp, raws[self.desk])
+            self._feed_take(frame, raws, stamp)
             self._feed_episode_head(frame, raws)
 
     # --- the episode ------------------------------------------------------------
@@ -515,7 +533,7 @@ class Live:
             episode = self._episode
         if episode is None:
             return
-        host_ts = time.time()
+        host_ts = _arrival(frame)
         line = {"host_ts": host_ts, **self.pose_line()}
         readings = self.jaws.readings() if self.jaws is not None else {}
         # Each jaw's opening with the host time it was read, which is not this
@@ -525,8 +543,7 @@ class Live:
         line["markers"] = {str(marker_id): [round(float(v), 2) for v in np.asarray(quad).reshape(-1)]
                            for answer in raws.values()
                            for marker_id, quad in zip(answer.detected, answer.corners)}
-        episode.add_poses(line)
-        episode.add_frame("head", frame.picture, host_ts, frame.sensor_ts, frame.frame_number)
+        episode.add_head(line, frame.picture, host_ts, frame.sensor_ts, frame.frame_number)
 
     def sizes(self) -> dict[str, float]:
         """Every solid this view looks for - the hand solids and the desk solid
@@ -571,6 +588,9 @@ class Live:
         if kind == "rollout" and not (isinstance(arms, list) and arms and set(arms) <= {"left", "right"}
                                       and isinstance(description, dict) and set(description) == set(arms)):
             raise LiveError(f"a rollout names the arms the policy drives and each one's build, not {arms!r}")
+        if kind == "demo" and not self.head:
+            raise LiveError(f"a demonstration is recorded with the top camera, and there is none: "
+                            f"{self.head_reason or 'not connected'}")
         name = name or default_name()
         if not EPISODE_NAME.match(name):
             raise LiveError(f"{name!r} is not an episode name (letters, digits, _.-)")
@@ -586,6 +606,7 @@ class Live:
         with self._io:
             if self._episode is not None:
                 raise LiveError(f"already recording {self._episode.name!r}")
+            self._arms_fresh.set()
             self._episode = EpisodeWriter(name, root, calibration, head_fps,
                                           SETTINGS.gripper_camera_fps,
                                           hands={name: mm for name, mm in self.sizes().items() if name != self.desk},
@@ -618,14 +639,22 @@ class Live:
                 self._closing = {"name": episode.name, "cancelled": cancel}
         if episode is None:
             raise LiveError("no episode is recording")
+        failure = None
         try:
             status = episode.close()
+            failure = status.get("failure")
             if cancel:
-                delete_episode(episode.name)
+                # Deleted whatever the closing said: a cancelled episode is
+                # not kept, whole or not.
+                try:
+                    delete_episode(episode.name)
+                except (EpisodeError, OSError) as exc:
+                    failure = f"the cancelled episode could not be deleted: {exc}"
+                    status = {**status, "failed": True, "failure": failure}
         finally:
             with self._io:
                 self._closing = None
-                self._closed = {"name": episode.name, "cancelled": cancel}
+                self._closed = {"name": episode.name, "cancelled": cancel, "failure": failure}
         return status
 
     def episode_status(self) -> dict:
@@ -636,24 +665,38 @@ class Live:
                 "closing": closing, "closed": closed,
                 **(episode.status() if episode is not None else {"name": None, "seconds": None, "frames": None})}
 
-    def _feed_take(self, frame: Frame, result: SolidPose, stamp: float,
-                   desk: SolidPose) -> None:
-        """The recording side of one frame, if a take is on.
+    def _feed_take(self, frame: Frame, raws: dict, stamp: float) -> None:
+        """The recording side of one frame, if a take is on: the answers of the
+        take's solid and of the desk solid.
 
         Outside the state lock: two PNG writes take milliseconds, and the page
         polling /stats should not wait on the disk. The io lock is enough - only
         this thread feeds the writer, and a stop taking the lock first simply
-        wins, with add() refusing the frame that was in flight.
+        wins, with add() refusing the frame that was in flight. A picture the
+        disk will not take ends the take, with the reason where the verdict
+        goes.
         """
+        failed = None
         with self._io:
             take = self._take
             if take is None:
                 return
-            take.results.append(result)
+            take.results.append(raws[take.solid])
             take.stamps.append(stamp)
-            take.desks.append(desk)
+            take.desks.append(raws[self.desk])
             if frame.sensor_ts is not None:
-                take.writer.add(frame.picture, frame.sensor_ts, frame.frame_number, time.time())
+                try:
+                    take.writer.add(frame.picture, frame.sensor_ts, frame.frame_number, _arrival(frame))
+                except record.RecorderError as exc:
+                    failed = str(exc)
+                    self._take = None
+                    try:
+                        take.writer.close()
+                    except record.RecorderError:
+                        pass  # the first failure is the one said
+        if failed is not None:
+            self._fail_take(take, failed)
+            return
         if time.monotonic() - take.started >= SETTINGS.take_max_seconds:
             try:
                 self.stop_take()
@@ -713,6 +756,9 @@ class Live:
                      for name, answer in answers.items() if name.startswith("handheld_")}
             arms = self._hologram
             if arms is not None:
+                if self._arms_fresh.is_set():
+                    self._arms_fresh.clear()
+                    arms.reset()
                 # Only the picture's: a failure here turns the arms off, and
                 # never costs the frame its place in the recording.
                 try:
@@ -724,6 +770,10 @@ class Live:
                     self._hologram = None
                     print(f"  arms no longer drawn: {type(exc).__name__}: {exc}", file=sys.stderr, flush=True)
             ready_guide.draw(canvas, self.intrinsics, desk.pose, hands, guide)
+        elif self._hologram is not None:
+            # Without the desk solid the arms have nothing to follow against:
+            # they stand at ready again when it comes back.
+            self._hologram.reset()
         return canvas
 
     @staticmethod
@@ -821,34 +871,49 @@ class Live:
         self.reset()
 
     def start_take(self, name: str | None = None) -> str:
+        """Open a session on disk and start feeding it. Returns the name used.
+
+        The take is judged by the hand in view as it begins - the one the
+        page's single-solid numbers speak for - and by that one alone to its end.
+        """
         if not self.head:
             raise LiveError(f"no top camera: {self.head_reason or 'not connected'}")
-        """Open a session on disk and start feeding it. Returns the name used."""
         if self.calibration is None:
             raise LiveError("this source cannot back a session - no calibration")
         name = name or record.default_session_name()
         if not SESSION_NAME.match(name):
             raise LiveError(f"{name!r} is not a session name (letters, digits, _.-)")
+        solid = self._primary if self._primary in self._solids else SETTINGS.solid
         with self._io:
             if self._take is not None:
                 raise LiveError(f"already recording {self._take.name!r}")
-            writer = record.SessionWriter(record.session_paths(name), self.calibration)
-            self._take = _Take(name=name, writer=writer, started=time.monotonic())
+            try:
+                writer = record.SessionWriter(record.session_paths(name), self.calibration, solid)
+            except OSError as exc:
+                raise LiveError(f"cannot start session {name!r}: {exc}") from exc
+            self._arms_fresh.set()
+            self._take = _Take(name=name, solid=solid, writer=writer, started=time.monotonic())
         return name
 
     def stop_take(self) -> dict:
         """Close the session and judge it, with bench's own arithmetic.
 
         The frames went to disk lossless and were solved by the same solver on the
-        way, so the closure and coverage computed here from the kept results are
-        the ones `pinkrab-umi bench` recomputes from the PNGs - the page shows the
-        verdict now, and the session stays re-benchable later.
+        way - the take's solid, the one bench reads off the session - so the
+        closure and coverage computed here from the kept results are the ones
+        `pinkrab-umi bench` recomputes from the PNGs: the page shows the verdict
+        now, and the session stays re-benchable later. A session that cannot be
+        closed on disk has no verdict: LiveError, and the page is told why.
         """
         with self._io:
             take, self._take = self._take, None
             if take is None:
                 raise LiveError("no take is recording")
-            root = take.writer.close()
+            try:
+                root = take.writer.close()
+            except record.RecorderError as exc:
+                self._fail_take(take, str(exc))
+                raise LiveError(str(exc)) from exc
 
         posefilter = PoseFilter()
         results = [posefilter.apply(r, t) for r, t in zip(take.results, take.stamps)]
@@ -864,6 +929,7 @@ class Live:
 
         verdict = {
             "name": take.name,
+            "solid": take.solid,
             "root": str(root),
             "seconds": round(time.monotonic() - take.started, 1),
             "closure": {
@@ -884,6 +950,12 @@ class Live:
         with self._state:
             self._verdict = verdict
         return verdict
+
+    def _fail_take(self, take: _Take, why: str) -> None:
+        """A take that could not be written, said instead of a verdict."""
+        with self._state:
+            self._verdict = {"name": take.name, "solid": take.solid, "error": why, "passes": False}
+        print(f"  take {take.name} failed: {why}", file=sys.stderr, flush=True)
 
     def take_status(self) -> dict:
         with self._io:
@@ -1025,7 +1097,7 @@ def make_handler(live: Live):
             if path in ("/episode/stop", "/episode/cancel"):
                 try:
                     status = live.stop_episode(cancel=path.endswith("cancel"))
-                except LiveError as exc:
+                except (LiveError, EpisodeError, OSError) as exc:
                     self._send_json({"error": str(exc)}, 409)
                     return
                 self._send_json({"ok": True, "episode": status})
@@ -1157,7 +1229,7 @@ def make_handler(live: Live):
             if path == "/take/stop":
                 try:
                     verdict = live.stop_take()
-                except LiveError as exc:
+                except (LiveError, OSError) as exc:
                     self._send_json({"error": str(exc)}, 409)
                     return
                 self._send_json({"ok": True, "verdict": verdict})
