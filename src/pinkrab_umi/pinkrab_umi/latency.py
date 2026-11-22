@@ -23,6 +23,13 @@ long a step takes to become the arm's motion, the inference setting
 action_latency_s: each joint's speed as asked, as shaped and as read, slid
 against each other the same way.
 
+Convert lays a dataset's demonstrations with the gripper latency their own
+hands measure (demo_latency): camera.yaml's, moved by the median of the
+takes' lags against the top camera, one value for every take - a lag
+measured off one take is a frame or so either way, and the latency itself
+is the cameras' and the computer's, not a take's. Each sitting's median is
+kept beside it, to tell when the rig changed between them.
+
     pinkrab-umi latency                 # every take on the shelf
     pinkrab-umi latency 20261102-000717 20261102-084501
 """
@@ -36,6 +43,7 @@ import numpy as np
 from scipy.spatial.transform import Rotation
 
 from pinkrab_core.config import ARMS
+from pinkrab_core.config import SETTINGS as CORE
 from pinkrab_core.dataset import gripper_region, lens_fit
 
 from .config import SETTINGS
@@ -58,6 +66,12 @@ RANSAC_TRIES = 60
 RANSAC_RAD = 0.004
 # A turn this fast between two frames is a follow gone wrong.
 MAX_TURN_RAD_S = 20.0
+# Convert moves the gripper latency to what the demonstrations measure when
+# this many hands say; fewer, and camera.yaml's stands.
+MIN_HANDS = 10
+# A take started this long after the one before is of another sitting: the
+# cameras may have been plugged in again, or the computer started again.
+SITTING_GAP_S = 3600.0
 
 
 def _rays(points: np.ndarray, region, scale, K: np.ndarray, D: np.ndarray) -> np.ndarray:
@@ -240,6 +254,73 @@ def measure(root: Path) -> dict[str, dict]:
             out[hand] = {"lag_s": round(found[0], 3), "agreement": round(found[1], 2),
                          "against": "joints" if rollout else "top camera"}
     return out
+
+
+def demo_latency(source: Path, names: list[str], fps: int | None = None, say=print) -> dict:
+    """The gripper latency for convert to lay these demonstrations' pictures
+    with, as `settled` reads what each one's hands measure against the top
+    camera. Each take is said, a rollout too, which is not measured here -
+    its pictures are laid on the joints, by camera.yaml's latency."""
+    takes = {}
+    for name in names:
+        root = source / name
+        try:
+            meta = json.loads((root / "meta.json").read_text())
+            if meta.get("kind", "demo") != "demo":
+                say(f"  {name}: a {meta.get('kind')} - laid by camera.yaml's latency")
+                continue
+            found = measure(root)
+        except (OSError, ValueError, KeyError, ConvertError, cv2.error) as exc:
+            say(f"  {name}: latency not measured - {exc}")
+            continue
+        said = ", ".join(f"{hand} {h['lag_s'] * 1000:+.0f} ms" for hand, h in found.items())
+        say(f"  {name}: {said or 'no hand turned enough to measure'}")
+        if found:
+            takes[name] = (meta.get("started_wall"), [h["lag_s"] for h in found.values()])
+    return settled(takes, SETTINGS.gripper_camera_latency_s, CORE.dataset_fps if fps is None else fps)
+
+
+def settled(takes: dict[str, tuple[float | None, list[float]]], stamped: float, fps: int) -> dict:
+    """What `takes` ({name: (started_wall, each hand's lag)}) say of the
+    gripper latency: `gripper_camera_latency_s`, `stamped` (camera.yaml's)
+    moved by the median of every hand's lag - or `stamped` as it is, with
+    `measured` False, when fewer than MIN_HANDS hands say - and each sitting's
+    own (takes SITTING_GAP_S or more apart begin another; a take that does
+    not say when it started is in none), with `sittings_differ` when one is
+    more than a dataset frame off the latency used."""
+    lags = [lag_s for _, hand_lags in takes.values() for lag_s in hand_lags]
+    measured = len(lags) >= MIN_HANDS
+    used = stamped + float(np.median(lags)) if measured else stamped
+    sittings: list[dict] = []
+    last = None
+    for name, (when, hand_lags) in sorted(((n, t) for n, t in takes.items() if t[0] is not None),
+                                          key=lambda item: item[1][0]):
+        if last is None or when - last >= SITTING_GAP_S:
+            sittings.append({"first": name, "takes": 0, "lags": []})
+        sittings[-1]["takes"] += 1
+        sittings[-1]["lags"].extend(hand_lags)
+        last = when
+    for sitting in sittings:
+        hand_lags = sitting.pop("lags")
+        sitting["hands"] = len(hand_lags)
+        sitting["latency_s"] = round(stamped + float(np.median(hand_lags)), 4)
+    return {"gripper_camera_latency_s": round(used, 4), "measured": measured, "stamped_s": stamped,
+            "hands": len(lags), "min_hands": MIN_HANDS, "against": "top camera", "sittings": sittings,
+            "sittings_differ": measured and any(abs(s["latency_s"] - used) > 1.0 / fps for s in sittings)}
+
+
+def said(latency: dict) -> str:
+    """One line on the gripper latency `settled` found."""
+    used, stamped = latency["gripper_camera_latency_s"], latency["stamped_s"]
+    if not latency["measured"]:
+        return (f"  gripper latency: camera.yaml's {stamped * 1000:.0f} ms - only {latency['hands']} hand(s) "
+                f"turned enough to measure it, {latency['min_hands']} wanted")
+    line = (f"  gripper latency: {used * 1000:.0f} ms, measured over {latency['hands']} hands "
+            f"(camera.yaml {stamped * 1000:.0f} ms)")
+    if latency["sittings_differ"]:
+        line += " - sittings differ by more than a frame: " + ", ".join(
+            f"{s['first']} {s['latency_s'] * 1000:.0f} ms" for s in latency["sittings"])
+    return line
 
 
 def main(names: list[str] | None = None) -> int:

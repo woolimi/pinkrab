@@ -45,6 +45,7 @@ policy 가 보는 것은 두 그리퍼 카메라의 영상뿐입니다. 시연�
 변환 설정은 따로 고르지 않습니다.
 
 - **로봇**: 모든 시연에 그려 넣습니다. 시연 하나에 1 분 안팎이 걸립니다.
+- **그리퍼 카메라 지연**: 변환 전에 시연들로 잽니다. 진행 줄이 `measuring the gripper cameras' latency` 로 시연 수를 세고, 끝나면 `gripper latency:` 줄에 쓴 값이 나옵니다. 방법과 조건은 [카메라 지연 측정](../collect/#카메라-지연-측정)에 있습니다.
 - **fps**: core 설정의 `dataset_fps`(50)이고, 학습한 policy 는 **이 주기로 실행됩니다**. 카메라 프레임 사이를 채우는 방법은 [dataset 의 fps](../../deep/convert/#dataset-의-fps) 에 있습니다.
 
 변환이 끝나면 진행 줄 아래의 **View the dataset**, 또는 Datasets 목록 줄의 **View** 로 만든 dataset 을 엽니다. 왼쪽에 episode 와 그 episode 가 나온 시연이 나열되고, 두 그리퍼 영상을 dataset 에 저장된 그대로 재생합니다. 학습이 읽는 그림이 이것입니다.

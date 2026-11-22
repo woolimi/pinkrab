@@ -150,7 +150,11 @@ class Scene:
     camera placed it in the desk's frame, as convert places it, at each
     moment it was placed, and each jaw's angle at any moment."""
 
-    def __init__(self, root: Path) -> None:
+    def __init__(self, root: Path, gripper_latency_s: float | None = None) -> None:
+        """`gripper_latency_s` is the latency the gripper frames are laid by,
+        camera.yaml's when None - convert's, when it measured its own."""
+        if gripper_latency_s is None:
+            gripper_latency_s = SETTINGS.gripper_camera_latency_s
         meta = json.loads((root / "meta.json").read_text())
         if meta.get("kind", "demo") != "demo":
             raise ValueError(f"a {meta.get('kind')} is not a demonstration")
@@ -165,7 +169,7 @@ class Scene:
             shots = sorted((f for f in frames if f["stream"] == f"gripper_{side}"), key=lambda f: f["index"])
             if [f["index"] for f in shots] != list(range(len(shots))):
                 raise ValueError(f"the gripper_{side} frame list skips frames of its video")
-            self.stamps[side] = [f["host_ts"] - SETTINGS.gripper_camera_latency_s for f in shots]
+            self.stamps[side] = [f["host_ts"] - gripper_latency_s for f in shots]
         # Each hand's tool at self.times, None where it has no place, and its
         # jaw's angles (times, radians) - None where it was never read.
         self.tools: dict[str, list[np.ndarray | None]] = {}

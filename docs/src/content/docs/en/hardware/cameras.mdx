@@ -58,7 +58,7 @@ top:
 | `region` | Gripper camera only. Which part of the sensor (x, y, width, height) the `resolution` mode covers. The AR0234's 1280×960 mode is the central 1600×1200 of the sensor scaled by 0.8, so it covers the lens-side region the dataset uses as is, and the video is a little over half the size of the full sensor. If absent, the whole sensor |
 | `fps` | Frame rate to open at. Requesting 30 on the top camera delivers only about 21 fps, so 60 is requested (about 50 actual) |
 | `fourcc` | Video format. Use `MJPG` when receiving several cameras on the same USB bus |
-| `latency_s` | Time from exposure until the frame arrives at the computer. Convert aligns the video with the poses and the jaw by it, and execution counts how old the picture the policy saw is |
+| `latency_s` | Time from exposure until the frame arrives at the computer. Convert aligns the video with the poses and the jaw by it (for the gripper camera, by the value measured again off the demonstrations when there is one), and execution counts how old the picture the policy saw is |
 | `crop` | Gripper camera only. The region the dataset keeps, written as the ratio of the sensor width and height, centered on each camera's lens axis. It trims the black corners of a fisheye lens; for a lens whose image fills the frame, use `[1.0, 1.0]` |
 | `exposure_unit_us` | Top camera only. The length (µs) of exposure control value 1. The UVC standard is 100, but it differs by module |
 | `hfov_deg` | Top camera only. The horizontal field of view stated by the manufacturer. Used only as the starting value of lens measurement |
@@ -103,4 +103,4 @@ Draw the new bracket so that it satisfies the following.
 2. Reassign the sockets the cameras are plugged into: `pinkrab cameras`, `pinkrab-umi cameras`, and `pinkrab-umi cameras --top` in [Setup](../../use/setup/).
 3. Measure the lens again for every camera you changed (`pinkrab lens`, `pinkrab-umi lens`). The top camera does not open without a lens measurement, and for the gripper cameras convert and execution are refused without one.
 4. If you changed the gripper camera, record a short demonstration with Hermit and check that both jaws stay in the frame even when fully open.
-5. Measure the [camera latency](../../use/collect/#camera-latency-measurement) again.
+5. After the first Drive, [check the latencies on the running side](../../use/run/#latency-check). The latency between the gripper camera and the top camera is measured by Convert off the demonstrations ([Camera latency measurement](../../use/collect/#camera-latency-measurement)).

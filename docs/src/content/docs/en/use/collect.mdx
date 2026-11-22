@@ -93,19 +93,13 @@ Pressing ▶ plays the Pinkrab arm following the demonstration, overlaid on the 
 
 ## Camera latency measurement
 
-The `latency_s` values in `camera.yaml` were measured on the rig Pinkrab was built on, and even with the same cameras they can differ by tens of milliseconds with the USB controller, the OS and the computer's load. Convert uses them to place the gripper videos on the times of the Hermit poses, and in a 50 fps dataset 20 ms is a whole frame, so a wrong value makes a dataset whose pictures and motion are out of step. Record a few demonstrations before the main collection and measure the latency once.
+The `latency_s` values in `camera.yaml` were measured on the rig Pinkrab was built on, and even with the same cameras they can differ by tens of milliseconds with the USB controller, the OS and the computer's load. In a 50 fps dataset 20 ms is a whole frame, so a wrong value makes a dataset whose gripper pictures and Hermit motion are out of step. So [Convert](../curate/#convert) measures the gripper cameras' latency off the demonstrations it converts and lays the pictures by that.
 
-1. Record about ten demonstrations. Task demonstrations will do, as long as they turn the wrists. The measurement matches how the gripper video turns against how the top camera sees the Hermit turn, so a hand that hardly turned is left out.
-2. Measure the latency.
+- **How it is measured**: the gripper video's turning is slid in time against the Hermit's turning as the top camera sees it, to where they agree best. The median of the lags of every hand in every demonstration is added to the `camera.yaml` value, and **every demonstration uses that one value**: a lag measured off one demonstration is a frame or so either way, and the latency belongs to the cameras and the computer, not to a demonstration.
+- **What the demonstrations need**: wrists that turn. A hand that hardly turned is left out, and with fewer than 10 hands measured the `camera.yaml` value is used as it is. Task demonstrations are usually enough.
+- **Result**: the `gripper latency:` line in the Curate progress lines, and the dataset's `meta/pinkrab_convert.json`. The value of each sitting (takes recorded after a break of more than an hour start another) is kept too, and when one differs by more than a frame the progress line shows each sitting's value. The cameras may have been plugged in again or the computer restarted in between, so convert such sittings separately.
 
-   ```bash
-   pinkrab-umi latency
-   ```
-
-3. Add the N of the closing `against the top camera: +N ms later than stamped` to `latency_s` in the `gripper` block of `camera.yaml` (subtract it when N is negative). N is the median over the hands measured.
-4. Measure again. N close to 0 means the value is right.
-
-How it is measured is in [Replacing the camera](../../hardware/cameras/#camera-profile). The latencies on the running side are [checked from run records](../run/#latency-check) after the first Drive.
+To look before the main collection, record a few demonstrations and run `pinkrab-umi latency`. The closing `against the top camera: +N ms` is what Convert will add. How it is measured is in [Replacing the camera](../../hardware/cameras/#camera-profile), and the latencies on the running side are [checked from run records](../run/#latency-check) after the first Drive.
 
 ## Next step
 

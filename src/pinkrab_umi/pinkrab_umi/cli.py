@@ -254,14 +254,19 @@ def main(argv: list[str] | None = None) -> int:
         return resolve.resolve(args.episodes or None)
 
     if args.command == "convert":
-        from . import convert  # noqa: PLC0415
+        from . import convert, latency  # noqa: PLC0415
         from .robot_drawn import Look  # noqa: PLC0415
 
+        source = Path(args.source).expanduser() if args.source else SETTINGS.episodes_dir
         try:
-            report = convert.convert(args.episodes, args.out, args.task,
-                                     source=Path(args.source).expanduser() if args.source else None,
+            _, fps = convert.ready(args.out, args.fps)
+            print("  measuring the gripper cameras' latency off the demonstrations")
+            found = latency.demo_latency(source, args.episodes, fps)
+            print(latency.said(found))
+            report = convert.convert(args.episodes, args.out, args.task, source=source,
                                      gop=args.gop, fps=args.fps,
-                                     robot_drawn=Look.rig() if args.robot_drawn else None)
+                                     robot_drawn=Look.rig() if args.robot_drawn else None,
+                                     gripper_latency=found)
         except convert.ConvertError as exc:
             print(f"error: {exc}", file=sys.stderr)
             return 1

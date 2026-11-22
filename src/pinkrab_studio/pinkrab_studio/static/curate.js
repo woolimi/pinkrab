@@ -235,8 +235,11 @@ function showConvert(c) {
   drawConvert();
   if (c?.asked && (c.running || c.result || c.error)) {
     convertProgress.hidden = false;
-    convertProgress.querySelector('.bar > span').style.width = `${c.total ? (c.done / c.total) * 100 : 0}%`;
-    const head = c.running ? `${c.done} / ${c.total} episodes · ${c.seconds ?? 0} s`
+    const counted = c.running && c.measuring != null ? c.measuring : c.done;
+    convertProgress.querySelector('.bar > span').style.width = `${c.total ? (counted / c.total) * 100 : 0}%`;
+    const head = c.running && c.measuring != null
+      ? `measuring the gripper cameras' latency: ${c.measuring} / ${c.total} takes · ${c.seconds ?? 0} s`
+      : c.running ? `${c.done} / ${c.total} episodes · ${c.seconds ?? 0} s`
       : c.error ? `failed: ${c.error}` : `done: ${c.result?.dataset} in ${c.result?.seconds} s`;
     convertLines.textContent = [head, ...(c.lines || [])].join('\n');
   }

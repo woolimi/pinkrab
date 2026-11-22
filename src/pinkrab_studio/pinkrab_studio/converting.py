@@ -121,8 +121,11 @@ class Converter:
         self._result: dict | None = None
         self._error: str | None = None
         self._started = 0.0
-        # How many of the lines said are takes left out, not converted.
+        # How many of the lines said are not takes converted: those left out,
+        # and those of the latency measured before.
         self._left_out = 0
+        # How many takes the latency is measured off so far, while it is.
+        self._measuring: int | None = None
 
     @staticmethod
     def datasets_dir() -> Path:
@@ -148,6 +151,7 @@ class Converter:
                 raise ValueError("a conversion is already running")
             self._asked = {"episodes": episodes, "out": out, "task": task, "fps": fps}
             self._lines, self._result, self._error, self._left_out = [], None, None, 0
+            self._measuring = None
             self._started = time.monotonic()
             self._thread = threading.Thread(target=self._run, name="convert", daemon=True)
             self._thread.start()
@@ -164,13 +168,25 @@ class Converter:
             with self._lock:
                 self._error = "no take on the shelf passes its tests"
             return
+        from pinkrab_umi import latency
         from pinkrab_umi.robot_drawn import Look
         with self._lock:
             asked["episodes"] = list(kept)
-            self._left_out = len(self._lines)
+            self._measuring = 0
+
+        def measured(line: str) -> None:
+            with self._lock:
+                self._lines.append(line.strip())
+                self._measuring += 1
         try:
+            found = latency.demo_latency(UMI.episodes_dir, asked["episodes"], asked["fps"], say=measured)
+            with self._lock:
+                self._lines.append(latency.said(found).strip())
+                self._measuring = None
+                self._left_out = len(self._lines)
             result = convert.convert(asked["episodes"], asked["out"], asked["task"], say=say,
-                                     fps=asked["fps"], unfollowed=kept, robot_drawn=Look.rig())
+                                     fps=asked["fps"], unfollowed=kept, robot_drawn=Look.rig(),
+                                     gripper_latency=found)
         except Exception as exc:  # noqa: BLE001 - the page shows the reason
             with self._lock:
                 self._error = str(exc)
@@ -195,6 +211,7 @@ class Converter:
             total = len((self._asked or {}).get("episodes") or [])
             return {
                 "running": running, "asked": self._asked, "done": done, "total": total,
+                "measuring": self._measuring if running else None,
                 "lines": self._lines[-6:], "result": self._result, "error": self._error,
                 "seconds": round(time.monotonic() - self._started, 1) if self._asked else None,
             }

@@ -16,7 +16,9 @@ the rig; every frame has them all. So each episode goes through these steps:
   2. the source clock: the top camera's exposures - its sensor stamps,
      already on this host's clock - are when each pose was. Each gripper
      video and each jaw are laid on them by their own host stamps less the
-     latency each reading is stamped with (a jaw's, the time it was read);
+     latency each reading is stamped with (a jaw's, the time it was read; a
+     gripper camera's, what the takes converted measure when asked -
+     latency.demo_latency - and camera.yaml's otherwise);
   3. the cut: a frame where any hand's solid was not solved, or with no
      picture from any hand's gripper taken within `GRIP_MATCH_FRAMES` of a
      frame period before it, is a hole. One no longer than
@@ -523,11 +525,25 @@ def _frames(segment: dict[str, dict], state_names: list[str], task: str, picture
         yield frame
 
 
+def ready(out: str, fps: int | None) -> tuple[Path, int]:
+    """Where the dataset `out` goes and its rate (the core settings'
+    dataset_fps when None) - a ConvertError if it exists or the rate is not
+    one a dataset is made at."""
+    root = CORE.workspace / "datasets" / out
+    if root.exists():
+        raise ConvertError(f"{root} exists - pick another --out or remove it")
+    try:
+        return root, check_fps(CORE.dataset_fps if fps is None else fps)
+    except ValueError as exc:
+        raise ConvertError(str(exc)) from None
+
+
 def convert(episodes: list[str], out: str, task: str, hands: tuple[str, ...] = ARMS,
             min_segment_s: float = MIN_SEGMENT_S, say=print,
             source: Path | None = None, gop: int = DATASET_GOP,
             fps: int | None = None,
-            unfollowed: dict[str, list[tuple[float, float]]] | None = None, robot_drawn=None) -> dict:
+            unfollowed: dict[str, list[tuple[float, float]]] | None = None, robot_drawn=None,
+            gripper_latency: dict | None = None) -> dict:
     """`hands` are the hands every take worked with - both on the rig; the
     simulation's one. `source` is where the raw episodes are, the
     workspace's episodes/ by default. `gop` is the dataset video's keyframe
@@ -541,22 +557,21 @@ def convert(episodes: list[str], out: str, task: str, hands: tuple[str, ...] = A
     named has none. With `robot_drawn` (a robot_drawn.Look) every
     demonstration has the robot drawn into its pictures as a rollout's
     cameras will see it, and one it cannot be drawn into is left out; a
-    rollout's pictures already show it."""
+    rollout's pictures already show it. `gripper_latency` is what
+    latency.demo_latency found of these takes: the demonstrations' gripper
+    pictures are laid by its latency, and without it by camera.yaml's - a
+    rollout's always are, as its pictures are laid on the joints."""
     from lerobot.datasets.lerobot_dataset import LeRobotDataset
 
-    root = CORE.workspace / "datasets" / out
-    if root.exists():
-        raise ConvertError(f"{root} exists - pick another --out or remove it")
+    root, fps = ready(out, fps)
     hands = tuple(hand for hand in ARMS if hand in hands)
     if not hands:
         raise ConvertError(f"hands are some of {', '.join(ARMS)}")
     source = source or SETTINGS.episodes_dir
-    try:
-        fps = check_fps(CORE.dataset_fps if fps is None else fps)
-    except ValueError as exc:
-        raise ConvertError(str(exc)) from None
     size = gripper_size(episodes, source, hands)
     names = state_names(hands)
+    grip_latency_s = (SETTINGS.gripper_camera_latency_s if gripper_latency is None
+                      else float(gripper_latency["gripper_camera_latency_s"]))
     # The grippers' pictures are the only ones the policy is shown. The top
     # camera is the clock and the source of the labels - it is where the
     # solids' poses, and so every delta, come from - and it is not on the
@@ -596,7 +611,8 @@ def convert(episodes: list[str], out: str, task: str, hands: tuple[str, ...] = A
     try:
         for name in episodes:
             report["episodes"].append(_episode(dataset, source / name, task, hands, fps, min_segment_s,
-                                               names, size, say, unfollowed=(unfollowed or {}).get(name, ()), robot_drawn=robot_drawn))
+                                               names, size, say, unfollowed=(unfollowed or {}).get(name, ()),
+                                               robot_drawn=robot_drawn, gripper_latency_s=grip_latency_s))
         if not any(e["segments"] for e in report["episodes"]):
             raise ConvertError("no episode had a segment long enough to keep")
         dataset.finalize()
@@ -619,7 +635,8 @@ def convert(episodes: list[str], out: str, task: str, hands: tuple[str, ...] = A
                   "source": "top camera exposure (sensor stamp, host clock)",
                   "pose": "a cubic spline (place) and a rotation spline (turn) through the smoothed poses",
                   "picture": "the last one taken by the frame's time",
-                  "gripper_camera_latency_s": SETTINGS.gripper_camera_latency_s,
+                  "gripper_camera_latency_s": grip_latency_s,
+                  "gripper_latency": gripper_latency or {"measured": False, "note": "camera.yaml's, not measured"},
                   "jaw_latency_s": SETTINGS.jaw_latency_s},
         "gripper": {"crop": list(gripper_crop()), "width": GRIPPER_WIDTH, "size": list(size),
                     "note": "a window of each frame about its camera's lens axis (each episode's centre, by hand), "
@@ -636,7 +653,8 @@ def convert(episodes: list[str], out: str, task: str, hands: tuple[str, ...] = A
                   "note": "frames before any hand first moves and after the last one last moves are left out"},
         "rollouts": {"clock": f"the {hands[0]} arm's camera exposures (host clock)",
                      "pose": "forward kinematics of the robot's readings, turned into the handheld's tool convention",
-                     "robot_state_latency_s": SETTINGS.robot_state_latency_s, "gap_s": ROBOT_GAP_S,
+                     "robot_state_latency_s": SETTINGS.robot_state_latency_s,
+                     "gripper_camera_latency_s": SETTINGS.gripper_camera_latency_s, "gap_s": ROBOT_GAP_S,
                      "kept": "the corrections: frames whose readings say the hands drove the arms (controller human)"},
         "action": {"names": STEP_NAMES, "frame": "tool (camera-local): R_t^T (p_{t+1}-p_t), R_t^T R_{t+1} as two columns",
                    "glitch_mm_s": GLITCH_MM_S, "glitch_dps": SETTINGS.filter_max_rot_speed_dps,
@@ -733,11 +751,15 @@ def _add_segments(dataset, entry: dict, runs, times: np.ndarray, poses_of, apert
 
 
 def _episode(dataset, src: Path, task: str, hands: tuple[str, ...], fps: int, min_segment_s: float,
-             state_names: list[str], size: tuple[int, int], say, unfollowed=(), robot_drawn=None) -> dict:
+             state_names: list[str], size: tuple[int, int], say, unfollowed=(), robot_drawn=None,
+             gripper_latency_s: float | None = None) -> dict:
     """One raw episode into the dataset, as many LeRobot episodes as it has
     segments - with `robot_drawn`, the robot drawn into its pictures - and
     none of the stretches [start, end] of `unfollowed`, on its exposure
-    clock."""
+    clock; a demonstration's gripper pictures laid by `gripper_latency_s`
+    (camera.yaml's when None)."""
+    if gripper_latency_s is None:
+        gripper_latency_s = SETTINGS.gripper_camera_latency_s
     name = src.name
     if not (src / "meta.json").is_file():
         raise ConvertError(f"no episode {name!r} at {src}")
@@ -778,7 +800,7 @@ def _episode(dataset, src: Path, task: str, hands: tuple[str, ...], fps: int, mi
                 raise ConvertError(f"no reading from the {hand} jaw")
             opening[hand] = np.interp(exposed, jaw_t, jaw_v).astype(np.float32)
             grip_t[hand] = np.array([f["host_ts"] for f in frames if f["stream"] == f"gripper_{hand}"]) \
-                - SETTINGS.gripper_camera_latency_s
+                - gripper_latency_s
             if not len(grip_t[hand]):
                 raise ConvertError(f"no frame from the {hand} gripper camera")
             # Where the lens axis lands in this video: as the recorder wrote
@@ -820,7 +842,7 @@ def _episode(dataset, src: Path, task: str, hands: tuple[str, ...], fps: int, mi
         from .robot_drawn import DrawError, RobotDrawn
 
         try:
-            robot = RobotDrawn(src, robot_drawn, size)
+            robot = RobotDrawn(src, robot_drawn, size, gripper_latency_s)
         except DrawError as exc:
             entry["skipped"] = f"the robot cannot be drawn in: {exc}"
             say(f"  {name}: skipped - the robot cannot be drawn in: {exc}")

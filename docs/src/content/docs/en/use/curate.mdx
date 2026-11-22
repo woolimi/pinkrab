@@ -45,6 +45,7 @@ Enter a dataset name and a task description in the **Convert** stage and press *
 Conversion settings are not chosen separately.
 
 - **Robot**: Drawn into every demonstration. A demonstration takes about a minute.
+- **Gripper camera latency**: Measured off the demonstrations before converting. The progress line counts them as `measuring the gripper cameras' latency`, and the `gripper latency:` line then gives the value used. How and when it is measured is in [Camera latency measurement](../collect/#camera-latency-measurement).
 - **fps**: The core setting `dataset_fps` (50), and a trained policy **runs at this rate**. How the gaps between camera frames are filled is described in [Dataset fps](../../deep/convert/#dataset-fps).
 
 When conversion finishes, open the dataset with **View the dataset** under the progress lines, or with **View** on its row in the Datasets list. The episodes and the demonstrations they came from are listed on the left, and the two gripper videos play exactly as stored in the dataset. These are the pictures training reads.

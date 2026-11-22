@@ -182,9 +182,11 @@ def _followed(chain, ready: np.ndarray, targets: list[np.ndarray | None], times:
 
 class RobotDrawn:
     """The robot, ready to be drawn into any frame of a demonstration's
-    gripper videos, as convert keeps them (gripper_view) at `size`."""
+    gripper videos, as convert keeps them (gripper_view) at `size`, each
+    frame at the moment `gripper_latency_s` lays it (gripper_scene.Scene)."""
 
-    def __init__(self, src: Path, look: Look, size: tuple[int, int]) -> None:
+    def __init__(self, src: Path, look: Look, size: tuple[int, int],
+                 gripper_latency_s: float | None = None) -> None:
         import placo
 
         from pinkrab_core.kinematics import ArmKinematics, fresh_urdf
@@ -195,7 +197,7 @@ class RobotDrawn:
         if world_T_desk is None:
             raise DrawError(f"no place in the robot's world for its hands: {why}")
         try:
-            self.scene = Scene(src)
+            self.scene = Scene(src, gripper_latency_s)
         except ValueError as exc:
             raise DrawError(str(exc)) from None
         if sorted(self.scene.sides) != sorted(ARMS):
