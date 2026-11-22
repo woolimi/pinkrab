@@ -84,6 +84,17 @@ A run made with Drive is **recorded entirely**, from the start until it stops. T
 
 Every kept record, past runs included, appears newest first in the list under the pedals, each row naming the checkpoint that run used, and you can press it to replay the video. The Collect page list shows not the whole run but only its kept corrections, one row each, alongside the demonstrations. Pressing **delete** twice on such a row leaves only that correction out of the dataset, and the run's record stays on the Policy page. When you Convert, without redoing anything, **only the segments where Hermit moved the arms** go into the dataset from the kept corrections, one episode per segment, with the arm-side camera video and the motion computed from the arm's joints. How recording works and why is in [Correction data](../../deep/corrections/).
 
+## Latency check
+
+[The latency set from demonstrations](../collect/#camera-latency-measurement) is the offset between the two cameras; the two latencies a run uses can only be measured from run records. After a few first Drives, run `pinkrab-umi latency` again and it prints two more lines from the run records. The joint side is also measured from turning, so the runs must include turning the wrists.
+
+| Line | Value to change |
+|---|---|
+| `against the joints: +N ms later than stamped` | How much later the wrist camera video is than the joint readings. Add N **equally** to `latency_s` in both the `gripper` and `top` blocks of `camera.yaml`, so the offset between the two cameras set from demonstrations stays as it is |
+| `commands: a step is made N ms after it is asked` | Time until a commanded step becomes the arm's motion. Set `action_latency_s` in the [inference settings](#inference-settings) to this value. It is in seconds, so 85 ms is 0.085 |
+
+If you changed `camera.yaml`, convert the datasets that hold corrections again.
+
 ## Outcome marking
 
 Each record in the list has **succeeded** and **failed**, where the person who watched writes down whether the run accomplished the task. The video and joint records alone cannot tell whether an object went into place. Pressing the selected one again clears the mark, and the mark is kept in that record's `meta.json` as `outcome`.

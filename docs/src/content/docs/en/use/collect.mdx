@@ -1,6 +1,6 @@
 ---
 title: Demonstration collection
-description: How to record demonstrations with two Hermits. Placement of the top camera and the table marker, the Collect page in studio, the robot arm preview, the foot pedals, and demonstration verdicts.
+description: How to record demonstrations with two Hermits. Placement of the top camera and the table marker, the Collect page in studio, the robot arm preview, the foot pedals, demonstration verdicts, and camera latency measurement.
 ---
 
 import Clip from '../../../../components/Clip.astro';
@@ -90,6 +90,22 @@ A demonstration that passes can still hold up to 20 % of frames the arm cannot f
 The moment of releasing the object is when the jaw last opened. For a task that ends while still holding the object, set `keep_min_retract_mm` in the `pinkrab_umi` config to 0 to turn this criterion off.
 
 Pressing ▶ plays the Pinkrab arm following the demonstration, overlaid on the video. The arm moves at the dataset's default fps (50), in the demonstration's real time. A demonstration where the top camera dropped frames does not speed up either. Even after the arm starts in an unreachable pose and folds at a joint limit, it follows again once the hand comes to a reachable place, and a joint that changed a lot at once in between is marked as a jump. **tick failing** selects all failed demonstrations, and **delete ticked** **deletes the selected demonstrations**.
+
+## Camera latency measurement
+
+The `latency_s` values in `camera.yaml` were measured on the rig Pinkrab was built on, and even with the same cameras they can differ by tens of milliseconds with the USB controller, the OS and the computer's load. Convert uses them to place the gripper videos on the times of the Hermit poses, and in a 50 fps dataset 20 ms is a whole frame, so a wrong value makes a dataset whose pictures and motion are out of step. Record a few demonstrations before the main collection and measure the latency once.
+
+1. Record about ten demonstrations. Task demonstrations will do, as long as they turn the wrists. The measurement matches how the gripper video turns against how the top camera sees the Hermit turn, so a hand that hardly turned is left out.
+2. Measure the latency.
+
+   ```bash
+   pinkrab-umi latency
+   ```
+
+3. Add the N of the closing `against the top camera: +N ms later than stamped` to `latency_s` in the `gripper` block of `camera.yaml` (subtract it when N is negative). N is the median over the hands measured.
+4. Measure again. N close to 0 means the value is right.
+
+How it is measured is in [Replacing the camera](../../hardware/cameras/#camera-profile). The latencies on the running side are [checked from run records](../run/#latency-check) after the first Drive.
 
 ## Next step
 
